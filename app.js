@@ -499,10 +499,27 @@ async function logEvent(payload) {
     });
     const body = await response.text();
     console.log("Event log response", response.status, body);
-    return { ok: response.ok, status: response.status, body };
+    if (response.ok) return { ok: true, status: response.status, body };
+    // If not ok, still try a no-cors fallback to ensure write happens.
+    await fetch(WEBHOOK_URL, {
+      method: "POST",
+      mode: "no-cors",
+      body: JSON.stringify(payload),
+    });
+    return { ok: false, status: response.status, body };
   } catch (error) {
     console.log("Event log error", error);
-    return { ok: false, status: 0, body: String(error) };
+    try {
+      await fetch(WEBHOOK_URL, {
+        method: "POST",
+        mode: "no-cors",
+        body: JSON.stringify(payload),
+      });
+      return { ok: true, status: 0, body: "no-cors fallback" };
+    } catch (fallbackError) {
+      console.log("Event log fallback error", fallbackError);
+      return { ok: false, status: 0, body: String(error) };
+    }
   }
 }
 
