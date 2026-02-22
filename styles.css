@@ -348,6 +348,50 @@ button:disabled {
   transform: translateY(0);
 }
 
+.demo-banner {
+  background: var(--accent-soft);
+  border: 1px solid rgba(124,58,237,0.4);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  width: fit-content;
+}
+
+@media print {
+  body {
+    background: #ffffff;
+    color: #000000;
+  }
+
+  button,
+  input,
+  select,
+  textarea,
+  .tabs,
+  .app-header,
+  .landing-header,
+  .controls-panel,
+  .drop-zone,
+  .upload-help,
+  .site-footer {
+    display: none !important;
+  }
+
+  .chart-card,
+  .heatmap-card,
+  .insights-card,
+  .table-card,
+  .kpi-card {
+    box-shadow: none;
+    border-color: #ddd;
+  }
+
+  #dashboard {
+    gap: 16px;
+  }
+}
+
 .tab-panel.hidden {
   display: none;
 }
