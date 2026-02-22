@@ -122,6 +122,11 @@ const state = {
     dates: [],
     categoricals: [],
   },
+  debug: {
+    numericCandidates: [],
+    usableNumericMetrics: [],
+    dateCandidates: [],
+  },
   filters: {
     industry: "All",
   },
@@ -331,6 +336,7 @@ function resetStateForNewDataset() {
   destroyAllCharts();
   state.filteredRows = [];
   state.schema = { columns: [], profiles: {}, numeric: [], dates: [], categoricals: [] };
+  state.debug = { numericCandidates: [], usableNumericMetrics: [], dateCandidates: [] };
   state.filters = { industry: "All" };
   state.selections = { primaryMetric: null, compareMetrics: [] };
   state.industryColumn = null;
@@ -436,14 +442,14 @@ function ingestRows(rawRows) {
   state.schema.profiles = profileDataset(rows, cleanedHeaders);
   state.inferredDomain = inferDomain(state.schema.profiles);
   state.domain = state.domainAuto ? state.inferredDomain : state.domain;
-  state.schema.numeric = Object.keys(state.schema.profiles).filter(
-    (col) => state.schema.profiles[col].type === "numeric"
-  );
-  state.schema.dates = Object.keys(state.schema.profiles).filter((col) => state.schema.profiles[col].type === "date");
-  state.schema.categoricals = Object.keys(state.schema.profiles).filter(
+  const numericCandidates = Object.keys(state.schema.profiles)
+    .filter((col) => state.schema.profiles[col].type === "numeric")
+    .filter((col) => !isIdLikeColumn(col, state.schema.profiles[col], rows.length));
+  const dateCandidates = Object.keys(state.schema.profiles).filter((col) => state.schema.profiles[col].type === "date");
+  const categoricalCandidates = Object.keys(state.schema.profiles).filter(
     (col) => state.schema.profiles[col].type === "categorical"
   );
-  const usableNumericMetrics = state.schema.numeric.filter((col) => {
+  const usableNumericMetrics = numericCandidates.filter((col) => {
     let countParsed = 0;
     for (const row of state.rawRows) {
       if (parseNumber(row[col]) !== null) {
@@ -453,13 +459,20 @@ function ingestRows(rawRows) {
     }
     return false;
   });
-  state.schema.numeric = usableNumericMetrics;
-  state.schema.dates = state.schema.dates;
+  state.schema.numeric = Array.isArray(usableNumericMetrics) ? usableNumericMetrics : [];
+  state.schema.dates = Array.isArray(dateCandidates) ? dateCandidates : [];
+  state.schema.categoricals = Array.isArray(categoricalCandidates) ? categoricalCandidates : [];
+  state.debug.numericCandidates = numericCandidates;
+  state.debug.usableNumericMetrics = state.schema.numeric;
+  state.debug.dateCandidates = state.schema.dates;
   state.industryColumn = findIndustryColumn(state.schema.columns);
 
   if (!state.schema.numeric.length) {
     const detail = buildNumericFailureDetail(state.schema.profiles);
-    showError("No usable numeric metrics detected. Add at least one numeric column.", detail);
+    const message = numericCandidates.length
+      ? "No usable numeric metrics detected. Add at least one numeric column."
+      : "Only identifier style numeric columns detected. Add a true metric like revenue, spend, clicks.";
+    showError(message, detail);
     return;
   }
 
@@ -576,15 +589,18 @@ function profileDataset(rows, columns) {
 
     const uniqueSet = new Set(nonMissing.map((value) => String(value).trim()));
     const uniqueCount = uniqueSet.size;
+    const uniqueRate = nonBlankCount ? uniqueCount / nonBlankCount : 0;
 
     const stats = {
       type,
       missingRate,
       uniqueCount,
+      uniqueRate,
       nonNumericRate: type === "numeric" ? 1 - numericRate : null,
       numericRate,
       nonBlankCount,
       failedSamples,
+      integerOnly: null,
       min: null,
       max: null,
       mean: null,
@@ -599,6 +615,7 @@ function profileDataset(rows, columns) {
       numericValues.sort((a, b) => a - b);
       stats.min = numericValues[0];
       stats.max = numericValues[numericValues.length - 1];
+      stats.integerOnly = numericValues.every((value) => Number.isInteger(value));
       const mean = numericValues.reduce((sum, val) => sum + val, 0) / numericValues.length;
       stats.mean = mean;
       const medianIndex = Math.floor(numericValues.length / 2);
@@ -694,9 +711,9 @@ function escapeHtml(text) {
 }
 
 function buildDebugInfo() {
-  const numericCandidates = state.schema.numeric?.join(", ") || "—";
-  const usableNumeric = state.schema.numeric?.join(", ") || "—";
-  const dateCandidates = state.schema.dates?.join(", ") || "—";
+  const numericCandidates = (state.debug.numericCandidates || []).join(", ") || "—";
+  const usableNumeric = (state.debug.usableNumericMetrics || []).join(", ") || "—";
+  const dateCandidates = (state.debug.dateCandidates || []).join(", ") || "—";
   const chosenXAxisType = state.chosenXAxisType || "—";
   return `Debug: numericCandidates [${numericCandidates}], usableNumericMetrics [${usableNumeric}], dateCandidates [${dateCandidates}], chosenXAxisType ${chosenXAxisType}`;
 }
@@ -733,12 +750,41 @@ function chooseBestDimension(profile, categoricalColumns) {
   return filtered[0] || null;
 }
 
-function chooseBestCategoryForAxis(profile, categoricalColumns) {
-  const filtered = categoricalColumns
-    .filter((col) => profile[col].uniqueCount > 1)
-    .filter((col) => profile[col].uniqueCount <= 50)
-    .sort((a, b) => profile[b].uniqueCount - profile[a].uniqueCount);
-  return filtered[0] || null;
+function chooseCategoryColumn(rows, profiles) {
+  const columns = state.schema.columns?.length ? state.schema.columns : Object.keys(profiles || {});
+  const categoricals = columns.filter((col) => profiles[col]?.type === "categorical");
+  const within = categoricals.filter((col) => profiles[col]?.uniqueCount >= 2 && profiles[col]?.uniqueCount <= 25);
+  if (within.length) return within[0];
+  const sorted = categoricals
+    .filter((col) => profiles[col]?.uniqueCount > 1)
+    .sort((a, b) => (profiles[a]?.uniqueCount || Infinity) - (profiles[b]?.uniqueCount || Infinity));
+  return sorted[0] || null;
+}
+
+function isIdLikeColumn(colName, profile, rowCount) {
+  const lower = String(colName || "").toLowerCase();
+  const namePatterns = [
+    "id",
+    "uuid",
+    "guid",
+    "account id",
+    "account_id",
+    "user id",
+    "user_id",
+    "campaign id",
+    "campaign_id",
+    "order id",
+    "order_id",
+  ];
+  if (namePatterns.some((pattern) => lower.includes(pattern))) return true;
+  const uniqueRate = profile?.uniqueRate ?? 0;
+  if (rowCount >= 20 && uniqueRate >= 0.9) return true;
+  if (profile?.integerOnly && profile?.min !== null && profile?.max !== null) {
+    const range = Math.abs(profile.max - profile.min);
+    const nonBlank = profile.nonBlankCount || rowCount || 0;
+    if (nonBlank >= 20 && range > nonBlank * 10 && uniqueRate >= 0.8) return true;
+  }
+  return false;
 }
 
 function findIndustryColumn(columns) {
@@ -748,8 +794,8 @@ function findIndustryColumn(columns) {
 
 function initControls(recommendedMetrics) {
   metricSelect.innerHTML = "";
-  const allMetrics = Array.from(new Set([...recommendedMetrics, ...state.schema.numeric]));
-  allMetrics.forEach((metric) => {
+  const allMetrics = Array.from(new Set([...(recommendedMetrics || []), ...(state.schema.numeric || [])]));
+  (allMetrics || []).forEach((metric) => {
     const option = document.createElement("option");
     option.value = metric;
     option.textContent = metric;
@@ -761,7 +807,7 @@ function initControls(recommendedMetrics) {
   metricSelect.value = state.selections.primaryMetric || "";
 
   dimensionSelect.innerHTML = "";
-  const dimensions = state.schema.categoricals.length ? state.schema.categoricals : [];
+  const dimensions = state.schema.categoricals?.length ? state.schema.categoricals : [];
   if (state.schema.dates[0]) dimensions.push(state.schema.dates[0]);
   const uniqueDimensions = Array.from(new Set(dimensions));
   uniqueDimensions.forEach((dim) => {
@@ -836,16 +882,18 @@ function applyFiltersAndRender() {
   clearMessages();
   state.filteredRows = applyIndustryFilter(state.rawRows, state.filters.industry);
   const scopedRows = getFilteredRows();
-  if (!scopedRows.length) {
+  if (!Array.isArray(scopedRows) || scopedRows.length === 0) {
     showError("No rows for this industry.");
     return;
   }
 
   state.schema.profiles = profileDataset(scopedRows, state.schema.columns);
-  state.schema.numeric = Object.keys(state.schema.profiles).filter((col) => state.schema.profiles[col].type === "numeric");
-  state.schema.dates = Object.keys(state.schema.profiles).filter((col) => state.schema.profiles[col].type === "date");
-  state.schema.categoricals = Object.keys(state.schema.profiles).filter((col) => state.schema.profiles[col].type === "categorical");
-  const usableNumeric = state.schema.numeric.filter((col) => {
+  const numericCandidates = Object.keys(state.schema.profiles)
+    .filter((col) => state.schema.profiles[col].type === "numeric")
+    .filter((col) => !isIdLikeColumn(col, state.schema.profiles[col], scopedRows.length));
+  const dateCandidates = Object.keys(state.schema.profiles).filter((col) => state.schema.profiles[col].type === "date");
+  const categoricalCandidates = Object.keys(state.schema.profiles).filter((col) => state.schema.profiles[col].type === "categorical");
+  const usableNumeric = (numericCandidates || []).filter((col) => {
     let countParsed = 0;
     for (const row of scopedRows) {
       if (parseNumber(row[col]) !== null) {
@@ -855,31 +903,50 @@ function applyFiltersAndRender() {
     }
     return false;
   });
-  state.schema.numeric = usableNumeric;
-  state.schema.dates = state.schema.dates;
+  state.schema.numeric = Array.isArray(usableNumeric) ? usableNumeric : [];
+  state.schema.dates = Array.isArray(dateCandidates) ? dateCandidates : [];
+  state.schema.categoricals = Array.isArray(categoricalCandidates) ? categoricalCandidates : [];
+  state.debug.numericCandidates = numericCandidates;
+  state.debug.usableNumericMetrics = state.schema.numeric;
+  state.debug.dateCandidates = state.schema.dates;
   state.dateColumn = state.schema.dates[0] || null;
   if (!state.schema.numeric.length) {
-    showError("No usable numeric metrics detected for this filter.");
+    const message = numericCandidates.length
+      ? "No usable numeric metrics detected. Add at least one numeric column."
+      : "Only identifier style numeric columns detected. Add a true metric like revenue, spend, clicks.";
+    showError(message);
     return;
   }
   if (!state.selections.primaryMetric || !state.schema.numeric.includes(state.selections.primaryMetric)) {
     state.selections.primaryMetric = state.schema.numeric[0] || null;
   }
-  state.selections.compareMetrics = state.selections.compareMetrics.filter((m) => state.schema.numeric.includes(m));
+  state.selections.compareMetrics = (state.selections.compareMetrics || []).filter((m) => state.schema.numeric.includes(m));
 
   if (filterBadge) {
     filterBadge.textContent = `Filtered to: ${state.filters.industry || "All"}`;
   }
 
-  renderKPIs(scopedRows);
-  renderCharts(scopedRows);
-  renderMetricComparison(scopedRows);
-  renderTable(scopedRows, state.schema.columns);
-  renderInsights(scopedRows);
-  renderProfileTable(state.schema.profiles);
-  renderQualityBadge(scopedRows);
-  showWarnings(collectWarnings());
-  renderSuggestedTrends();
+  if (!runStep("buildKPIs", () => renderKPIs(scopedRows))) return;
+  if (!runStep("buildCharts", () => renderCharts(scopedRows))) return;
+  if (!runStep("buildComparison", () => renderMetricComparison(scopedRows))) return;
+  if (!runStep("buildTable", () => renderTable(scopedRows, state.schema.columns))) return;
+  if (!runStep("buildInsights", () => renderInsights(scopedRows))) return;
+  runStep("buildProfile", () => renderProfileTable(state.schema.profiles));
+  runStep("buildQuality", () => renderQualityBadge(scopedRows));
+  runStep("buildWarnings", () => showWarnings(collectWarnings()));
+  runStep("buildSuggestions", () => renderSuggestedTrends());
+}
+
+function runStep(step, fn) {
+  try {
+    console.log(`STEP: ${step}`);
+    fn();
+    return true;
+  } catch (error) {
+    console.error(`STEP FAILED: ${step}`, error);
+    showError(`Dashboard step failed: ${step}.`, `Details: ${error?.message || error}`);
+    return false;
+  }
 }
 
 function applyIndustryFilter(rows, industry) {
@@ -904,9 +971,9 @@ function getFilteredRows() {
 function renderKPIs(rows) {
   kpiGrid.innerHTML = "";
   const chosenMetrics = chooseKpiMetrics(state.schema.profiles, state.schema.numeric);
-  const metrics = chosenMetrics.length ? chosenMetrics : state.schema.numeric.slice(0, 6);
+  const metrics = (chosenMetrics && chosenMetrics.length ? chosenMetrics : (state.schema.numeric || []).slice(0, 6)) || [];
 
-  metrics.forEach((metric) => {
+  (metrics || []).forEach((metric) => {
     const values = rows
       .map((row) => parseNumber(row[metric]))
       .filter((value) => value !== null);
@@ -944,7 +1011,7 @@ function renderCharts(rows) {
   if (barChartInstance) barChartInstance.destroy();
   if (extraChartInstance) extraChartInstance.destroy();
 
-  const metric = state.selections.primaryMetric || chooseTopNumericByVariance(state.schema.profiles, state.schema.numeric);
+  const metric = state.selections.primaryMetric || chooseTopNumericByVariance(state.schema.profiles, state.schema.numeric || []);
   state.selections.primaryMetric = metric;
   const metricValues = rows.map((row) => parseNumber(row[metric])).filter((value) => value !== null);
   const metricType = inferMetricType(metric, metricValues);
@@ -957,7 +1024,7 @@ function renderCharts(rows) {
     trendSubtitle.textContent = `Grouped by ${bucket}`;
     trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType);
   } else {
-    const category = chooseBestCategoryForAxis(state.schema.profiles, state.schema.categoricals);
+    const category = chooseCategoryColumn(rows, state.schema.profiles);
     if (category) {
       state.chosenXAxisType = "category";
       const series = aggregateByCategory(rows, category, metric, state.topN);
@@ -974,13 +1041,24 @@ function renderCharts(rows) {
     }
   }
 
-  const dimension = state.selectedDimension || chooseBestDimension(state.schema.profiles, state.schema.categoricals) || state.dateColumn;
-  state.selectedDimension = dimension;
-  if (dimensionSelect.value !== dimension) dimensionSelect.value = dimension;
-  const breakdown = aggregateByCategory(rows, dimension, metric, state.topN);
-  barTitle.textContent = `${metric} by ${dimension}`;
-  barSubtitle.textContent = `Top ${state.topN}`;
-  barChartInstance = createBarChart("barChart", breakdown.labels, breakdown.values, metricType);
+  let dimension = state.selectedDimension || chooseBestDimension(state.schema.profiles, state.schema.categoricals || []) || state.dateColumn;
+  let breakdown = null;
+  if (dimension) {
+    state.selectedDimension = dimension;
+    if (dimensionSelect.value !== dimension) dimensionSelect.value = dimension;
+    breakdown = aggregateByCategory(rows, dimension, metric, state.topN);
+    barTitle.textContent = `${metric} by ${dimension}`;
+    barSubtitle.textContent = `Top ${state.topN}`;
+    barChartInstance = createBarChart("barChart", breakdown.labels, breakdown.values, metricType);
+  } else {
+    state.selectedDimension = null;
+    if (dimensionSelect) dimensionSelect.value = "";
+    const labels = rows.map((_, index) => index + 1);
+    const values = rows.map((row) => parseNumber(row[metric]) ?? 0);
+    barTitle.textContent = `${metric} by row`;
+    barSubtitle.textContent = "No category column detected";
+    barChartInstance = createBarChart("barChart", labels, values, metricType);
+  }
 
   const correlationPair = findStrongestCorrelation(rows, state.schema.numeric);
   if (correlationPair) {
@@ -1011,7 +1089,7 @@ function renderProfileTable(profile) {
   thead.appendChild(headerRow);
 
   const tbody = document.createElement("tbody");
-  Object.entries(profile).forEach(([col, stats]) => {
+  Object.entries(profile || {}).forEach(([col, stats]) => {
     const tr = document.createElement("tr");
     const dateRange = stats.dateMin && stats.dateMax
       ? `${formatDateInput(stats.dateMin)} → ${formatDateInput(stats.dateMax)}`
@@ -1035,7 +1113,7 @@ function renderProfileTable(profile) {
       stats.type === "categorical" ? topValues : "—",
     ];
 
-    cells.forEach((value) => {
+    (cells || []).forEach((value) => {
       const td = document.createElement("td");
       td.textContent = value;
       tr.appendChild(td);
@@ -1098,7 +1176,7 @@ function renderTable(rows, columns) {
   table.innerHTML = "";
   const thead = document.createElement("thead");
   const headerRow = document.createElement("tr");
-  columns.forEach((col) => {
+  (columns || []).forEach((col) => {
     const th = document.createElement("th");
     th.textContent = col;
     th.addEventListener("click", () => sortTable(col));
@@ -1107,9 +1185,9 @@ function renderTable(rows, columns) {
   thead.appendChild(headerRow);
 
   const tbody = document.createElement("tbody");
-  currentTableRows.forEach((row) => {
+  (currentTableRows || []).forEach((row) => {
     const tr = document.createElement("tr");
-    columns.forEach((col) => {
+    (columns || []).forEach((col) => {
       const td = document.createElement("td");
       td.textContent = row[col] ?? "";
       tr.appendChild(td);
@@ -1153,7 +1231,7 @@ function inferMetricType(metric, values) {
 
 function computeRateValue(metric, values) {
   if (!values.length) return 0;
-  const denominator = findRateDenominator(metric, state.schema.numeric);
+  const denominator = findRateDenominator(metric, state.schema.numeric || []);
   if (!denominator) {
     const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
     return avg;
@@ -1177,7 +1255,7 @@ function findRateDenominator(metric, numericColumns) {
   for (const rule of mapping) {
     if (rule.pattern.test(lower)) {
       for (const denomPattern of rule.denoms) {
-        const found = numericColumns.find((col) => denomPattern.test(col.toLowerCase()));
+        const found = (numericColumns || []).find((col) => denomPattern.test(col.toLowerCase()));
         if (found) return found;
       }
     }
@@ -1231,7 +1309,7 @@ function computePeriodChange(rows, metric) {
 
 function aggregateByDate(rows, dateColumn, metric, bucket, dateRange) {
   const totals = new Map();
-  rows.forEach((row) => {
+  (rows || []).forEach((row) => {
     const dateValue = parseDate(row[dateColumn]);
     const metricValue = parseNumber(row[metric]);
     if (!dateValue || metricValue === null) return;
@@ -1247,8 +1325,11 @@ function aggregateByDate(rows, dateColumn, metric, bucket, dateRange) {
 }
 
 function aggregateByCategory(rows, dimension, metric, topN) {
+  if (!dimension) {
+    return { labels: [], values: [] };
+  }
   const totals = new Map();
-  rows.forEach((row) => {
+  (rows || []).forEach((row) => {
     const key = row[dimension] ? String(row[dimension]).trim() : "Unknown";
     const metricValue = parseNumber(row[metric]);
     if (metricValue === null) return;
@@ -1400,7 +1481,7 @@ function buildCorrelationMatrix() {
 }
 
 function findStrongestCorrelation(rows, numericColumns) {
-  if (numericColumns.length < 2) return null;
+  if (!Array.isArray(numericColumns) || numericColumns.length < 2) return null;
   let best = null;
   for (let i = 0; i < numericColumns.length; i += 1) {
     for (let j = i + 1; j < numericColumns.length; j += 1) {
@@ -1428,7 +1509,7 @@ function findStrongestCorrelation(rows, numericColumns) {
 }
 
 function computeCorrelation(rows, xMetric, yMetric) {
-  const pairs = rows
+  const pairs = (rows || [])
     .map((row) => {
       const xVal = parseNumber(row[xMetric]);
       const yVal = parseNumber(row[yMetric]);
@@ -1494,6 +1575,7 @@ function collectWarnings() {
 }
 
 function countDuplicateRows(rows) {
+  if (!Array.isArray(rows)) return 0;
   const seen = new Set();
   let duplicates = 0;
   rows.forEach((row) => {
@@ -1505,6 +1587,7 @@ function countDuplicateRows(rows) {
 }
 
 function countDateGaps(rows, dateColumn) {
+  if (!Array.isArray(rows)) return 0;
   const dates = rows
     .map((row) => parseDate(row[dateColumn]))
     .filter(Boolean)
@@ -1543,7 +1626,7 @@ function buildDecisionInsights(rows) {
   if (!metric) return insights;
   const contextPrefix = state.filters.industry !== "All" ? `Within ${state.filters.industry}, ` : "";
 
-  const segmentColumn = state.industryColumn || chooseBestCategoryForAxis(state.schema.profiles, state.schema.categoricals);
+  const segmentColumn = state.industryColumn || chooseCategoryColumn(rows, state.schema.profiles);
   if (segmentColumn) {
     const breakdown = aggregateByCategory(rows, segmentColumn, metric, 12);
     if (breakdown.labels.length >= 2) {
@@ -1584,16 +1667,18 @@ function buildDecisionInsights(rows) {
 
   if (segmentColumn) {
     const breakdown = aggregateByCategory(rows, segmentColumn, metric, 8);
-    const total = breakdown.values.reduce((sum, val) => sum + val, 0);
-    const share = total ? breakdown.values[0] / total : 0;
-    insights.push({
-      title: `${contextPrefix}Concentration`,
-      summary: `${breakdown.labels[0]} contributes ${percentFormatter.format(share)} of ${metric}.`,
-      bullets: [
-        `Top segment share: ${percentFormatter.format(share)}`,
-        share > 0.4 ? "High concentration (>40%)" : "Balanced distribution",
-      ],
-    });
+    if (breakdown.labels.length) {
+      const total = breakdown.values.reduce((sum, val) => sum + val, 0);
+      const share = total ? breakdown.values[0] / total : 0;
+      insights.push({
+        title: `${contextPrefix}Concentration`,
+        summary: `${breakdown.labels[0]} contributes ${percentFormatter.format(share)} of ${metric}.`,
+        bullets: [
+          `Top segment share: ${percentFormatter.format(share)}`,
+          share > 0.4 ? "High concentration (>40%)" : "Balanced distribution",
+        ],
+      });
+    }
   }
 
   const variance = computeCoefficientOfVariation(rows, metric);
@@ -1635,7 +1720,7 @@ function buildDecisionInsights(rows) {
 
 function renderMetricComparison(rows) {
   if (!rows.length) return;
-  const numericMetrics = state.schema.numeric;
+  const numericMetrics = Array.isArray(state.schema.numeric) ? state.schema.numeric : [];
   if (!numericMetrics.length) return;
 
   const primary = state.selections.primaryMetric || chooseTopNumericByVariance(state.schema.profiles, numericMetrics);
@@ -1643,7 +1728,7 @@ function renderMetricComparison(rows) {
 
   if (primaryMetricSelect) {
     primaryMetricSelect.innerHTML = "";
-    numericMetrics.forEach((metric) => {
+    (numericMetrics || []).forEach((metric) => {
       const option = document.createElement("option");
       option.value = metric;
       option.textContent = metric;
@@ -1658,12 +1743,12 @@ function renderMetricComparison(rows) {
 
   const availableCompare = numericMetrics.filter((metric) => metric !== primary);
   if (compareMetricSelect) {
-    const selected = state.selections.compareMetrics.length
+    const selected = (state.selections.compareMetrics || []).length
       ? state.selections.compareMetrics
       : chooseTopNumericByVariance(state.schema.profiles, availableCompare, 3);
-    state.selections.compareMetrics = selected;
+    state.selections.compareMetrics = Array.isArray(selected) ? selected : [];
     compareMetricSelect.innerHTML = "";
-    availableCompare.forEach((metric) => {
+    (availableCompare || []).forEach((metric) => {
       const option = document.createElement("option");
       option.value = metric;
       option.textContent = metric;
@@ -1672,7 +1757,7 @@ function renderMetricComparison(rows) {
     });
     compareMetricSelect.onchange = () => {
       const chosen = Array.from(compareMetricSelect.selectedOptions).map((opt) => opt.value).slice(0, 5);
-      state.selections.compareMetrics = chosen;
+      state.selections.compareMetrics = Array.isArray(chosen) ? chosen : [];
       applyFiltersAndRender();
     };
   }
@@ -1693,7 +1778,7 @@ function renderComparisonTrend(rows, primary) {
     comparisonChartInstance = createLineChart("comparisonTrendChart", series.labels, series.values, metricType);
     if (comparisonNote) comparisonNote.textContent = `Primary metric trend by ${state.dateColumn}`;
   } else {
-    const category = chooseBestCategoryForAxis(state.schema.profiles, state.schema.categoricals);
+    const category = chooseCategoryColumn(rows, state.schema.profiles);
     if (category) {
       const series = aggregateByCategory(rows, category, primary, 8);
       comparisonChartInstance = createBarChart("comparisonTrendChart", series.labels, series.values, metricType);
@@ -1710,12 +1795,13 @@ function renderComparisonTrend(rows, primary) {
 function renderDriversList(rows, primary, compareMetrics) {
   if (!driversList) return;
   driversList.innerHTML = "";
-  if (!compareMetrics.length) {
+  const metrics = Array.isArray(compareMetrics) ? compareMetrics : [];
+  if (!metrics.length) {
     driversList.innerHTML = "<li>Select metrics to compare.</li>";
     return;
   }
 
-  const items = compareMetrics.map((metric) => {
+  const items = metrics.map((metric) => {
     const corr = computeCorrelation(rows, primary, metric);
     if (corr === null) {
       return { metric, corr: null, label: "Insufficient data" };
@@ -1747,7 +1833,7 @@ function renderSegmentView(rows, primary) {
     dimension = findAlternateCategory(state.schema.categoricals, state.industryColumn);
   }
   if (!dimension) {
-    dimension = chooseBestCategoryForAxis(state.schema.profiles, state.schema.categoricals);
+    dimension = chooseCategoryColumn(rows, state.schema.profiles);
   }
   if (!dimension) return;
 
@@ -1760,7 +1846,7 @@ function findAlternateCategory(categories, industryColumn) {
 }
 
 function chooseTopNumericByVariance(profile, numericColumns, limit = 1) {
-  const sorted = [...numericColumns].sort((a, b) => (profile[b]?.std || 0) - (profile[a]?.std || 0));
+  const sorted = [...(numericColumns || [])].sort((a, b) => (profile[b]?.std || 0) - (profile[a]?.std || 0));
   if (limit === 1) return sorted[0];
   return sorted.slice(0, limit);
 }
@@ -1787,7 +1873,7 @@ function renderSuggestedTrends() {
     suggestions.push("Add a date or categorical column to unlock trend suggestions.");
   }
 
-  suggestions.forEach((text) => {
+  (suggestions || []).forEach((text) => {
     const li = document.createElement("li");
     li.textContent = text;
     suggestedTrends.appendChild(li);
@@ -1824,14 +1910,14 @@ function exportFilteredCsv() {
 
 function downloadInsights() {
   const rows = getFilteredRows();
-  const insights = buildInsights(rows);
+  const insights = buildDecisionInsights(rows);
   const content = [
     "Insights",
     `Generated: ${new Date().toLocaleString()}`,
     `Metric: ${state.selections.primaryMetric}`,
     `Dimension: ${state.selectedDimension || "—"}`,
     "",
-    ...insights.map((text, index) => `${index + 1}. ${text}`),
+    ...insights.map((insight, index) => `${index + 1}. ${insight.title} - ${insight.summary}`),
   ].join("\n");
 
   const blob = new Blob([content], { type: "text/plain;charset=utf-8;" });
