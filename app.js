@@ -122,6 +122,7 @@ const state = {
     dates: [],
     categoricals: [],
   },
+  numericColumns: [],
   debug: {
     numericCandidates: [],
     usableNumericMetrics: [],
@@ -134,6 +135,7 @@ const state = {
     primaryMetric: null,
     compareMetrics: [],
   },
+  selectedMetric: null,
   dateRange: { start: null, end: null },
   domain: "general",
   domainAuto: true,
@@ -336,9 +338,11 @@ function resetStateForNewDataset() {
   destroyAllCharts();
   state.filteredRows = [];
   state.schema = { columns: [], profiles: {}, numeric: [], dates: [], categoricals: [] };
+  state.numericColumns = [];
   state.debug = { numericCandidates: [], usableNumericMetrics: [], dateCandidates: [] };
   state.filters = { industry: "All" };
   state.selections = { primaryMetric: null, compareMetrics: [] };
+  state.selectedMetric = null;
   state.industryColumn = null;
   state.dateRange = { start: null, end: null };
   state.chosenXAxisType = "category";
@@ -460,6 +464,7 @@ function ingestRows(rawRows) {
     return false;
   });
   state.schema.numeric = Array.isArray(usableNumericMetrics) ? usableNumericMetrics : [];
+  state.numericColumns = state.schema.numeric;
   state.schema.dates = Array.isArray(dateCandidates) ? dateCandidates : [];
   state.schema.categoricals = Array.isArray(categoricalCandidates) ? categoricalCandidates : [];
   state.debug.numericCandidates = numericCandidates;
@@ -471,13 +476,14 @@ function ingestRows(rawRows) {
     const detail = buildNumericFailureDetail(state.schema.profiles);
     const message = numericCandidates.length
       ? "No usable numeric metrics detected. Add at least one numeric column."
-      : "Only identifier style numeric columns detected. Add a true metric like revenue, spend, clicks.";
+      : "No usable numeric metrics found. We detected numeric identifiers only. Add metrics like revenue, spend, clicks, orders.";
     showError(message, detail);
     return;
   }
 
   const recommendedMetrics = chooseKpiMetrics(state.schema.profiles, state.schema.numeric);
   state.selections.primaryMetric = recommendedMetrics[0] || state.schema.numeric[0] || null;
+  state.selectedMetric = state.selections.primaryMetric;
   state.selectedDimension = chooseBestDimension(state.schema.profiles, state.schema.categoricals) || state.schema.dates[0] || null;
 
   initControls(recommendedMetrics);
@@ -804,6 +810,7 @@ function initControls(recommendedMetrics) {
   if (!state.selections.primaryMetric || !allMetrics.includes(state.selections.primaryMetric)) {
     state.selections.primaryMetric = allMetrics[0] || null;
   }
+  state.selectedMetric = state.selections.primaryMetric;
   metricSelect.value = state.selections.primaryMetric || "";
 
   dimensionSelect.innerHTML = "";
@@ -883,7 +890,7 @@ function applyFiltersAndRender() {
   state.filteredRows = applyIndustryFilter(state.rawRows, state.filters.industry);
   const scopedRows = getFilteredRows();
   if (!Array.isArray(scopedRows) || scopedRows.length === 0) {
-    showError("No rows for this industry.");
+    showError("No rows match this filter.");
     return;
   }
 
@@ -904,6 +911,7 @@ function applyFiltersAndRender() {
     return false;
   });
   state.schema.numeric = Array.isArray(usableNumeric) ? usableNumeric : [];
+  state.numericColumns = state.schema.numeric;
   state.schema.dates = Array.isArray(dateCandidates) ? dateCandidates : [];
   state.schema.categoricals = Array.isArray(categoricalCandidates) ? categoricalCandidates : [];
   state.debug.numericCandidates = numericCandidates;
@@ -913,13 +921,14 @@ function applyFiltersAndRender() {
   if (!state.schema.numeric.length) {
     const message = numericCandidates.length
       ? "No usable numeric metrics detected. Add at least one numeric column."
-      : "Only identifier style numeric columns detected. Add a true metric like revenue, spend, clicks.";
+      : "No usable numeric metrics found. We detected numeric identifiers only. Add metrics like revenue, spend, clicks, orders.";
     showError(message);
     return;
   }
   if (!state.selections.primaryMetric || !state.schema.numeric.includes(state.selections.primaryMetric)) {
     state.selections.primaryMetric = state.schema.numeric[0] || null;
   }
+  state.selectedMetric = state.selections.primaryMetric;
   state.selections.compareMetrics = (state.selections.compareMetrics || []).filter((m) => state.schema.numeric.includes(m));
 
   if (filterBadge) {
@@ -1013,6 +1022,7 @@ function renderCharts(rows) {
 
   const metric = state.selections.primaryMetric || chooseTopNumericByVariance(state.schema.profiles, state.schema.numeric || []);
   state.selections.primaryMetric = metric;
+  state.selectedMetric = metric;
   const metricValues = rows.map((row) => parseNumber(row[metric])).filter((value) => value !== null);
   const metricType = inferMetricType(metric, metricValues);
 
@@ -1130,17 +1140,17 @@ function renderQualityBadge(rows) {
   const label = `Quality ${score}`;
   qualityBadge.textContent = label;
   if (score >= 85) {
-    qualityBadge.style.background = "rgba(124,58,237,0.15)";
+    qualityBadge.style.background = "rgba(124,58,237,0.18)";
     qualityBadge.style.color = "#ffffff";
-    qualityBadge.style.borderColor = "rgba(124,58,237,0.4)";
+    qualityBadge.style.borderColor = "rgba(124,58,237,0.45)";
   } else if (score >= 70) {
-    qualityBadge.style.background = "#fff7e8";
-    qualityBadge.style.color = "#8b5b1a";
-    qualityBadge.style.borderColor = "#f3d3a2";
+    qualityBadge.style.background = "rgba(139,92,246,0.16)";
+    qualityBadge.style.color = "#e9d5ff";
+    qualityBadge.style.borderColor = "rgba(139,92,246,0.4)";
   } else {
-    qualityBadge.style.background = "#ffe9e8";
-    qualityBadge.style.color = "#a6342a";
-    qualityBadge.style.borderColor = "#f7c8c2";
+    qualityBadge.style.background = "rgba(124,58,237,0.10)";
+    qualityBadge.style.color = "#e5e7eb";
+    qualityBadge.style.borderColor = "rgba(124,58,237,0.25)";
   }
 }
 
@@ -1647,19 +1657,33 @@ function buildDecisionInsights(rows) {
 
   if (state.dateColumn) {
     const series = aggregateByDate(rows, state.dateColumn, metric, "day", state.dateRange);
-    if (series.values.length >= 14) {
-      const recent = series.values.slice(-7);
-      const prior = series.values.slice(-14, -7);
+    const window = series.values.length >= 14 ? 7 : series.values.length >= 6 ? 3 : 0;
+    if (window) {
+      const recent = series.values.slice(-window);
+      const prior = series.values.slice(-window * 2, -window);
       const recentTotal = recent.reduce((sum, val) => sum + val, 0);
       const priorTotal = prior.reduce((sum, val) => sum + val, 0);
       const delta = recentTotal - priorTotal;
       const pct = priorTotal ? delta / priorTotal : 0;
       insights.push({
-        title: `${contextPrefix}Trend momentum`,
+        title: `${contextPrefix}Period over period change`,
         summary: `${metric} is ${delta >= 0 ? "up" : "down"} versus the prior period.`,
         bullets: [
-          `Last 7 days: ${formatMetricValue(recentTotal, inferMetricType(metric, [recentTotal]))}`,
+          `Last ${window}: ${formatMetricValue(recentTotal, inferMetricType(metric, [recentTotal]))}`,
           `Change: ${formatMetricValue(delta, inferMetricType(metric, [delta]))} (${percentFormatter.format(pct)})`,
+        ],
+      });
+    }
+  } else {
+    const category = chooseCategoryColumn(rows, state.schema.profiles);
+    if (category) {
+      const breakdown = aggregateByCategory(rows, category, metric, 5);
+      insights.push({
+        title: `${contextPrefix}Top categories contributing most`,
+        summary: `${breakdown.labels[0]} leads ${metric} among ${category}.`,
+        bullets: [
+          `Top: ${breakdown.labels[0]} (${formatMetricValue(breakdown.values[0], inferMetricType(metric, [breakdown.values[0]]))})`,
+          `Second: ${breakdown.labels[1] || "—"} (${breakdown.values[1] ? formatMetricValue(breakdown.values[1], inferMetricType(metric, [breakdown.values[1]])) : "—"})`,
         ],
       });
     }
@@ -1705,7 +1729,7 @@ function buildDecisionInsights(rows) {
     });
     if (best) {
       insights.push({
-        title: `${contextPrefix}Relationship`,
+        title: `${contextPrefix}Driver candidate`,
         summary: `Strongest relationship is with ${best.metric}.`,
         bullets: [
           `Correlation: ${best.corr.toFixed(2)}`,
@@ -1715,7 +1739,22 @@ function buildDecisionInsights(rows) {
     }
   }
 
-  return insights.slice(0, 5);
+  const riskColumn = Object.entries(state.schema.profiles || {})
+    .map(([col, stats]) => ({ col, missingRate: stats.missingRate || 0 }))
+    .filter((item) => item.missingRate >= 0.3)
+    .sort((a, b) => b.missingRate - a.missingRate)[0];
+  if (riskColumn) {
+    insights.push({
+      title: `${contextPrefix}Data quality risk`,
+      summary: `${riskColumn.col} has high missing data that could distort insights.`,
+      bullets: [
+        `Missing rate: ${(riskColumn.missingRate * 100).toFixed(0)}%`,
+        "Consider validating data collection or filtering missing rows.",
+      ],
+    });
+  }
+
+  return insights.slice(0, 6);
 }
 
 function renderMetricComparison(rows) {
