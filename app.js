@@ -26,6 +26,21 @@ const extraSubtitle = document.getElementById("extraSubtitle");
 const insightsList = document.getElementById("insightsList");
 const profileTable = document.getElementById("profileTable");
 const qualityBadge = document.getElementById("qualityBadge");
+const buildStamp = document.getElementById("buildStamp");
+
+if (buildStamp) {
+  buildStamp.textContent = `Build: ${new Date().toISOString()}`;
+}
+
+window.addEventListener("error", (event) => {
+  const detail = event?.message ? `Details: ${event.message}` : "Details: unknown error";
+  showError("Something went wrong while running the dashboard.", detail);
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  const reason = event?.reason?.message || event?.reason || "unknown error";
+  showError("A background task failed. Please refresh and try again.", `Details: ${reason}`);
+});
 
 let trendChartInstance = null;
 let barChartInstance = null;
@@ -124,6 +139,10 @@ function handleFile(file) {
 
 function loadSampleData() {
   clearMessages();
+  if (window.location.protocol === "file:") {
+    showWarningMessage("Sample loading requires a local server. Use Upload or run a local server.");
+    return;
+  }
   Papa.parse(samplePath, {
     download: true,
     header: false,
@@ -145,8 +164,12 @@ function clearMessages() {
   warningsSection.innerHTML = "";
 }
 
-function showError(message) {
-  errorSection.textContent = message;
+function showError(message, detail) {
+  if (detail) {
+    errorSection.innerHTML = `<strong>${message}</strong><div class="error-detail">${detail}</div>`;
+  } else {
+    errorSection.textContent = message;
+  }
   errorSection.classList.remove("hidden");
 }
 
@@ -160,6 +183,11 @@ function showWarnings(warnings) {
   warningsSection.innerHTML = `<strong>Data quality warnings</strong><ul>${warnings
     .map((warning) => `<li>${warning}</li>`)
     .join("")}</ul>`;
+}
+
+function showWarningMessage(message) {
+  warningsSection.classList.remove("hidden");
+  warningsSection.innerHTML = `<strong>Notice</strong><ul><li>${message}</li></ul>`;
 }
 
 function ingestRows(rawRows) {
@@ -208,7 +236,8 @@ function ingestRows(rawRows) {
   );
 
   if (!state.numericColumns.length) {
-    showError("No usable numeric metrics detected. Add at least one numeric column.");
+    const detail = buildNumericFailureDetail(state.profile);
+    showError("No usable numeric metrics detected. Add at least one numeric column.", detail);
     return;
   }
 
@@ -241,15 +270,35 @@ function normalizeHeaders(headers) {
 }
 
 function parseNumber(value) {
-  if (value === null || value === undefined || value === "") return null;
+  if (value === null || value === undefined) return null;
   let cleaned = String(value).trim();
   if (!cleaned) return null;
-  const isPercent = cleaned.includes("%") || /\bpercent\b/i.test(cleaned);
-  cleaned = cleaned.replace(/[,$]/g, "").replace(/%/g, "");
-  cleaned = cleaned.replace(/^\((.*)\)$/, "-$1");
+
+  const lower = cleaned.toLowerCase();
+  if (["n/a", "na", "-", "--", ""].includes(lower)) return null;
+
+  let isNegative = false;
+  if (/^\(.*\)$/.test(cleaned)) {
+    isNegative = true;
+    cleaned = cleaned.replace(/^\(|\)$/g, "");
+  }
+
+  const isPercent = /%/.test(cleaned);
+  cleaned = cleaned.replace(/%/g, "");
+
+  cleaned = cleaned.replace(/\b(usd|cad|eur|gbp)\b/gi, "");
+  cleaned = cleaned.replace(/[$€£]/g, "");
+
+  cleaned = cleaned.replace(/[\s,_]/g, "");
+
+  cleaned = cleaned.trim();
+  if (!cleaned) return null;
+
   const number = Number(cleaned);
   if (Number.isNaN(number)) return null;
-  return isPercent ? number / 100 : number;
+  let result = isNegative ? -number : number;
+  if (isPercent) result /= 100;
+  return result;
 }
 
 function parseDate(value) {
@@ -267,6 +316,7 @@ function profileDataset(rows, columns) {
     const missingRate = values.length ? (values.length - nonMissing.length) / values.length : 1;
 
     const numericValues = [];
+    const failedSamples = [];
     let numericCount = 0;
     let dateCount = 0;
     nonMissing.forEach((value) => {
@@ -274,6 +324,8 @@ function profileDataset(rows, columns) {
       if (num !== null) {
         numericCount += 1;
         numericValues.push(num);
+      } else if (failedSamples.length < 3) {
+        failedSamples.push(String(value));
       }
       const date = parseDate(value);
       if (date) dateCount += 1;
@@ -281,10 +333,12 @@ function profileDataset(rows, columns) {
 
     const numericRate = nonMissing.length ? numericCount / nonMissing.length : 0;
     const dateRate = nonMissing.length ? dateCount / nonMissing.length : 0;
+    const nonBlankCount = nonMissing.length;
 
     let type = "categorical";
     if (dateRate >= 0.8) type = "date";
-    else if (numericRate >= 0.8) type = "numeric";
+    else if (numericRate >= 0.6) type = "numeric";
+    else if (nonBlankCount >= 20 && numericRate >= 0.7) type = "numeric";
 
     const uniqueSet = new Set(nonMissing.map((value) => String(value).trim()));
     const uniqueCount = uniqueSet.size;
@@ -294,6 +348,9 @@ function profileDataset(rows, columns) {
       missingRate,
       uniqueCount,
       nonNumericRate: type === "numeric" ? 1 - numericRate : null,
+      numericRate,
+      nonBlankCount,
+      failedSamples,
       min: null,
       max: null,
       mean: null,
@@ -372,6 +429,25 @@ function inferDomain(profile) {
   const best = Object.entries(scores).sort((a, b) => b[1] - a[1])[0];
   if (!best || best[1] === 0) return "general";
   return best[0];
+}
+
+function buildNumericFailureDetail(profile) {
+  const candidates = Object.entries(profile)
+    .map(([col, stats]) => ({
+      col,
+      numericRate: stats.numericRate ?? 0,
+      nonBlankCount: stats.nonBlankCount ?? 0,
+      failedSamples: stats.failedSamples ?? [],
+    }))
+    .sort((a, b) => b.numericRate - a.numericRate)
+    .slice(0, 5);
+
+  const lines = candidates.map((item) => {
+    const samples = item.failedSamples.length ? item.failedSamples.join(", ") : "—";
+    return `${item.col}: numericRate ${(item.numericRate * 100).toFixed(0)}%, nonBlank ${item.nonBlankCount}, samples ${samples}`;
+  });
+
+  return lines.join("<br>");
 }
 function chooseKpiMetrics(profile, numericColumns) {
   const domainKeywords = {
