@@ -173,6 +173,25 @@ p {
   gap: 6px;
 }
 
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.quality-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #eef5f1;
+  color: #2f5e4e;
+  border: 1px solid #d2e6db;
+}
+
 .kpi-grid {
   display: grid;
   gap: 18px;
