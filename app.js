@@ -105,6 +105,9 @@ const state = {
   rows: [],
   columns: [],
   profile: {},
+  numericCandidates: [],
+  dateCandidates: [],
+  usableNumericMetrics: [],
   numericColumns: [],
   categoricalColumns: [],
   dateColumn: null,
@@ -115,6 +118,7 @@ const state = {
   domain: "general",
   domainAuto: true,
   inferredDomain: "general",
+  chosenXAxisType: "category",
 };
 
 document.addEventListener("DOMContentLoaded", init);
@@ -301,9 +305,11 @@ function clearMessages() {
 
 function showError(message, detail) {
   if (detail) {
-    errorSection.innerHTML = `<strong>${message}</strong><div class="error-detail">${detail}</div>`;
+    const debug = buildDebugInfo();
+    errorSection.innerHTML = `<strong>${message}</strong><div class="error-detail">${detail}</div><div class="error-detail">${debug}</div>`;
   } else {
-    errorSection.textContent = message;
+    const debug = buildDebugInfo();
+    errorSection.innerHTML = `<strong>${message}</strong><div class="error-detail">${debug}</div>`;
   }
   errorSection.classList.remove("hidden");
   console.error(message, detail || "");
@@ -370,15 +376,27 @@ function ingestRows(rawRows) {
   state.profile = profileDataset(rows, cleanedHeaders);
   state.inferredDomain = inferDomain(state.profile);
   state.domain = state.domainAuto ? state.inferredDomain : state.domain;
-  state.numericColumns = Object.keys(state.profile).filter(
+  state.numericCandidates = Object.keys(state.profile).filter(
     (col) => state.profile[col].type === "numeric"
   );
-  state.dateColumn = Object.keys(state.profile).find((col) => state.profile[col].type === "date") || null;
+  state.dateCandidates = Object.keys(state.profile).filter((col) => state.profile[col].type === "date");
   state.categoricalColumns = Object.keys(state.profile).filter(
     (col) => state.profile[col].type === "categorical"
   );
+  state.usableNumericMetrics = state.numericCandidates.filter((col) => {
+    let countParsed = 0;
+    for (const row of rows) {
+      if (parseNumber(row[col]) !== null) {
+        countParsed += 1;
+        if (countParsed >= 1) return true;
+      }
+    }
+    return false;
+  });
+  state.numericColumns = state.usableNumericMetrics;
+  state.dateColumn = state.dateCandidates[0] || null;
 
-  if (!state.numericColumns.length) {
+  if (!state.usableNumericMetrics.length) {
     const detail = buildNumericFailureDetail(state.profile);
     showError("No usable numeric metrics detected. Add at least one numeric column.", detail);
     return;
@@ -452,9 +470,14 @@ function parseNumber(value) {
 
 function parseDate(value) {
   if (!value) return null;
-  const date = new Date(value);
+  const raw = String(value).trim();
+  if (!raw) return null;
+  const isoLike = /^\d{4}[-/]\d{2}[-/]\d{2}/.test(raw);
+  const parsed = Date.parse(raw);
+  if (Number.isNaN(parsed)) return null;
+  const date = new Date(parsed);
   if (Number.isNaN(date.valueOf())) return null;
-  return date;
+  return isoLike ? date : date;
 }
 
 function profileDataset(rows, columns) {
@@ -607,6 +630,14 @@ function escapeHtml(text) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
+
+function buildDebugInfo() {
+  const numericCandidates = state.numericCandidates?.join(", ") || "—";
+  const usableNumeric = state.usableNumericMetrics?.join(", ") || "—";
+  const dateCandidates = state.dateCandidates?.join(", ") || "—";
+  const chosenXAxisType = state.chosenXAxisType || "—";
+  return `Debug: numericCandidates [${numericCandidates}], usableNumericMetrics [${usableNumeric}], dateCandidates [${dateCandidates}], chosenXAxisType ${chosenXAxisType}`;
+}
 function chooseKpiMetrics(profile, numericColumns) {
   const domainKeywords = {
     finance: ["revenue", "sales", "profit", "margin", "cost", "expense", "spend", "cash", "income"],
@@ -637,6 +668,14 @@ function chooseBestDimension(profile, categoricalColumns) {
     .filter((col) => profile[col].uniqueCount > 1)
     .filter((col) => profile[col].uniqueCount <= 20)
     .sort((a, b) => profile[a].uniqueCount - profile[b].uniqueCount);
+  return filtered[0] || null;
+}
+
+function chooseBestCategoryForAxis(profile, categoricalColumns) {
+  const filtered = categoricalColumns
+    .filter((col) => profile[col].uniqueCount > 1)
+    .filter((col) => profile[col].uniqueCount <= 50)
+    .sort((a, b) => profile[b].uniqueCount - profile[a].uniqueCount);
   return filtered[0] || null;
 }
 
@@ -765,15 +804,28 @@ function renderCharts(rows) {
   const metricType = inferMetricType(metric, metricValues);
 
   if (state.dateColumn) {
+    state.chosenXAxisType = "date";
     const bucket = state.rows.length > 200 ? "week" : "day";
     const series = aggregateByDate(rows, state.dateColumn, metric, bucket, state.dateRange);
     trendTitle.textContent = `${metric} trend`;
     trendSubtitle.textContent = `Grouped by ${bucket}`;
     trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType);
   } else {
-    trendTitle.textContent = "Trend";
-    trendSubtitle.textContent = "Date column not detected";
-    trendChartInstance = createLineChart("trendChart", [], [], metricType);
+    const category = chooseBestCategoryForAxis(state.profile, state.categoricalColumns);
+    if (category) {
+      state.chosenXAxisType = "category";
+      const series = aggregateByCategory(rows, category, metric, state.topN);
+      trendTitle.textContent = `${metric} by ${category}`;
+      trendSubtitle.textContent = "No date column detected";
+      trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType);
+    } else {
+      state.chosenXAxisType = "index";
+      const labels = rows.map((_, index) => index + 1);
+      const values = rows.map((row) => parseNumber(row[metric])).map((value) => value ?? 0);
+      trendTitle.textContent = `${metric} by row`;
+      trendSubtitle.textContent = "No date column detected";
+      trendChartInstance = createLineChart("trendChart", labels, values, metricType);
+    }
   }
 
   const dimension = state.selectedDimension || chooseBestDimension(state.profile, state.categoricalColumns) || state.dateColumn;
@@ -1337,6 +1389,8 @@ function collectWarnings() {
     if (gaps > 0) {
       warnings.push(`Detected ${gaps} missing date buckets in the trend.`);
     }
+  } else {
+    warnings.push("No date column detected. Charts use categories or row order.");
   }
 
   return warnings;
