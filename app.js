@@ -95,7 +95,7 @@ let currentTableRows = [];
 let currentSort = { key: null, direction: "asc" };
 
 const samplePath = "data-sample.csv";
-const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyX-6CxQt0fo6PkIPsXbKrW7a8oU0QR1ATAqVkUhAUI_K2Oq-NB3NcT7RBSvkNuiUqcCA/exec";
+const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbznq6aHhsHA6uiQg_AoJ6PG-WioCqriL_Z82SutiX1VeoI1TstpdqYvNPfahI8ZhwjsEQ/exec";
 const sampleManifest = [
   {
     id: "sales",
