@@ -472,12 +472,13 @@ function parseDate(value) {
   if (!value) return null;
   const raw = String(value).trim();
   if (!raw) return null;
-  const isoLike = /^\d{4}[-/]\d{2}[-/]\d{2}/.test(raw);
+  const dateLike = /^\d{4}[-/]\d{2}[-/]\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?$/.test(raw);
+  if (!dateLike) return null;
   const parsed = Date.parse(raw);
   if (Number.isNaN(parsed)) return null;
   const date = new Date(parsed);
   if (Number.isNaN(date.valueOf())) return null;
-  return isoLike ? date : date;
+  return date;
 }
 
 function profileDataset(rows, columns) {
