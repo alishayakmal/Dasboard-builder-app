@@ -14,6 +14,7 @@ const metricSelect = document.getElementById("metricSelect");
 const dimensionSelect = document.getElementById("dimensionSelect");
 const topNSelect = document.getElementById("topN");
 const domainSelect = document.getElementById("domainSelect");
+const industrySelect = document.getElementById("industrySelect");
 const dateStartInput = document.getElementById("dateStart");
 const dateEndInput = document.getElementById("dateEnd");
 const exportCsvButton = document.getElementById("exportCsv");
@@ -28,6 +29,7 @@ const insightsList = document.getElementById("insightsList");
 const profileTable = document.getElementById("profileTable");
 const qualityBadge = document.getElementById("qualityBadge");
 const buildStamp = document.getElementById("buildStamp");
+const heatmapNote = document.getElementById("heatmapNote");
 const tabButtons = document.querySelectorAll(".tab-button");
 const tabPanels = document.querySelectorAll("[data-tab-panel]");
 const dropZone = document.getElementById("dropZone");
@@ -119,6 +121,10 @@ const state = {
   domainAuto: true,
   inferredDomain: "general",
   chosenXAxisType: "category",
+  industryColumn: null,
+  filters: {
+    industry: "All",
+  },
 };
 
 document.addEventListener("DOMContentLoaded", init);
@@ -181,6 +187,13 @@ function init() {
     state.domain = state.domainAuto ? state.inferredDomain : domainSelect.value;
     updateDashboard();
   });
+
+  if (industrySelect) {
+    industrySelect.addEventListener("change", () => {
+      state.filters.industry = industrySelect.value;
+      updateDashboard();
+    });
+  }
 
   dateStartInput.addEventListener("change", () => {
     state.dateRange.start = dateStartInput.value ? new Date(dateStartInput.value) : null;
@@ -395,6 +408,7 @@ function ingestRows(rawRows) {
   });
   state.numericColumns = state.usableNumericMetrics;
   state.dateColumn = state.dateCandidates[0] || null;
+  state.industryColumn = findIndustryColumn(state.columns);
 
   if (!state.usableNumericMetrics.length) {
     const detail = buildNumericFailureDetail(state.profile);
@@ -680,6 +694,11 @@ function chooseBestCategoryForAxis(profile, categoricalColumns) {
   return filtered[0] || null;
 }
 
+function findIndustryColumn(columns) {
+  const match = columns.find((col) => col.toLowerCase() === "industry");
+  return match || null;
+}
+
 function initControls(recommendedMetrics) {
   metricSelect.innerHTML = "";
   const allMetrics = Array.from(new Set([...recommendedMetrics, ...state.numericColumns]));
@@ -728,10 +747,47 @@ function initControls(recommendedMetrics) {
   }
 
   domainSelect.value = state.domainAuto ? "auto" : state.domain;
+
+  if (industrySelect) {
+    const previous = state.filters.industry || "All";
+    industrySelect.innerHTML = "";
+    const allOption = document.createElement("option");
+    allOption.value = "All";
+    allOption.textContent = "All";
+    industrySelect.appendChild(allOption);
+
+    if (state.industryColumn) {
+      industrySelect.disabled = false;
+      const values = Array.from(new Set(state.rows.map((row) => String(row[state.industryColumn] || "").trim())))
+        .filter((value) => value)
+        .sort();
+      values.forEach((value) => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = value;
+        industrySelect.appendChild(option);
+      });
+      if (values.includes(previous)) {
+        industrySelect.value = previous;
+        state.filters.industry = previous;
+      } else {
+        industrySelect.value = "All";
+        state.filters.industry = "All";
+      }
+    } else {
+      industrySelect.disabled = true;
+      industrySelect.value = "All";
+      state.filters.industry = "All";
+    }
+  }
 }
 
 function updateDashboard() {
   const filteredRows = getFilteredRows();
+  if (!filteredRows.length) {
+    showError("No rows match this filter.");
+    return;
+  }
   renderKPIs(filteredRows);
   renderCharts(filteredRows);
   renderHeatmap(filteredRows);
@@ -744,11 +800,15 @@ function updateDashboard() {
 }
 
 function getFilteredRows() {
-  if (!state.dateColumn) return state.rows;
+  let rows = state.rows;
+  if (state.industryColumn && state.filters.industry && state.filters.industry !== "All") {
+    rows = rows.filter((row) => String(row[state.industryColumn]).trim() === state.filters.industry);
+  }
+  if (!state.dateColumn) return rows;
   const start = state.dateRange.start;
   const end = state.dateRange.end;
-  if (!start && !end) return state.rows;
-  return state.rows.filter((row) => {
+  if (!start && !end) return rows;
+  return rows.filter((row) => {
     const dateValue = parseDate(row[state.dateColumn]);
     if (!dateValue) return false;
     if (start && dateValue < start) return false;
@@ -854,6 +914,7 @@ function renderHeatmap(rows) {
   const matrixData = buildCorrelationMatrix(rows, state.numericColumns);
   if (!matrixData || matrixData.metrics.length < 2) {
     heatmapChartInstance = createHeatmap("heatmapChart", [], []);
+    if (heatmapNote) heatmapNote.textContent = "";
     return;
   }
   heatmapChartInstance = createHeatmap("heatmapChart", matrixData.metrics, matrixData.data);
@@ -1238,7 +1299,10 @@ function createHistogram(canvasId, values) {
 
 function buildCorrelationMatrix(rows, numericColumns) {
   if (numericColumns.length < 2) return null;
-  const metrics = numericColumns.filter((col) => state.profile[col].missingRate < 0.5).slice(0, 8);
+  const metrics = numericColumns
+    .filter((col) => state.profile[col].missingRate < 0.5)
+    .sort((a, b) => (state.profile[b].std || 0) - (state.profile[a].std || 0))
+    .slice(0, 8);
   if (metrics.length < 2) return null;
   const data = [];
   metrics.forEach((xMetric, xIndex) => {
@@ -1247,12 +1311,20 @@ function buildCorrelationMatrix(rows, numericColumns) {
       data.push({ x: xIndex, y: yIndex, v: corr });
     });
   });
+  if (heatmapNote) {
+    heatmapNote.textContent = numericColumns.length > 8 ? "Heat map shows top metrics by variability." : "";
+  }
   return { metrics, data };
 }
 
 function createHeatmap(canvasId, labels, data) {
   const ctx = document.getElementById(canvasId);
-  return new Chart(ctx, {
+  const wrapper = ctx.parentElement;
+  if (wrapper) {
+    ctx.width = wrapper.clientWidth;
+    ctx.height = wrapper.clientHeight;
+  }
+  const chart = new Chart(ctx, {
     type: "matrix",
     data: {
       datasets: [
@@ -1301,6 +1373,11 @@ function createHeatmap(canvasId, labels, data) {
       },
     },
   });
+  if (!window.__heatmapResizeBound) {
+    window.addEventListener("resize", () => chart.resize());
+    window.__heatmapResizeBound = true;
+  }
+  return chart;
 }
 
 function findStrongestCorrelation(rows, numericColumns) {
