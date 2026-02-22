@@ -144,6 +144,12 @@
           </select>
         </div>
         <div class="control-group">
+          <label for="industrySelect">Industry</label>
+          <select id="industrySelect">
+            <option value="All">All</option>
+          </select>
+        </div>
+        <div class="control-group">
           <label for="dateStart">Date start</label>
           <input type="date" id="dateStart" />
         </div>
@@ -188,8 +194,11 @@
         <div class="chart-header">
           <h3>Correlation heat map</h3>
           <p>How numeric metrics move together.</p>
+          <p id="heatmapNote" class="helper-text"></p>
         </div>
-        <canvas id="heatmapChart" height="220"></canvas>
+        <div class="heatmap-wrapper">
+          <canvas id="heatmapChart"></canvas>
+        </div>
       </section>
 
       <section class="insights-card">
