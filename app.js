@@ -506,18 +506,18 @@ function renderKPIs(rows) {
   });
 }
 
-function renderCharts() {
+function renderCharts(rows) {
   if (trendChartInstance) trendChartInstance.destroy();
   if (barChartInstance) barChartInstance.destroy();
   if (extraChartInstance) extraChartInstance.destroy();
 
   const metric = state.selectedMetric;
-  const metricValues = state.rows.map((row) => parseNumber(row[metric])).filter((value) => value !== null);
+  const metricValues = rows.map((row) => parseNumber(row[metric])).filter((value) => value !== null);
   const metricType = inferMetricType(metric, metricValues);
 
   if (state.dateColumn) {
     const bucket = state.rows.length > 200 ? "week" : "day";
-    const series = aggregateByDate(state.rows, state.dateColumn, metric, bucket, state.dateRange);
+    const series = aggregateByDate(rows, state.dateColumn, metric, bucket, state.dateRange);
     trendTitle.textContent = `${metric} trend`;
     trendSubtitle.textContent = `Grouped by ${bucket}`;
     trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType);
@@ -530,12 +530,12 @@ function renderCharts() {
   const dimension = state.selectedDimension || chooseBestDimension(state.profile, state.categoricalColumns) || state.dateColumn;
   state.selectedDimension = dimension;
   if (dimensionSelect.value !== dimension) dimensionSelect.value = dimension;
-  const breakdown = aggregateByCategory(state.rows, dimension, metric, state.topN);
+  const breakdown = aggregateByCategory(rows, dimension, metric, state.topN);
   barTitle.textContent = `${metric} by ${dimension}`;
   barSubtitle.textContent = `Top ${state.topN}`;
   barChartInstance = createBarChart("barChart", breakdown.labels, breakdown.values, metricType);
 
-  const correlationPair = findStrongestCorrelation(state.rows, state.numericColumns);
+  const correlationPair = findStrongestCorrelation(rows, state.numericColumns);
   if (correlationPair) {
     extraTitle.textContent = `Correlation: ${correlationPair.x} vs ${correlationPair.y}`;
     extraSubtitle.textContent = `r = ${correlationPair.corr.toFixed(2)}`;
@@ -547,14 +547,62 @@ function renderCharts() {
   }
 }
 
-function renderHeatmap() {
+function renderHeatmap(rows) {
   if (heatmapChartInstance) heatmapChartInstance.destroy();
-  const matrixData = buildCorrelationMatrix(state.rows, state.numericColumns);
+  const matrixData = buildCorrelationMatrix(rows, state.numericColumns);
   if (!matrixData || matrixData.metrics.length < 2) {
     heatmapChartInstance = createHeatmap("heatmapChart", [], []);
     return;
   }
   heatmapChartInstance = createHeatmap("heatmapChart", matrixData.metrics, matrixData.data);
+}
+
+function renderProfileTable(profile) {
+  profileTable.innerHTML = "";
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  ["Column", "Type", "Missing %", "Unique", "Min", "Max", "Mean", "Median", "Std", "Date Range", "Top Values"]
+    .forEach((label) => {
+      const th = document.createElement("th");
+      th.textContent = label;
+      headerRow.appendChild(th);
+    });
+  thead.appendChild(headerRow);
+
+  const tbody = document.createElement("tbody");
+  Object.entries(profile).forEach(([col, stats]) => {
+    const tr = document.createElement("tr");
+    const dateRange = stats.dateMin && stats.dateMax
+      ? `${formatDateInput(stats.dateMin)} → ${formatDateInput(stats.dateMax)}`
+      : "—";
+    const topValues = stats.topValues?.length
+      ? stats.topValues.map((item) => `${item.value} (${item.count})`).join(", ")
+      : "—";
+
+    const cells = [
+      col,
+      stats.type,
+      `${Math.round(stats.missingRate * 100)}%`,
+      stats.uniqueCount ?? "—",
+      stats.min ?? "—",
+      stats.max ?? "—",
+      stats.mean !== null ? numberFormatter.format(stats.mean) : "—",
+      stats.median !== null ? numberFormatter.format(stats.median) : "—",
+      stats.std !== null ? numberFormatter.format(stats.std) : "—",
+      stats.type === "date" ? dateRange : "—",
+      stats.type === "categorical" ? topValues : "—",
+    ];
+
+    cells.forEach((value) => {
+      const td = document.createElement("td");
+      td.textContent = value;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+
+  profileTable.appendChild(thead);
+  profileTable.appendChild(tbody);
 }
 
 function renderTable(rows, columns) {
@@ -1024,13 +1072,13 @@ function countDateGaps(rows, dateColumn) {
   }
   return gaps;
 }
-function renderInsights() {
+function renderInsights(rows) {
   insightsList.innerHTML = "";
   const insights = [];
   const metric = state.selectedMetric;
   const dimension = state.selectedDimension;
 
-  const correlationPair = findStrongestCorrelation(state.rows, state.numericColumns);
+  const correlationPair = findStrongestCorrelation(rows, state.numericColumns);
   if (correlationPair) {
     insights.push(
       `Strongest correlation is between ${correlationPair.x} and ${correlationPair.y} (r = ${correlationPair.corr.toFixed(2)}).`
@@ -1038,7 +1086,7 @@ function renderInsights() {
   }
 
   if (dimension && metric) {
-    const breakdown = aggregateByCategory(state.rows, dimension, metric, 5);
+    const breakdown = aggregateByCategory(rows, dimension, metric, 5);
     if (breakdown.labels.length) {
       const total = breakdown.values.reduce((sum, val) => sum + val, 0);
       const topValue = breakdown.values[0];
@@ -1053,7 +1101,7 @@ function renderInsights() {
   }
 
   if (state.dateColumn && metric) {
-    const series = aggregateByDate(state.rows, state.dateColumn, metric, "day", state.dateRange);
+    const series = aggregateByDate(rows, state.dateColumn, metric, "day", state.dateRange);
     const anomalies = detectAnomalies(series.values);
     if (anomalies.length) {
       const worst = anomalies[0];
@@ -1066,6 +1114,13 @@ function renderInsights() {
       insights.push(`"${col}" has ${Math.round(stats.missingRate * 100)}% missing values and may skew analysis.`);
     }
   });
+
+  if (state.dateColumn && metric) {
+    const change = computePeriodChange(rows, metric);
+    if (change) {
+      insights.push(`${metric} change: ${change.label} is ${change.value}.`);
+    }
+  }
 
   if (!insights.length) {
     insights.push("Upload more data to generate insights.");
