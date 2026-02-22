@@ -29,7 +29,13 @@ const insightsList = document.getElementById("insightsList");
 const profileTable = document.getElementById("profileTable");
 const qualityBadge = document.getElementById("qualityBadge");
 const buildStamp = document.getElementById("buildStamp");
-const heatmapNote = document.getElementById("heatmapNote");
+const comparisonNote = document.getElementById("comparisonNote");
+const filterBadge = document.getElementById("filterBadge");
+const primaryMetricSelect = document.getElementById("primaryMetricSelect");
+const compareMetricSelect = document.getElementById("compareMetricSelect");
+const comparisonTrendChart = document.getElementById("comparisonTrendChart");
+const driversList = document.getElementById("driversList");
+const segmentChartCanvas = document.getElementById("segmentChart");
 const tabButtons = document.querySelectorAll(".tab-button");
 const tabPanels = document.querySelectorAll("[data-tab-panel]");
 const dropZone = document.getElementById("dropZone");
@@ -59,6 +65,8 @@ window.addEventListener("unhandledrejection", (event) => {
 let trendChartInstance = null;
 let barChartInstance = null;
 let extraChartInstance = null;
+let comparisonChartInstance = null;
+let segmentChartInstance = null;
 let heatmapChartInstance = null;
 let currentTableRows = [];
 let currentSort = { key: null, direction: "asc" };
@@ -69,8 +77,8 @@ const sampleManifest = [
     id: "sales",
     name: "Retail Sales",
     file: "./samples/retail-sales.csv",
-    description: "Daily orders, revenue, returns, and channel performance.",
-    columns: ["Date", "Region", "Channel", "Orders", "Revenue", "ReturnRate"],
+    description: "Daily orders, revenue, returns, and channel performance by industry.",
+    columns: ["Date", "Industry", "Region", "Channel", "Orders", "Revenue", "ReturnRate"],
   },
   {
     id: "marketing",
@@ -104,7 +112,8 @@ const percentFormatter = new Intl.NumberFormat("en-US", {
 });
 
 const state = {
-  rows: [],
+  rawRows: [],
+  filteredRows: [],
   columns: [],
   profile: {},
   numericCandidates: [],
@@ -115,6 +124,7 @@ const state = {
   dateColumn: null,
   selectedMetric: null,
   selectedDimension: null,
+  compareMetrics: [],
   topN: 8,
   dateRange: { start: null, end: null },
   domain: "general",
@@ -169,40 +179,40 @@ function init() {
 
   metricSelect.addEventListener("change", () => {
     state.selectedMetric = metricSelect.value;
-    updateDashboard();
+    applyFiltersAndRender();
   });
 
   dimensionSelect.addEventListener("change", () => {
     state.selectedDimension = dimensionSelect.value;
-    updateDashboard();
+    applyFiltersAndRender();
   });
 
   topNSelect.addEventListener("change", () => {
     state.topN = Number(topNSelect.value);
-    updateDashboard();
+    applyFiltersAndRender();
   });
 
   domainSelect.addEventListener("change", () => {
     state.domainAuto = domainSelect.value === "auto";
     state.domain = state.domainAuto ? state.inferredDomain : domainSelect.value;
-    updateDashboard();
+    applyFiltersAndRender();
   });
 
   if (industrySelect) {
     industrySelect.addEventListener("change", () => {
       state.filters.industry = industrySelect.value;
-      updateDashboard();
+      applyFiltersAndRender();
     });
   }
 
   dateStartInput.addEventListener("change", () => {
     state.dateRange.start = dateStartInput.value ? new Date(dateStartInput.value) : null;
-    updateDashboard();
+    applyFiltersAndRender();
   });
 
   dateEndInput.addEventListener("change", () => {
     state.dateRange.end = dateEndInput.value ? new Date(dateEndInput.value) : null;
-    updateDashboard();
+    applyFiltersAndRender();
   });
 
   exportCsvButton.addEventListener("click", () => exportFilteredCsv());
@@ -384,7 +394,7 @@ function ingestRows(rawRows) {
     return obj;
   });
 
-  state.rows = rows;
+  state.rawRows = rows;
   state.columns = cleanedHeaders;
   state.profile = profileDataset(rows, cleanedHeaders);
   state.inferredDomain = inferDomain(state.profile);
@@ -398,7 +408,7 @@ function ingestRows(rawRows) {
   );
   state.usableNumericMetrics = state.numericCandidates.filter((col) => {
     let countParsed = 0;
-    for (const row of rows) {
+    for (const row of state.rawRows) {
       if (parseNumber(row[col]) !== null) {
         countParsed += 1;
         if (countParsed >= 1) return true;
@@ -422,7 +432,7 @@ function ingestRows(rawRows) {
 
   initControls(recommendedMetrics);
   setStatus("Rendering dashboard");
-  updateDashboard();
+  applyFiltersAndRender();
 
   datasetSummary.textContent = `${rows.length} rows · ${state.columns.length} columns`;
   stateSection.classList.add("hidden");
@@ -758,7 +768,7 @@ function initControls(recommendedMetrics) {
 
     if (state.industryColumn) {
       industrySelect.disabled = false;
-      const values = Array.from(new Set(state.rows.map((row) => String(row[state.industryColumn] || "").trim())))
+      const values = Array.from(new Set(state.rawRows.map((row) => String(row[state.industryColumn] || "").trim())))
         .filter((value) => value)
         .sort();
       values.forEach((value) => {
@@ -782,33 +792,58 @@ function initControls(recommendedMetrics) {
   }
 }
 
-function updateDashboard() {
-  const filteredRows = getFilteredRows();
-  if (!filteredRows.length) {
-    showError("No rows match this filter.");
+function applyFiltersAndRender() {
+  state.filteredRows = applyIndustryFilter(state.rawRows, state.filters.industry);
+  const scopedRows = getFilteredRows();
+  if (!scopedRows.length) {
+    showError("No rows for this industry.");
     return;
   }
-  renderKPIs(filteredRows);
-  renderCharts(filteredRows);
-  renderHeatmap(filteredRows);
-  renderTable(filteredRows, state.columns);
-  renderInsights(filteredRows);
+
+  state.profile = profileDataset(scopedRows, state.columns);
+  state.numericCandidates = Object.keys(state.profile).filter((col) => state.profile[col].type === "numeric");
+  state.dateCandidates = Object.keys(state.profile).filter((col) => state.profile[col].type === "date");
+  state.categoricalColumns = Object.keys(state.profile).filter((col) => state.profile[col].type === "categorical");
+  state.usableNumericMetrics = state.numericCandidates.filter((col) => {
+    let countParsed = 0;
+    for (const row of scopedRows) {
+      if (parseNumber(row[col]) !== null) {
+        countParsed += 1;
+        if (countParsed >= 1) return true;
+      }
+    }
+    return false;
+  });
+  state.numericColumns = state.usableNumericMetrics;
+  state.dateColumn = state.dateCandidates[0] || null;
+  state.selectedMetric = state.selectedMetric || chooseTopNumericByVariance(state.profile, state.numericColumns);
+
+  if (filterBadge) {
+    filterBadge.textContent = `Filtered to: ${state.filters.industry || "All"}`;
+  }
+
+  renderKPIs(scopedRows);
+  renderCharts(scopedRows);
+  renderMetricComparison(scopedRows);
+  renderTable(scopedRows, state.columns);
+  renderInsights(scopedRows);
   renderProfileTable(state.profile);
-  renderQualityBadge(filteredRows);
+  renderQualityBadge(scopedRows);
   showWarnings(collectWarnings());
   renderSuggestedTrends();
 }
 
+function applyIndustryFilter(rows, industry) {
+  if (!state.industryColumn || !industry || industry === "All") return rows;
+  return rows.filter((row) => String(row[state.industryColumn]).trim() === industry);
+}
+
 function getFilteredRows() {
-  let rows = state.rows;
-  if (state.industryColumn && state.filters.industry && state.filters.industry !== "All") {
-    rows = rows.filter((row) => String(row[state.industryColumn]).trim() === state.filters.industry);
-  }
-  if (!state.dateColumn) return rows;
+  if (!state.dateColumn) return state.filteredRows || [];
   const start = state.dateRange.start;
   const end = state.dateRange.end;
-  if (!start && !end) return rows;
-  return rows.filter((row) => {
+  if (!start && !end) return state.filteredRows || [];
+  return (state.filteredRows || []).filter((row) => {
     const dateValue = parseDate(row[state.dateColumn]);
     if (!dateValue) return false;
     if (start && dateValue < start) return false;
@@ -860,7 +895,8 @@ function renderCharts(rows) {
   if (barChartInstance) barChartInstance.destroy();
   if (extraChartInstance) extraChartInstance.destroy();
 
-  const metric = state.selectedMetric;
+  const metric = state.selectedMetric || chooseTopNumericByVariance(state.profile, state.numericColumns);
+  state.selectedMetric = metric;
   const metricValues = rows.map((row) => parseNumber(row[metric])).filter((value) => value !== null);
   const metricType = inferMetricType(metric, metricValues);
 
@@ -909,15 +945,8 @@ function renderCharts(rows) {
   }
 }
 
-function renderHeatmap(rows) {
-  if (heatmapChartInstance) heatmapChartInstance.destroy();
-  const matrixData = buildCorrelationMatrix(rows, state.numericColumns);
-  if (!matrixData || matrixData.metrics.length < 2) {
-    heatmapChartInstance = createHeatmap("heatmapChart", [], []);
-    if (heatmapNote) heatmapNote.textContent = "";
-    return;
-  }
-  heatmapChartInstance = createHeatmap("heatmapChart", matrixData.metrics, matrixData.data);
+function renderHeatmap() {
+  return;
 }
 
 function renderProfileTable(profile) {
@@ -1190,6 +1219,8 @@ function createLineChart(canvasId, labels, values, metricType) {
           backgroundColor: "rgba(47, 94, 78, 0.15)",
           tension: 0.35,
           fill: true,
+          pointRadius: 3,
+          pointHoverRadius: 5,
         },
       ],
     },
@@ -1235,12 +1266,20 @@ function createBarChart(canvasId, labels, values, metricType) {
             label: (context) => formatMetricValue(context.parsed.y, metricType),
           },
         },
+        datalabels: {
+          color: "#ffffff",
+          anchor: "end",
+          align: "end",
+          formatter: (value) => formatMetricValue(value, metricType),
+          clamp: true,
+        },
       },
       scales: {
         x: { ticks: { maxTicksLimit: 6 } },
         y: { beginAtZero: true },
       },
     },
+    plugins: [ChartDataLabels],
   });
 }
 
@@ -1297,87 +1336,8 @@ function createHistogram(canvasId, values) {
   });
 }
 
-function buildCorrelationMatrix(rows, numericColumns) {
-  if (numericColumns.length < 2) return null;
-  const metrics = numericColumns
-    .filter((col) => state.profile[col].missingRate < 0.5)
-    .sort((a, b) => (state.profile[b].std || 0) - (state.profile[a].std || 0))
-    .slice(0, 8);
-  if (metrics.length < 2) return null;
-  const data = [];
-  metrics.forEach((xMetric, xIndex) => {
-    metrics.forEach((yMetric, yIndex) => {
-      const corr = computeCorrelation(rows, xMetric, yMetric);
-      data.push({ x: xIndex, y: yIndex, v: corr });
-    });
-  });
-  if (heatmapNote) {
-    heatmapNote.textContent = numericColumns.length > 8 ? "Heat map shows top metrics by variability." : "";
-  }
-  return { metrics, data };
-}
-
-function createHeatmap(canvasId, labels, data) {
-  const ctx = document.getElementById(canvasId);
-  const wrapper = ctx.parentElement;
-  if (wrapper) {
-    ctx.width = wrapper.clientWidth;
-    ctx.height = wrapper.clientHeight;
-  }
-  const chart = new Chart(ctx, {
-    type: "matrix",
-    data: {
-      datasets: [
-        {
-          label: "Correlation",
-          data,
-          backgroundColor: (ctx) => {
-            const value = ctx.dataset.data[ctx.dataIndex]?.v ?? 0;
-            const alpha = Math.abs(value);
-            return value >= 0 ? `rgba(47, 94, 78, ${alpha})` : `rgba(214, 81, 81, ${alpha})`;
-          },
-          borderColor: "rgba(255,255,255,0.6)",
-          borderWidth: 1,
-          width: (ctx) => {
-            const chart = ctx.chart;
-            const area = chart.chartArea;
-            if (!area) return 20;
-            return (area.right - area.left) / labels.length - 2;
-          },
-          height: (ctx) => {
-            const chart = ctx.chart;
-            const area = chart.chartArea;
-            if (!area) return 20;
-            return (area.bottom - area.top) / labels.length - 2;
-          },
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: {
-          type: "category",
-          labels,
-          offset: true,
-          grid: { display: false },
-        },
-        y: {
-          type: "category",
-          labels,
-          offset: true,
-          grid: { display: false },
-        },
-      },
-    },
-  });
-  if (!window.__heatmapResizeBound) {
-    window.addEventListener("resize", () => chart.resize());
-    window.__heatmapResizeBound = true;
-  }
-  return chart;
+function buildCorrelationMatrix() {
+  return null;
 }
 
 function findStrongestCorrelation(rows, numericColumns) {
@@ -1509,6 +1469,138 @@ function renderInsights(rows) {
     li.textContent = text;
     insightsList.appendChild(li);
   });
+}
+
+function renderMetricComparison(rows) {
+  if (!rows.length) return;
+  const numericMetrics = state.numericColumns;
+  if (!numericMetrics.length) return;
+
+  const primary = state.selectedMetric || chooseTopNumericByVariance(state.profile, numericMetrics);
+  state.selectedMetric = primary;
+
+  if (primaryMetricSelect) {
+    primaryMetricSelect.innerHTML = "";
+    numericMetrics.forEach((metric) => {
+      const option = document.createElement("option");
+      option.value = metric;
+      option.textContent = metric;
+      primaryMetricSelect.appendChild(option);
+    });
+    primaryMetricSelect.value = primary;
+    primaryMetricSelect.onchange = () => {
+      state.selectedMetric = primaryMetricSelect.value;
+      applyFiltersAndRender();
+    };
+  }
+
+  const availableCompare = numericMetrics.filter((metric) => metric !== primary);
+  if (compareMetricSelect) {
+    const selected = state.compareMetrics.length
+      ? state.compareMetrics
+      : chooseTopNumericByVariance(state.profile, availableCompare, 3);
+    state.compareMetrics = selected;
+    compareMetricSelect.innerHTML = "";
+    availableCompare.forEach((metric) => {
+      const option = document.createElement("option");
+      option.value = metric;
+      option.textContent = metric;
+      option.selected = selected.includes(metric);
+      compareMetricSelect.appendChild(option);
+    });
+    compareMetricSelect.onchange = () => {
+      const chosen = Array.from(compareMetricSelect.selectedOptions).map((opt) => opt.value).slice(0, 5);
+      state.compareMetrics = chosen;
+      applyFiltersAndRender();
+    };
+  }
+
+  renderComparisonTrend(rows, primary);
+  renderDriversList(rows, primary, state.compareMetrics);
+  renderSegmentView(rows, primary);
+}
+
+function renderComparisonTrend(rows, primary) {
+  if (comparisonChartInstance) comparisonChartInstance.destroy();
+  if (!comparisonTrendChart) return;
+  const metricValues = rows.map((row) => parseNumber(row[primary])).filter((value) => value !== null);
+  const metricType = inferMetricType(primary, metricValues);
+
+  if (state.dateColumn) {
+    const series = aggregateByDate(rows, state.dateColumn, primary, "day", state.dateRange);
+    comparisonChartInstance = createLineChart("comparisonTrendChart", series.labels, series.values, metricType);
+    if (comparisonNote) comparisonNote.textContent = `Primary metric trend by ${state.dateColumn}`;
+  } else {
+    const category = chooseBestCategoryForAxis(state.profile, state.categoricalColumns);
+    if (category) {
+      const series = aggregateByCategory(rows, category, primary, 8);
+      comparisonChartInstance = createBarChart("comparisonTrendChart", series.labels, series.values, metricType);
+      if (comparisonNote) comparisonNote.textContent = `Primary metric by ${category}`;
+    } else {
+      const labels = rows.map((_, index) => index + 1);
+      const values = rows.map((row) => parseNumber(row[primary]) ?? 0);
+      comparisonChartInstance = createLineChart("comparisonTrendChart", labels, values, metricType);
+      if (comparisonNote) comparisonNote.textContent = "Primary metric by row order";
+    }
+  }
+}
+
+function renderDriversList(rows, primary, compareMetrics) {
+  if (!driversList) return;
+  driversList.innerHTML = "";
+  if (!compareMetrics.length) {
+    driversList.innerHTML = "<li>Select metrics to compare.</li>";
+    return;
+  }
+
+  const items = compareMetrics.map((metric) => {
+    const corr = computeCorrelation(rows, primary, metric);
+    if (corr === null) {
+      return { metric, corr: null, label: "Insufficient data" };
+    }
+    const strength = Math.abs(corr) >= 0.6 ? "Strong" : Math.abs(corr) >= 0.3 ? "Moderate" : "Weak";
+    const direction = corr >= 0 ? "positive" : "negative";
+    return { metric, corr, label: `${strength} ${direction}` };
+  }).sort((a, b) => (b.corr ?? 0) - (a.corr ?? 0));
+
+  items.forEach((item) => {
+    const li = document.createElement("li");
+    if (item.corr === null) {
+      li.textContent = `${item.metric}: insufficient data`;
+    } else {
+      li.textContent = `${item.metric}: ${item.label} (r = ${item.corr.toFixed(2)})`;
+    }
+    driversList.appendChild(li);
+  });
+}
+
+function renderSegmentView(rows, primary) {
+  if (!segmentChartCanvas) return;
+  if (segmentChartInstance) segmentChartInstance.destroy();
+  const metricValues = rows.map((row) => parseNumber(row[primary])).filter((value) => value !== null);
+  const metricType = inferMetricType(primary, metricValues);
+
+  let dimension = state.industryColumn;
+  if (state.filters.industry && state.filters.industry !== "All") {
+    dimension = findAlternateCategory(state.categoricalColumns, state.industryColumn);
+  }
+  if (!dimension) {
+    dimension = chooseBestCategoryForAxis(state.profile, state.categoricalColumns);
+  }
+  if (!dimension) return;
+
+  const breakdown = aggregateByCategory(rows, dimension, primary, 8);
+  segmentChartInstance = createBarChart("segmentChart", breakdown.labels, breakdown.values, metricType);
+}
+
+function findAlternateCategory(categories, industryColumn) {
+  return categories.find((col) => col !== industryColumn) || null;
+}
+
+function chooseTopNumericByVariance(profile, numericColumns, limit = 1) {
+  const sorted = [...numericColumns].sort((a, b) => (profile[b]?.std || 0) - (profile[a]?.std || 0));
+  if (limit === 1) return sorted[0];
+  return sorted.slice(0, limit);
 }
 
 function renderSuggestedTrends() {
