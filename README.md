@@ -11,6 +11,9 @@ A static, client-side web app that turns any CSV into an analysis-driven dashboa
 - Generates trend, breakdown, and analysis charts
 - Includes a correlation heat map and insights panel
 - Provides interactive controls for metric, dimension, date range, and Top N
+- Export filtered data and download insights
+- Data profile table and quality score badge
+- Domain-aware KPI selection (finance, marketing, product, operations)
 
 ## Run locally
 Open `index.html` directly in your browser. No build tools required.
@@ -18,8 +21,9 @@ Open `index.html` directly in your browser. No build tools required.
 ## Usage
 1. Click **Upload CSV** or **Load Sample**.
 2. Review KPI tiles and warnings.
-3. Adjust the primary metric, dimension, date range, and Top N controls.
+3. Adjust the primary metric, dimension, date range, Top N, and domain controls.
 4. Use insights and charts to guide next steps.
+5. Export the filtered dataset or download insights.
 
 ## Sample data
 The included sample file is `data-sample.csv`.
