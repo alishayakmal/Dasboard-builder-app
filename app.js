@@ -16,13 +16,15 @@ const leadEmailInput = document.getElementById("leadEmail");
 const leadCompanyInput = document.getElementById("leadCompany");
 const leadUseCaseInput = document.getElementById("leadUseCase");
 const leadConsentInput = document.getElementById("leadConsent");
-const contactsTable = document.getElementById("contactsTable");
-const clearContactsButton = document.getElementById("clearContacts");
 const sheetsUrlInput = document.getElementById("sheetsUrl");
+const sheetsHelper = document.getElementById("sheetsHelper");
 const loadSheetButton = document.getElementById("loadSheet");
 const pdfInput = document.getElementById("pdfInput");
 const pdfStatus = document.getElementById("pdfStatus");
 const pdfMeta = document.getElementById("pdfMeta");
+const exportSheetsButton = document.getElementById("exportSheets");
+const downloadPdfButton = document.getElementById("downloadPdf");
+const exportStatus = document.getElementById("exportStatus");
 const stateSection = document.getElementById("state");
 const errorSection = document.getElementById("error");
 const warningsSection = document.getElementById("warnings");
@@ -263,8 +265,9 @@ function init() {
   if (signupForm) signupForm.addEventListener("submit", handleSignupSubmit);
   if (signInButton) signInButton.addEventListener("click", handleSignInClick);
   if (signOutButton) signOutButton.addEventListener("click", handleSignOutClick);
-  if (clearContactsButton) clearContactsButton.addEventListener("click", clearContacts);
   if (loadSheetButton) loadSheetButton.addEventListener("click", loadSheetData);
+  if (exportSheetsButton) exportSheetsButton.addEventListener("click", handleExportToSheets);
+  if (downloadPdfButton) downloadPdfButton.addEventListener("click", () => window.print());
   if (pdfInput) {
     pdfInput.addEventListener("change", () => {
       const file = pdfInput.files?.[0];
@@ -279,7 +282,6 @@ function init() {
 
   updateSignInButton();
   renderSampleGallery();
-  renderContactsTable();
   handleRoute();
   console.log("handlers wired");
 }
@@ -444,7 +446,7 @@ function handleSignupSubmit(event) {
   closeModal();
   showToast("Signed up");
   routeTo("app");
-  postLeadToWebhook(lead);
+  logSignupEvent(email);
 }
 
 function showFormError(message) {
@@ -457,58 +459,21 @@ function saveLead(lead) {
   const existing = JSON.parse(localStorage.getItem("leads") || "[]");
   existing.unshift(lead);
   localStorage.setItem("leads", JSON.stringify(existing));
-  renderContactsTable();
 }
 
-function postLeadToWebhook(lead) {
-  if (!WEBHOOK_URL) return;
-  fetch(WEBHOOK_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(lead),
-  }).catch(() => null);
-}
-
-function renderContactsTable() {
-  if (!contactsTable) return;
-  const leads = JSON.parse(localStorage.getItem("leads") || "[]").slice(0, 5);
-  contactsTable.innerHTML = "";
-  const thead = document.createElement("thead");
-  const headerRow = document.createElement("tr");
-  ["Name", "Email", "Company", "Use case", "Created"].forEach((label) => {
-    const th = document.createElement("th");
-    th.textContent = label;
-    headerRow.appendChild(th);
+function logSignupEvent(email) {
+  const payload = {
+    source: "web_app",
+    user: email,
+    action: "signup",
+    entity: "account",
+    value: 1,
+    app: "Shay Analytics AI",
+    ts: new Date().toISOString(),
+  };
+  logEvent(payload).then((result) => {
+    if (!result.ok) showToast("Signup logged with delay. Try again later.");
   });
-  thead.appendChild(headerRow);
-  contactsTable.appendChild(thead);
-
-  const tbody = document.createElement("tbody");
-  if (!leads.length) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 5;
-    td.textContent = "No contacts yet.";
-    tr.appendChild(td);
-    tbody.appendChild(tr);
-  } else {
-    leads.forEach((lead) => {
-      const tr = document.createElement("tr");
-      [lead.name, lead.email, lead.company || "—", lead.useCase || "—", lead.createdAt?.slice(0, 10) || "—"]
-        .forEach((value) => {
-          const td = document.createElement("td");
-          td.textContent = value;
-          tr.appendChild(td);
-        });
-      tbody.appendChild(tr);
-    });
-  }
-  contactsTable.appendChild(tbody);
-}
-
-function clearContacts() {
-  localStorage.removeItem("leads");
-  renderContactsTable();
 }
 
 function showToast(message) {
@@ -521,6 +486,57 @@ function showToast(message) {
     toast.classList.remove("show");
     setTimeout(() => toast.remove(), 300);
   }, 1800);
+}
+
+async function logEvent(payload) {
+  if (!WEBHOOK_URL) return { ok: true, status: 0, body: "" };
+  try {
+    const response = await fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.text();
+    console.log("Event log response", response.status, body);
+    return { ok: response.ok, status: response.status, body };
+  } catch (error) {
+    console.log("Event log error", error);
+    return { ok: false, status: 0, body: String(error) };
+  }
+}
+
+function handleExportToSheets() {
+  const user = localStorage.getItem("currentUser") || "anonymous";
+  const filters = {};
+  if (state.filters?.industry && state.filters.industry !== "All") {
+    filters.industry = state.filters.industry;
+  }
+  if (state.dateRange?.start) filters.dateStart = formatDateInput(state.dateRange.start);
+  if (state.dateRange?.end) filters.dateEnd = formatDateInput(state.dateRange.end);
+  if (state.selectedMetric) filters.metric = state.selectedMetric;
+  if (state.selectedDimension) filters.dimension = state.selectedDimension;
+
+  if (exportStatus) {
+    exportStatus.textContent = "Export request sent. Confirm in shared sheet within 10 seconds.";
+  }
+
+  const payload = {
+    source: "web_app",
+    user,
+    action: "export_google_sheet",
+    entity: "dashboard",
+    value: state.selectedMetric || "Dashboard",
+    filters,
+    app: "Shay Analytics AI",
+    ts: new Date().toISOString(),
+  };
+
+  logEvent(payload).then((result) => {
+    if (!result.ok) {
+      const message = result.body || "Export request failed.";
+      if (exportStatus) exportStatus.textContent = message;
+    }
+  });
 }
 
 function renderSampleGallery() {
@@ -555,11 +571,26 @@ async function loadSampleFile(sample) {
   }
 }
 
+function normalizeSheetsUrl(input) {
+  const url = input?.trim() || "";
+  if (!url) return "";
+  if (!url.includes("docs.google.com/spreadsheets")) return url;
+  if (url.includes("export?format=csv")) return url;
+  const idMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (!idMatch) return url;
+  const gidMatch = url.match(/gid=([0-9]+)/);
+  const gid = gidMatch ? `&gid=${gidMatch[1]}` : "";
+  return `https://docs.google.com/spreadsheets/d/${idMatch[1]}/export?format=csv${gid}`;
+}
+
 function loadSheetData() {
-  const url = sheetsUrlInput?.value?.trim();
+  const url = normalizeSheetsUrl(sheetsUrlInput?.value || "");
   if (!url) {
     showError("Please paste a Google Sheets CSV link.");
     return;
+  }
+  if (sheetsHelper) {
+    sheetsHelper.textContent = "Paste a Google Sheets link. If it is an edit link, the app will convert it to a CSV export link.";
   }
   clearMessages();
   setStatus("Loading Google Sheet");
@@ -573,6 +604,9 @@ function loadSheetData() {
       switchTab("upload");
     })
     .catch((error) => {
+      if (sheetsHelper) {
+        sheetsHelper.textContent = "Make the sheet public or use a shared CSV export link.";
+      }
       showError("Google Sheets CSV could not be loaded. Check the link and sharing settings.", `Details: ${error.message}`);
     });
 }
