@@ -12,6 +12,7 @@ const table = document.getElementById("dataTable");
 const metricSelect = document.getElementById("metricSelect");
 const dimensionSelect = document.getElementById("dimensionSelect");
 const topNSelect = document.getElementById("topN");
+const domainSelect = document.getElementById("domainSelect");
 const dateStartInput = document.getElementById("dateStart");
 const dateEndInput = document.getElementById("dateEnd");
 const exportCsvButton = document.getElementById("exportCsv");
@@ -24,6 +25,7 @@ const extraTitle = document.getElementById("extraTitle");
 const extraSubtitle = document.getElementById("extraSubtitle");
 const insightsList = document.getElementById("insightsList");
 const profileTable = document.getElementById("profileTable");
+const qualityBadge = document.getElementById("qualityBadge");
 
 let trendChartInstance = null;
 let barChartInstance = null;
@@ -61,6 +63,8 @@ const state = {
   topN: 8,
   dateRange: { start: null, end: null },
   domain: "general",
+  domainAuto: true,
+  inferredDomain: "general",
 };
 
 fileInput.addEventListener("change", (event) => handleFile(event.target.files[0]));
@@ -80,6 +84,12 @@ dimensionSelect.addEventListener("change", () => {
 
 topNSelect.addEventListener("change", () => {
   state.topN = Number(topNSelect.value);
+  updateDashboard();
+});
+
+domainSelect.addEventListener("change", () => {
+  state.domainAuto = domainSelect.value === "auto";
+  state.domain = state.domainAuto ? state.inferredDomain : domainSelect.value;
   updateDashboard();
 });
 
@@ -187,7 +197,8 @@ function ingestRows(rawRows) {
   state.rows = rows;
   state.columns = cleanedHeaders;
   state.profile = profileDataset(rows, cleanedHeaders);
-  state.domain = inferDomain(state.profile);
+  state.inferredDomain = inferDomain(state.profile);
+  state.domain = state.domainAuto ? state.inferredDomain : state.domain;
   state.numericColumns = Object.keys(state.profile).filter(
     (col) => state.profile[col].type === "numeric"
   );
@@ -371,7 +382,7 @@ function chooseKpiMetrics(profile, numericColumns) {
     general: ["revenue", "sales", "cost", "profit", "orders", "users", "sessions", "rate", "return"],
   };
 
-  const keywords = domainKeywords[state.domain] || domainKeywords.general;
+  const keywords = Array.from(new Set([...(domainKeywords[state.domain] || []), ...domainKeywords.general]));
 
   return numericColumns
     .filter((col) => !/\b(id|guid|uuid|hash|zip|postal|code)\b/i.test(col))
@@ -441,6 +452,8 @@ function initControls(recommendedMetrics) {
     dateEndInput.value = "";
     state.dateRange = { start: null, end: null };
   }
+
+  domainSelect.value = state.domainAuto ? "auto" : state.domain;
 }
 
 function updateDashboard() {
@@ -451,6 +464,7 @@ function updateDashboard() {
   renderTable(filteredRows, state.columns);
   renderInsights(filteredRows);
   renderProfileTable(state.profile);
+  renderQualityBadge(filteredRows);
   showWarnings(collectWarnings());
 }
 
@@ -579,15 +593,16 @@ function renderProfileTable(profile) {
       ? stats.topValues.map((item) => `${item.value} (${item.count})`).join(", ")
       : "—";
 
+    const metricType = stats.type === "numeric" ? inferMetricType(col, []) : { isCurrency: false, isRate: false };
     const cells = [
       col,
       stats.type,
       `${Math.round(stats.missingRate * 100)}%`,
       stats.uniqueCount ?? "—",
-      stats.min ?? "—",
-      stats.max ?? "—",
-      stats.mean !== null ? numberFormatter.format(stats.mean) : "—",
-      stats.median !== null ? numberFormatter.format(stats.median) : "—",
+      stats.min !== null ? formatMetricValue(stats.min, metricType) : "—",
+      stats.max !== null ? formatMetricValue(stats.max, metricType) : "—",
+      stats.mean !== null ? formatMetricValue(stats.mean, metricType) : "—",
+      stats.median !== null ? formatMetricValue(stats.median, metricType) : "—",
       stats.std !== null ? numberFormatter.format(stats.std) : "—",
       stats.type === "date" ? dateRange : "—",
       stats.type === "categorical" ? topValues : "—",
@@ -603,6 +618,50 @@ function renderProfileTable(profile) {
 
   profileTable.appendChild(thead);
   profileTable.appendChild(tbody);
+}
+
+function renderQualityBadge(rows) {
+  const score = computeQualityScore(rows);
+  const label = `Quality ${score}`;
+  qualityBadge.textContent = label;
+  if (score >= 85) {
+    qualityBadge.style.background = "#e8f5ef";
+    qualityBadge.style.color = "#2f5e4e";
+    qualityBadge.style.borderColor = "#cfe6d9";
+  } else if (score >= 70) {
+    qualityBadge.style.background = "#fff7e8";
+    qualityBadge.style.color = "#8b5b1a";
+    qualityBadge.style.borderColor = "#f3d3a2";
+  } else {
+    qualityBadge.style.background = "#ffe9e8";
+    qualityBadge.style.color = "#a6342a";
+    qualityBadge.style.borderColor = "#f7c8c2";
+  }
+}
+
+function computeQualityScore(rows) {
+  let score = 100;
+  const profile = state.profile;
+  const missingPenalty = Object.values(profile).reduce((sum, stats) => sum + stats.missingRate, 0) / state.columns.length;
+  score -= Math.round(missingPenalty * 60);
+
+  const numericIssues = Object.values(profile)
+    .filter((stats) => stats.type === "numeric" && stats.nonNumericRate !== null)
+    .map((stats) => stats.nonNumericRate);
+  if (numericIssues.length) {
+    const avgNonNumeric = numericIssues.reduce((sum, val) => sum + val, 0) / numericIssues.length;
+    score -= Math.round(avgNonNumeric * 30);
+  }
+
+  const duplicateCount = countDuplicateRows(rows);
+  if (duplicateCount > 0) score -= Math.min(10, Math.round((duplicateCount / rows.length) * 100));
+
+  if (state.dateColumn) {
+    const gaps = countDateGaps(rows, state.dateColumn);
+    if (gaps > 0) score -= Math.min(10, Math.round((gaps / (rows.length || 1)) * 100));
+  }
+
+  return Math.max(0, Math.min(100, score));
 }
 
 function renderTable(rows, columns) {
@@ -659,11 +718,14 @@ function sortTable(column) {
 function inferMetricType(metric, values) {
   const lower = metric.toLowerCase();
   const isCurrency = /(revenue|sales|cost|spend|profit|price|amount)/i.test(lower);
-  const isRate = /(rate|percent|ctr|cvr|roas|ratio)/i.test(lower) || values.every((val) => val >= 0 && val <= 1);
+  const isRateName = /(rate|percent|ctr|cvr|roas|ratio)/i.test(lower);
+  const isRateRange = values.length > 0 && values.every((val) => val >= 0 && val <= 1);
+  const isRate = isRateName || isRateRange;
   return { isCurrency, isRate };
 }
 
 function computeRateValue(metric, values) {
+  if (!values.length) return 0;
   const denominator = findRateDenominator(metric, state.numericColumns);
   if (!denominator) {
     const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
@@ -1074,6 +1136,15 @@ function countDateGaps(rows, dateColumn) {
 }
 function renderInsights(rows) {
   insightsList.innerHTML = "";
+  const insights = buildInsights(rows);
+  insights.slice(0, 6).forEach((text) => {
+    const li = document.createElement("li");
+    li.textContent = text;
+    insightsList.appendChild(li);
+  });
+}
+
+function buildInsights(rows) {
   const insights = [];
   const metric = state.selectedMetric;
   const dimension = state.selectedDimension;
@@ -1126,11 +1197,7 @@ function renderInsights(rows) {
     insights.push("Upload more data to generate insights.");
   }
 
-  insights.slice(0, 6).forEach((text) => {
-    const li = document.createElement("li");
-    li.textContent = text;
-    insightsList.appendChild(li);
-  });
+  return insights;
 }
 
 function detectAnomalies(values) {
@@ -1144,6 +1211,44 @@ function detectAnomalies(values) {
     .map((val, idx) => ({ index: idx + 1, z: (val - mean) / std }))
     .filter((item) => Math.abs(item.z) > 2)
     .sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
+}
+
+function exportFilteredCsv() {
+  const rows = getFilteredRows();
+  if (!rows.length) return;
+  const csv = Papa.unparse(rows);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "filtered-data.csv";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function downloadInsights() {
+  const rows = getFilteredRows();
+  const insights = buildInsights(rows);
+  const content = [
+    "Insights",
+    `Generated: ${new Date().toLocaleString()}`,
+    `Metric: ${state.selectedMetric}`,
+    `Dimension: ${state.selectedDimension || "—"}`,
+    "",
+    ...insights.map((text, index) => `${index + 1}. ${text}`),
+  ].join("\n");
+
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "insights.txt";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 function formatDateInput(date) {
