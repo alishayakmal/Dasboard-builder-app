@@ -1,0 +1,14 @@
+﻿Date,Campaign,Channel,Spend,Clicks,Impressions,Conversions,CTR
+2025-01-02,Spring Launch,Search,1200,3400,125,0.0368
+2025-01-03,Spring Launch,Social,980,2900,110,0.0374
+2025-01-04,Brand Awareness,Display,1550,6400,76,0.0119
+2025-01-05,Brand Awareness,Social,1110,5400,64,0.0119
+2025-01-06,Retargeting,Search,860,2500,190,0.0760
+2025-01-07,Retargeting,Social,730,2100,160,0.0762
+2025-01-08,Holiday Push,Display,1980,7200,102,0.0142
+2025-01-09,Holiday Push,Search,1420,4800,210,0.0438
+2025-01-10,Holiday Push,Social,1050,3600,175,0.0486
+2025-01-11,Retention,Email,420,900,130,0.1444
+2025-01-12,Retention,Email,460,980,140,0.1429
+2025-01-13,New Products,Search,1300,4200,220,0.0524
+2025-01-14,New Products,Social,1180,3500,190,0.0543

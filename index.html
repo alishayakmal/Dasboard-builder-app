@@ -15,7 +15,7 @@
       <div class="logo">D2D</div>
       <div>
         <h1>Data to Dashboard</h1>
-        <p>Upload a CSV and get a clean, instant dashboard.</p>
+        <p>Upload a CSV, connect an API, or explore samples to generate KPI tiles, trends, and a clean data table.</p>
       </div>
     </div>
     <div class="controls">
@@ -28,7 +28,27 @@
   </header>
 
   <main class="container">
-    <section id="state" class="state">
+    <section class="tabs">
+      <button class="tab-button active" data-tab="upload">Upload CSV</button>
+      <button class="tab-button" data-tab="api">Connect API</button>
+      <button class="tab-button" data-tab="samples">Explore Samples</button>
+    </section>
+
+    <section id="status" class="status hidden"></section>
+    <section id="error" class="error hidden"></section>
+    <section id="warnings" class="warnings hidden"></section>
+
+    <section id="state" class="state tab-panel" data-tab-panel="upload">
+      <div class="upload-panel">
+        <div class="drop-zone" id="dropZone">
+          <p>Drag and drop a CSV here</p>
+          <button id="uploadTrigger" class="ghost">Choose file</button>
+          <input type="file" id="uploadInput" accept=".csv,text/csv" />
+        </div>
+        <div class="upload-help">
+          <p>Supported: CSV with headers. We handle currency symbols, percent values, and thousands separators.</p>
+        </div>
+      </div>
       <div class="state-card">
         <h2>Get started</h2>
         <p>Upload a CSV file to generate KPIs, charts, and a data table. Your data never leaves the browser.</p>
@@ -47,8 +67,42 @@
       </div>
     </section>
 
-    <section id="error" class="error hidden"></section>
-    <section id="warnings" class="warnings hidden"></section>
+    <section id="apiPanel" class="tab-panel hidden" data-tab-panel="api">
+      <div class="table-card">
+        <div class="table-header">
+          <h3>Connect API (Coming next)</h3>
+          <p>Set up an API source. We will validate inputs and prepare a connector.</p>
+        </div>
+        <div class="api-form">
+          <label>Base URL <input type="text" id="apiBaseUrl" placeholder="https://api.example.com" /></label>
+          <label>Auth type
+            <select id="apiAuthType">
+              <option value="none">None</option>
+              <option value="apiKey">API Key</option>
+              <option value="bearer">Bearer Token</option>
+            </select>
+          </label>
+          <label>API Key / Token <input type="password" id="apiKey" placeholder="••••••••" /></label>
+          <label>Endpoint <input type="text" id="apiEndpoint" placeholder="/v1/data" /></label>
+          <button id="testApi" class="ghost">Test Connection</button>
+          <p id="apiStatus" class="helper-text">This is a placeholder. API connections are not enabled yet.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="samplesPanel" class="tab-panel hidden" data-tab-panel="samples">
+      <div class="table-card">
+        <div class="table-header">
+          <h3>Explore Samples</h3>
+          <p>Pick a curated dataset to preview KPIs and trends.</p>
+        </div>
+        <div id="sampleGallery" class="sample-grid"></div>
+        <div class="suggested-trends">
+          <h4>Suggested trends</h4>
+          <ul id="suggestedTrends"></ul>
+        </div>
+      </div>
+    </section>
 
     <section id="dashboard" class="dashboard hidden">
       <div class="section-header">

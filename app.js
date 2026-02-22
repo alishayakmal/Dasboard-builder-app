@@ -5,6 +5,7 @@ const loadSampleInline = document.getElementById("loadSampleInline");
 const stateSection = document.getElementById("state");
 const errorSection = document.getElementById("error");
 const warningsSection = document.getElementById("warnings");
+const statusSection = document.getElementById("status");
 const dashboard = document.getElementById("dashboard");
 const datasetSummary = document.getElementById("datasetSummary");
 const kpiGrid = document.getElementById("kpiGrid");
@@ -27,18 +28,29 @@ const insightsList = document.getElementById("insightsList");
 const profileTable = document.getElementById("profileTable");
 const qualityBadge = document.getElementById("qualityBadge");
 const buildStamp = document.getElementById("buildStamp");
-
-if (buildStamp) {
-  buildStamp.textContent = `Build: ${new Date().toISOString()}`;
-}
+const tabButtons = document.querySelectorAll(".tab-button");
+const tabPanels = document.querySelectorAll("[data-tab-panel]");
+const dropZone = document.getElementById("dropZone");
+const uploadTrigger = document.getElementById("uploadTrigger");
+const uploadInput = document.getElementById("uploadInput");
+const apiBaseUrl = document.getElementById("apiBaseUrl");
+const apiAuthType = document.getElementById("apiAuthType");
+const apiKey = document.getElementById("apiKey");
+const apiEndpoint = document.getElementById("apiEndpoint");
+const testApiButton = document.getElementById("testApi");
+const apiStatus = document.getElementById("apiStatus");
+const sampleGallery = document.getElementById("sampleGallery");
+const suggestedTrends = document.getElementById("suggestedTrends");
 
 window.addEventListener("error", (event) => {
   const detail = event?.message ? `Details: ${event.message}` : "Details: unknown error";
+  console.error("Runtime error", event.error || event);
   showError("Something went wrong while running the dashboard.", detail);
 });
 
 window.addEventListener("unhandledrejection", (event) => {
   const reason = event?.reason?.message || event?.reason || "unknown error";
+  console.error("Unhandled promise rejection", event.reason || event);
   showError("A background task failed. Please refresh and try again.", `Details: ${reason}`);
 });
 
@@ -50,6 +62,29 @@ let currentTableRows = [];
 let currentSort = { key: null, direction: "asc" };
 
 const samplePath = "data-sample.csv";
+const sampleManifest = [
+  {
+    id: "sales",
+    name: "Retail Sales",
+    file: "./samples/retail-sales.csv",
+    description: "Daily orders, revenue, returns, and channel performance.",
+    columns: ["Date", "Region", "Channel", "Orders", "Revenue", "ReturnRate"],
+  },
+  {
+    id: "marketing",
+    name: "Marketing Performance",
+    file: "./samples/marketing-performance.csv",
+    description: "Campaigns with spend, clicks, impressions, and conversions.",
+    columns: ["Date", "Campaign", "Channel", "Spend", "Clicks", "Impressions", "Conversions", "CTR"],
+  },
+  {
+    id: "product",
+    name: "Product Usage",
+    file: "./samples/product-usage.csv",
+    description: "Weekly active users, sessions, and retention.",
+    columns: ["Week", "Plan", "Region", "ActiveUsers", "Sessions", "RetentionRate"],
+  },
+];
 
 const numberFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
@@ -82,79 +117,175 @@ const state = {
   inferredDomain: "general",
 };
 
-fileInput.addEventListener("change", (event) => handleFile(event.target.files[0]));
-fileInputInline.addEventListener("change", (event) => handleFile(event.target.files[0]));
-loadSample.addEventListener("click", () => loadSampleData());
-loadSampleInline.addEventListener("click", () => loadSampleData());
+document.addEventListener("DOMContentLoaded", init);
 
-metricSelect.addEventListener("change", () => {
-  state.selectedMetric = metricSelect.value;
-  updateDashboard();
-});
+function init() {
+  console.log("init started");
+  if (buildStamp) {
+    buildStamp.textContent = `Build: ${new Date().toISOString()}`;
+  }
 
-dimensionSelect.addEventListener("change", () => {
-  state.selectedDimension = dimensionSelect.value;
-  updateDashboard();
-});
+  tabButtons.forEach((button) => {
+    button.addEventListener("click", () => switchTab(button.dataset.tab));
+  });
 
-topNSelect.addEventListener("change", () => {
-  state.topN = Number(topNSelect.value);
-  updateDashboard();
-});
+  if (uploadTrigger && uploadInput) {
+    uploadTrigger.addEventListener("click", () => uploadInput.click());
+  }
 
-domainSelect.addEventListener("change", () => {
-  state.domainAuto = domainSelect.value === "auto";
-  state.domain = state.domainAuto ? state.inferredDomain : domainSelect.value;
-  updateDashboard();
-});
+  [fileInput, fileInputInline, uploadInput].forEach((input) => {
+    if (!input) return;
+    input.addEventListener("change", (event) => handleFileSelection(event.target.files[0]));
+  });
 
-dateStartInput.addEventListener("change", () => {
-  state.dateRange.start = dateStartInput.value ? new Date(dateStartInput.value) : null;
-  updateDashboard();
-});
+  [loadSample, loadSampleInline].forEach((button) => {
+    if (!button) return;
+    button.addEventListener("click", () => loadSampleGallery());
+  });
 
-dateEndInput.addEventListener("change", () => {
-  state.dateRange.end = dateEndInput.value ? new Date(dateEndInput.value) : null;
-  updateDashboard();
-});
+  if (dropZone) {
+    dropZone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      dropZone.classList.add("dragover");
+    });
+    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+    dropZone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      dropZone.classList.remove("dragover");
+      const file = event.dataTransfer?.files?.[0];
+      handleFileSelection(file);
+    });
+  }
 
-exportCsvButton.addEventListener("click", () => exportFilteredCsv());
-downloadInsightsButton.addEventListener("click", () => downloadInsights());
+  metricSelect.addEventListener("change", () => {
+    state.selectedMetric = metricSelect.value;
+    updateDashboard();
+  });
 
-function handleFile(file) {
+  dimensionSelect.addEventListener("change", () => {
+    state.selectedDimension = dimensionSelect.value;
+    updateDashboard();
+  });
+
+  topNSelect.addEventListener("change", () => {
+    state.topN = Number(topNSelect.value);
+    updateDashboard();
+  });
+
+  domainSelect.addEventListener("change", () => {
+    state.domainAuto = domainSelect.value === "auto";
+    state.domain = state.domainAuto ? state.inferredDomain : domainSelect.value;
+    updateDashboard();
+  });
+
+  dateStartInput.addEventListener("change", () => {
+    state.dateRange.start = dateStartInput.value ? new Date(dateStartInput.value) : null;
+    updateDashboard();
+  });
+
+  dateEndInput.addEventListener("change", () => {
+    state.dateRange.end = dateEndInput.value ? new Date(dateEndInput.value) : null;
+    updateDashboard();
+  });
+
+  exportCsvButton.addEventListener("click", () => exportFilteredCsv());
+  downloadInsightsButton.addEventListener("click", () => downloadInsights());
+
+  if (testApiButton) {
+    testApiButton.addEventListener("click", testApiConnection);
+  }
+
+  loadSampleGallery();
+  console.log("handlers wired");
+}
+
+function handleFileSelection(file) {
   if (!file) return;
+  console.log("file selected", file.name);
   clearMessages();
-  Papa.parse(file, {
+  setStatus("Reading file");
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = reader.result;
+    parseCsvText(text);
+  };
+  reader.onerror = () => {
+    showError("Unable to read the file.", "Details: FileReader failed");
+  };
+  reader.readAsText(file);
+}
+
+function parseCsvText(text) {
+  setStatus("Parsing CSV");
+  Papa.parse(text, {
     header: false,
     skipEmptyLines: true,
     complete: (results) => {
       if (results.errors.length) {
-        showError("We could not parse that CSV. Please check the format and try again.");
+        const first = results.errors[0];
+        showError("We could not parse that CSV. Please check the format and try again.", `Details: ${first.message}`);
         return;
       }
+      console.log("parse complete");
       ingestRows(results.data);
     },
   });
 }
 
-function loadSampleData() {
+function loadSampleGallery() {
+  renderSampleGallery();
+  switchTab("samples");
+}
+
+function switchTab(tabName) {
+  tabButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.tab === tabName);
+  });
+  tabPanels.forEach((panel) => {
+    panel.classList.toggle("hidden", panel.dataset.tabPanel !== tabName);
+  });
+}
+
+function renderSampleGallery() {
+  if (!sampleGallery) return;
+  sampleGallery.innerHTML = "";
+  sampleManifest.forEach((sample) => {
+    const card = document.createElement("div");
+    card.className = "sample-card";
+    card.innerHTML = `
+      <strong>${sample.name}</strong>
+      <p>${sample.description}</p>
+      <p class="helper-text">Columns: ${sample.columns.join(", ")}</p>
+      <button class="ghost" data-sample="${sample.id}">Load sample</button>
+    `;
+    card.querySelector("button").addEventListener("click", () => loadSampleFile(sample));
+    sampleGallery.appendChild(card);
+  });
+}
+
+async function loadSampleFile(sample) {
   clearMessages();
-  if (window.location.protocol === "file:") {
-    showWarningMessage("Sample loading requires a local server. Use Upload or run a local server.");
+  setStatus("Loading sample");
+  try {
+    const response = await fetch(sample.file);
+    if (!response.ok) {
+      throw new Error(`Fetch failed: ${response.status}`);
+    }
+    const text = await response.text();
+    parseCsvText(text);
+  } catch (error) {
+    showError("Sample CSV could not be loaded. Check your connection or file path.", `Details: ${error.message}`);
+  }
+}
+
+function testApiConnection() {
+  const base = apiBaseUrl?.value?.trim();
+  const endpoint = apiEndpoint?.value?.trim();
+  if (!base || !endpoint) {
+    apiStatus.textContent = "Please enter Base URL and Endpoint to validate.";
     return;
   }
-  Papa.parse(samplePath, {
-    download: true,
-    header: false,
-    skipEmptyLines: true,
-    complete: (results) => {
-      if (results.errors.length) {
-        showError("Sample CSV could not be loaded. Refresh and try again.");
-        return;
-      }
-      ingestRows(results.data);
-    },
-  });
+  apiStatus.textContent = "Coming next: API connections will be supported in a future update.";
 }
 
 function clearMessages() {
@@ -162,6 +293,10 @@ function clearMessages() {
   errorSection.textContent = "";
   warningsSection.classList.add("hidden");
   warningsSection.innerHTML = "";
+  if (statusSection) {
+    statusSection.classList.add("hidden");
+    statusSection.textContent = "";
+  }
 }
 
 function showError(message, detail) {
@@ -171,6 +306,7 @@ function showError(message, detail) {
     errorSection.textContent = message;
   }
   errorSection.classList.remove("hidden");
+  console.error(message, detail || "");
 }
 
 function showWarnings(warnings) {
@@ -190,7 +326,14 @@ function showWarningMessage(message) {
   warningsSection.innerHTML = `<strong>Notice</strong><ul><li>${message}</li></ul>`;
 }
 
+function setStatus(message) {
+  if (!statusSection) return;
+  statusSection.textContent = message;
+  statusSection.classList.remove("hidden");
+}
+
 function ingestRows(rawRows) {
+  setStatus("Profiling columns");
   if (!rawRows || rawRows.length === 0) {
     showError("No rows found in this CSV.");
     return;
@@ -246,11 +389,17 @@ function ingestRows(rawRows) {
   state.selectedDimension = chooseBestDimension(state.profile, state.categoricalColumns) || state.dateColumn;
 
   initControls(recommendedMetrics);
+  setStatus("Rendering dashboard");
   updateDashboard();
 
   datasetSummary.textContent = `${rows.length} rows · ${state.columns.length} columns`;
   stateSection.classList.add("hidden");
   dashboard.classList.remove("hidden");
+  if (statusSection) {
+    statusSection.classList.add("hidden");
+    statusSection.textContent = "";
+  }
+  console.log("dashboard rendered");
 }
 
 function normalizeHeaders(headers) {
@@ -443,11 +592,20 @@ function buildNumericFailureDetail(profile) {
     .slice(0, 5);
 
   const lines = candidates.map((item) => {
-    const samples = item.failedSamples.length ? item.failedSamples.join(", ") : "—";
-    return `${item.col}: numericRate ${(item.numericRate * 100).toFixed(0)}%, nonBlank ${item.nonBlankCount}, samples ${samples}`;
+    const samples = item.failedSamples.length
+      ? item.failedSamples.map((value) => escapeHtml(value)).join(", ")
+      : "—";
+    return `${escapeHtml(item.col)}: numericRate ${(item.numericRate * 100).toFixed(0)}%, nonBlank ${item.nonBlankCount}, samples ${samples}`;
   });
 
   return lines.join("<br>");
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 function chooseKpiMetrics(profile, numericColumns) {
   const domainKeywords = {
@@ -542,6 +700,7 @@ function updateDashboard() {
   renderProfileTable(state.profile);
   renderQualityBadge(filteredRows);
   showWarnings(collectWarnings());
+  renderSuggestedTrends();
 }
 
 function getFilteredRows() {
@@ -1217,6 +1376,35 @@ function renderInsights(rows) {
     const li = document.createElement("li");
     li.textContent = text;
     insightsList.appendChild(li);
+  });
+}
+
+function renderSuggestedTrends() {
+  if (!suggestedTrends) return;
+  suggestedTrends.innerHTML = "";
+  if (!state.rows.length) {
+    suggestedTrends.innerHTML = "<li>Load a sample to see suggested trends.</li>";
+    return;
+  }
+  const suggestions = [];
+  if (state.dateColumn && state.numericColumns.length) {
+    const metric = state.selectedMetric || state.numericColumns[0];
+    suggestions.push(`${metric} trend over ${state.dateColumn}`);
+    if (state.categoricalColumns.length) {
+      suggestions.push(`${metric} by ${state.categoricalColumns[0]}`);
+    }
+  } else if (state.numericColumns.length && state.categoricalColumns.length) {
+    suggestions.push(`${state.selectedMetric || state.numericColumns[0]} by ${state.categoricalColumns[0]}`);
+  }
+
+  if (!suggestions.length) {
+    suggestions.push("Add a date or categorical column to unlock trend suggestions.");
+  }
+
+  suggestions.forEach((text) => {
+    const li = document.createElement("li");
+    li.textContent = text;
+    suggestedTrends.appendChild(li);
   });
 }
 

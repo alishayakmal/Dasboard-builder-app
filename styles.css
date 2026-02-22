@@ -145,6 +145,128 @@ p {
   flex-wrap: wrap;
 }
 
+.tabs {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.tab-button {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  padding: 10px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-button.active,
+.tab-button:hover {
+  background: var(--accent-primary);
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(124, 58, 237, 0.18);
+}
+
+.tab-panel.hidden {
+  display: none;
+}
+
+.status {
+  background: #1e1b2e;
+  color: #c4b5fd;
+  border: 1px solid #4338ca;
+  padding: 12px 16px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+.upload-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.drop-zone {
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border-color);
+  border-radius: 12px;
+  padding: 20px;
+  text-align: center;
+  display: grid;
+  gap: 12px;
+}
+
+.drop-zone.dragover {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+#uploadInput {
+  display: none;
+}
+
+.upload-help {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.api-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.api-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.api-form input,
+.api-form select {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.helper-text {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.sample-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.sample-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.sample-card button {
+  justify-self: start;
+}
+
+.suggested-trends {
+  margin-top: 16px;
+}
+
+.suggested-trends ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+}
 .error {
   background: #2a1114;
   color: #fca5a5;
