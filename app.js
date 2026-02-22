@@ -36,6 +36,7 @@ const compareMetricSelect = document.getElementById("compareMetricSelect");
 const comparisonTrendChart = document.getElementById("comparisonTrendChart");
 const driversList = document.getElementById("driversList");
 const segmentChartCanvas = document.getElementById("segmentChart");
+const chartsSection = document.querySelector(".charts");
 const tabButtons = document.querySelectorAll(".tab-button");
 const tabPanels = document.querySelectorAll("[data-tab-panel]");
 const dropZone = document.getElementById("dropZone");
@@ -114,27 +115,27 @@ const percentFormatter = new Intl.NumberFormat("en-US", {
 const state = {
   rawRows: [],
   filteredRows: [],
-  columns: [],
-  profile: {},
-  numericCandidates: [],
-  dateCandidates: [],
-  usableNumericMetrics: [],
-  numericColumns: [],
-  categoricalColumns: [],
-  dateColumn: null,
-  selectedMetric: null,
-  selectedDimension: null,
-  compareMetrics: [],
-  topN: 8,
+  schema: {
+    columns: [],
+    profiles: {},
+    numeric: [],
+    dates: [],
+    categoricals: [],
+  },
+  filters: {
+    industry: "All",
+  },
+  selections: {
+    primaryMetric: null,
+    compareMetrics: [],
+  },
   dateRange: { start: null, end: null },
   domain: "general",
   domainAuto: true,
   inferredDomain: "general",
   chosenXAxisType: "category",
   industryColumn: null,
-  filters: {
-    industry: "All",
-  },
+  topN: 8,
 };
 
 document.addEventListener("DOMContentLoaded", init);
@@ -178,7 +179,7 @@ function init() {
   }
 
   metricSelect.addEventListener("change", () => {
-    state.selectedMetric = metricSelect.value;
+    state.selections.primaryMetric = metricSelect.value;
     applyFiltersAndRender();
   });
 
@@ -326,6 +327,41 @@ function clearMessages() {
   }
 }
 
+function resetStateForNewDataset() {
+  destroyAllCharts();
+  state.filteredRows = [];
+  state.schema = { columns: [], profiles: {}, numeric: [], dates: [], categoricals: [] };
+  state.filters = { industry: "All" };
+  state.selections = { primaryMetric: null, compareMetrics: [] };
+  state.industryColumn = null;
+  state.dateRange = { start: null, end: null };
+  state.chosenXAxisType = "category";
+  if (kpiGrid) kpiGrid.innerHTML = "";
+  if (driversList) driversList.innerHTML = "";
+  if (insightsList) insightsList.innerHTML = "";
+  if (profileTable) profileTable.innerHTML = "";
+  if (table) table.innerHTML = "";
+  if (chartsSection) {
+    chartsSection.querySelectorAll("canvas").forEach((canvas) => {
+      const ctx = canvas.getContext("2d");
+      if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    });
+  }
+  if (filterBadge) filterBadge.textContent = "Filtered to: All";
+}
+
+function destroyAllCharts() {
+  [trendChartInstance, barChartInstance, extraChartInstance, comparisonChartInstance, segmentChartInstance, heatmapChartInstance]
+    .filter(Boolean)
+    .forEach((chart) => chart.destroy());
+  trendChartInstance = null;
+  barChartInstance = null;
+  extraChartInstance = null;
+  comparisonChartInstance = null;
+  segmentChartInstance = null;
+  heatmapChartInstance = null;
+}
+
 function showError(message, detail) {
   if (detail) {
     const debug = buildDebugInfo();
@@ -394,19 +430,20 @@ function ingestRows(rawRows) {
     return obj;
   });
 
+  resetStateForNewDataset();
   state.rawRows = rows;
-  state.columns = cleanedHeaders;
-  state.profile = profileDataset(rows, cleanedHeaders);
-  state.inferredDomain = inferDomain(state.profile);
+  state.schema.columns = cleanedHeaders;
+  state.schema.profiles = profileDataset(rows, cleanedHeaders);
+  state.inferredDomain = inferDomain(state.schema.profiles);
   state.domain = state.domainAuto ? state.inferredDomain : state.domain;
-  state.numericCandidates = Object.keys(state.profile).filter(
-    (col) => state.profile[col].type === "numeric"
+  state.schema.numeric = Object.keys(state.schema.profiles).filter(
+    (col) => state.schema.profiles[col].type === "numeric"
   );
-  state.dateCandidates = Object.keys(state.profile).filter((col) => state.profile[col].type === "date");
-  state.categoricalColumns = Object.keys(state.profile).filter(
-    (col) => state.profile[col].type === "categorical"
+  state.schema.dates = Object.keys(state.schema.profiles).filter((col) => state.schema.profiles[col].type === "date");
+  state.schema.categoricals = Object.keys(state.schema.profiles).filter(
+    (col) => state.schema.profiles[col].type === "categorical"
   );
-  state.usableNumericMetrics = state.numericCandidates.filter((col) => {
+  const usableNumericMetrics = state.schema.numeric.filter((col) => {
     let countParsed = 0;
     for (const row of state.rawRows) {
       if (parseNumber(row[col]) !== null) {
@@ -416,25 +453,25 @@ function ingestRows(rawRows) {
     }
     return false;
   });
-  state.numericColumns = state.usableNumericMetrics;
-  state.dateColumn = state.dateCandidates[0] || null;
-  state.industryColumn = findIndustryColumn(state.columns);
+  state.schema.numeric = usableNumericMetrics;
+  state.schema.dates = state.schema.dates;
+  state.industryColumn = findIndustryColumn(state.schema.columns);
 
-  if (!state.usableNumericMetrics.length) {
-    const detail = buildNumericFailureDetail(state.profile);
+  if (!state.schema.numeric.length) {
+    const detail = buildNumericFailureDetail(state.schema.profiles);
     showError("No usable numeric metrics detected. Add at least one numeric column.", detail);
     return;
   }
 
-  const recommendedMetrics = chooseKpiMetrics(state.profile, state.numericColumns);
-  state.selectedMetric = recommendedMetrics[0] || state.numericColumns[0];
-  state.selectedDimension = chooseBestDimension(state.profile, state.categoricalColumns) || state.dateColumn;
+  const recommendedMetrics = chooseKpiMetrics(state.schema.profiles, state.schema.numeric);
+  state.selections.primaryMetric = recommendedMetrics[0] || state.schema.numeric[0] || null;
+  state.selectedDimension = chooseBestDimension(state.schema.profiles, state.schema.categoricals) || state.schema.dates[0] || null;
 
   initControls(recommendedMetrics);
   setStatus("Rendering dashboard");
   applyFiltersAndRender();
 
-  datasetSummary.textContent = `${rows.length} rows · ${state.columns.length} columns`;
+  datasetSummary.textContent = `${rows.length} rows · ${state.schema.columns.length} columns`;
   stateSection.classList.add("hidden");
   dashboard.classList.remove("hidden");
   if (statusSection) {
@@ -657,9 +694,9 @@ function escapeHtml(text) {
 }
 
 function buildDebugInfo() {
-  const numericCandidates = state.numericCandidates?.join(", ") || "—";
-  const usableNumeric = state.usableNumericMetrics?.join(", ") || "—";
-  const dateCandidates = state.dateCandidates?.join(", ") || "—";
+  const numericCandidates = state.schema.numeric?.join(", ") || "—";
+  const usableNumeric = state.schema.numeric?.join(", ") || "—";
+  const dateCandidates = state.schema.dates?.join(", ") || "—";
   const chosenXAxisType = state.chosenXAxisType || "—";
   return `Debug: numericCandidates [${numericCandidates}], usableNumericMetrics [${usableNumeric}], dateCandidates [${dateCandidates}], chosenXAxisType ${chosenXAxisType}`;
 }
@@ -711,18 +748,21 @@ function findIndustryColumn(columns) {
 
 function initControls(recommendedMetrics) {
   metricSelect.innerHTML = "";
-  const allMetrics = Array.from(new Set([...recommendedMetrics, ...state.numericColumns]));
+  const allMetrics = Array.from(new Set([...recommendedMetrics, ...state.schema.numeric]));
   allMetrics.forEach((metric) => {
     const option = document.createElement("option");
     option.value = metric;
     option.textContent = metric;
     metricSelect.appendChild(option);
   });
-  metricSelect.value = state.selectedMetric;
+  if (!state.selections.primaryMetric || !allMetrics.includes(state.selections.primaryMetric)) {
+    state.selections.primaryMetric = allMetrics[0] || null;
+  }
+  metricSelect.value = state.selections.primaryMetric || "";
 
   dimensionSelect.innerHTML = "";
-  const dimensions = state.categoricalColumns.length ? state.categoricalColumns : [];
-  if (state.dateColumn) dimensions.push(state.dateColumn);
+  const dimensions = state.schema.categoricals.length ? state.schema.categoricals : [];
+  if (state.schema.dates[0]) dimensions.push(state.schema.dates[0]);
   const uniqueDimensions = Array.from(new Set(dimensions));
   uniqueDimensions.forEach((dim) => {
     const option = document.createElement("option");
@@ -730,14 +770,14 @@ function initControls(recommendedMetrics) {
     option.textContent = dim;
     dimensionSelect.appendChild(option);
   });
-  state.selectedDimension = state.selectedDimension || uniqueDimensions[0] || state.dateColumn;
+  state.selectedDimension = state.selectedDimension || uniqueDimensions[0] || state.schema.dates[0] || null;
   dimensionSelect.value = state.selectedDimension;
 
-  if (state.dateColumn) {
+  if (state.schema.dates[0]) {
     dateStartInput.disabled = false;
     dateEndInput.disabled = false;
-    const dateMin = state.profile[state.dateColumn].dateMin;
-    const dateMax = state.profile[state.dateColumn].dateMax;
+    const dateMin = state.schema.profiles[state.schema.dates[0]].dateMin;
+    const dateMax = state.schema.profiles[state.schema.dates[0]].dateMax;
     if (dateMin && dateMax) {
       dateStartInput.min = formatDateInput(dateMin);
       dateStartInput.max = formatDateInput(dateMax);
@@ -793,6 +833,7 @@ function initControls(recommendedMetrics) {
 }
 
 function applyFiltersAndRender() {
+  clearMessages();
   state.filteredRows = applyIndustryFilter(state.rawRows, state.filters.industry);
   const scopedRows = getFilteredRows();
   if (!scopedRows.length) {
@@ -800,11 +841,11 @@ function applyFiltersAndRender() {
     return;
   }
 
-  state.profile = profileDataset(scopedRows, state.columns);
-  state.numericCandidates = Object.keys(state.profile).filter((col) => state.profile[col].type === "numeric");
-  state.dateCandidates = Object.keys(state.profile).filter((col) => state.profile[col].type === "date");
-  state.categoricalColumns = Object.keys(state.profile).filter((col) => state.profile[col].type === "categorical");
-  state.usableNumericMetrics = state.numericCandidates.filter((col) => {
+  state.schema.profiles = profileDataset(scopedRows, state.schema.columns);
+  state.schema.numeric = Object.keys(state.schema.profiles).filter((col) => state.schema.profiles[col].type === "numeric");
+  state.schema.dates = Object.keys(state.schema.profiles).filter((col) => state.schema.profiles[col].type === "date");
+  state.schema.categoricals = Object.keys(state.schema.profiles).filter((col) => state.schema.profiles[col].type === "categorical");
+  const usableNumeric = state.schema.numeric.filter((col) => {
     let countParsed = 0;
     for (const row of scopedRows) {
       if (parseNumber(row[col]) !== null) {
@@ -814,9 +855,17 @@ function applyFiltersAndRender() {
     }
     return false;
   });
-  state.numericColumns = state.usableNumericMetrics;
-  state.dateColumn = state.dateCandidates[0] || null;
-  state.selectedMetric = state.selectedMetric || chooseTopNumericByVariance(state.profile, state.numericColumns);
+  state.schema.numeric = usableNumeric;
+  state.schema.dates = state.schema.dates;
+  state.dateColumn = state.schema.dates[0] || null;
+  if (!state.schema.numeric.length) {
+    showError("No usable numeric metrics detected for this filter.");
+    return;
+  }
+  if (!state.selections.primaryMetric || !state.schema.numeric.includes(state.selections.primaryMetric)) {
+    state.selections.primaryMetric = state.schema.numeric[0] || null;
+  }
+  state.selections.compareMetrics = state.selections.compareMetrics.filter((m) => state.schema.numeric.includes(m));
 
   if (filterBadge) {
     filterBadge.textContent = `Filtered to: ${state.filters.industry || "All"}`;
@@ -825,9 +874,9 @@ function applyFiltersAndRender() {
   renderKPIs(scopedRows);
   renderCharts(scopedRows);
   renderMetricComparison(scopedRows);
-  renderTable(scopedRows, state.columns);
+  renderTable(scopedRows, state.schema.columns);
   renderInsights(scopedRows);
-  renderProfileTable(state.profile);
+  renderProfileTable(state.schema.profiles);
   renderQualityBadge(scopedRows);
   showWarnings(collectWarnings());
   renderSuggestedTrends();
@@ -854,8 +903,8 @@ function getFilteredRows() {
 
 function renderKPIs(rows) {
   kpiGrid.innerHTML = "";
-  const chosenMetrics = chooseKpiMetrics(state.profile, state.numericColumns);
-  const metrics = chosenMetrics.length ? chosenMetrics : state.numericColumns.slice(0, 6);
+  const chosenMetrics = chooseKpiMetrics(state.schema.profiles, state.schema.numeric);
+  const metrics = chosenMetrics.length ? chosenMetrics : state.schema.numeric.slice(0, 6);
 
   metrics.forEach((metric) => {
     const values = rows
@@ -895,20 +944,20 @@ function renderCharts(rows) {
   if (barChartInstance) barChartInstance.destroy();
   if (extraChartInstance) extraChartInstance.destroy();
 
-  const metric = state.selectedMetric || chooseTopNumericByVariance(state.profile, state.numericColumns);
-  state.selectedMetric = metric;
+  const metric = state.selections.primaryMetric || chooseTopNumericByVariance(state.schema.profiles, state.schema.numeric);
+  state.selections.primaryMetric = metric;
   const metricValues = rows.map((row) => parseNumber(row[metric])).filter((value) => value !== null);
   const metricType = inferMetricType(metric, metricValues);
 
   if (state.dateColumn) {
     state.chosenXAxisType = "date";
-    const bucket = state.rows.length > 200 ? "week" : "day";
+    const bucket = rows.length > 200 ? "week" : "day";
     const series = aggregateByDate(rows, state.dateColumn, metric, bucket, state.dateRange);
     trendTitle.textContent = `${metric} trend`;
     trendSubtitle.textContent = `Grouped by ${bucket}`;
     trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType);
   } else {
-    const category = chooseBestCategoryForAxis(state.profile, state.categoricalColumns);
+    const category = chooseBestCategoryForAxis(state.schema.profiles, state.schema.categoricals);
     if (category) {
       state.chosenXAxisType = "category";
       const series = aggregateByCategory(rows, category, metric, state.topN);
@@ -925,7 +974,7 @@ function renderCharts(rows) {
     }
   }
 
-  const dimension = state.selectedDimension || chooseBestDimension(state.profile, state.categoricalColumns) || state.dateColumn;
+  const dimension = state.selectedDimension || chooseBestDimension(state.schema.profiles, state.schema.categoricals) || state.dateColumn;
   state.selectedDimension = dimension;
   if (dimensionSelect.value !== dimension) dimensionSelect.value = dimension;
   const breakdown = aggregateByCategory(rows, dimension, metric, state.topN);
@@ -933,7 +982,7 @@ function renderCharts(rows) {
   barSubtitle.textContent = `Top ${state.topN}`;
   barChartInstance = createBarChart("barChart", breakdown.labels, breakdown.values, metricType);
 
-  const correlationPair = findStrongestCorrelation(rows, state.numericColumns);
+  const correlationPair = findStrongestCorrelation(rows, state.schema.numeric);
   if (correlationPair) {
     extraTitle.textContent = `Correlation: ${correlationPair.x} vs ${correlationPair.y}`;
     extraSubtitle.textContent = `r = ${correlationPair.corr.toFixed(2)}`;
@@ -1003,9 +1052,9 @@ function renderQualityBadge(rows) {
   const label = `Quality ${score}`;
   qualityBadge.textContent = label;
   if (score >= 85) {
-    qualityBadge.style.background = "#e8f5ef";
-    qualityBadge.style.color = "#2f5e4e";
-    qualityBadge.style.borderColor = "#cfe6d9";
+    qualityBadge.style.background = "rgba(124,58,237,0.15)";
+    qualityBadge.style.color = "#ffffff";
+    qualityBadge.style.borderColor = "rgba(124,58,237,0.4)";
   } else if (score >= 70) {
     qualityBadge.style.background = "#fff7e8";
     qualityBadge.style.color = "#8b5b1a";
@@ -1019,8 +1068,8 @@ function renderQualityBadge(rows) {
 
 function computeQualityScore(rows) {
   let score = 100;
-  const profile = state.profile;
-  const missingPenalty = Object.values(profile).reduce((sum, stats) => sum + stats.missingRate, 0) / state.columns.length;
+  const profile = state.schema.profiles;
+  const missingPenalty = Object.values(profile).reduce((sum, stats) => sum + stats.missingRate, 0) / state.schema.columns.length;
   score -= Math.round(missingPenalty * 60);
 
   const numericIssues = Object.values(profile)
@@ -1104,13 +1153,13 @@ function inferMetricType(metric, values) {
 
 function computeRateValue(metric, values) {
   if (!values.length) return 0;
-  const denominator = findRateDenominator(metric, state.numericColumns);
+  const denominator = findRateDenominator(metric, state.schema.numeric);
   if (!denominator) {
     const avg = values.reduce((sum, val) => sum + val, 0) / values.length;
     return avg;
   }
   const numerator = values.reduce((sum, val) => sum + val, 0);
-  const denomValues = state.rows.map((row) => parseNumber(row[denominator])).filter((value) => value !== null);
+  const denomValues = state.filteredRows.map((row) => parseNumber(row[denominator])).filter((value) => value !== null);
   const denomSum = denomValues.reduce((sum, val) => sum + val, 0);
   return denomSum ? numerator / denomSum : 0;
 }
@@ -1152,6 +1201,16 @@ function computeMedian(values) {
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
+function computeCoefficientOfVariation(rows, metric) {
+  const values = rows.map((row) => parseNumber(row[metric])).filter((value) => value !== null);
+  if (values.length < 2) return null;
+  const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
+  if (mean === 0) return null;
+  const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length;
+  const std = Math.sqrt(variance);
+  return std / Math.abs(mean);
 }
 
 function computePeriodChange(rows, metric) {
@@ -1215,8 +1274,8 @@ function createLineChart(canvasId, labels, values, metricType) {
         {
           label: "Total",
           data: values,
-          borderColor: "#2f5e4e",
-          backgroundColor: "rgba(47, 94, 78, 0.15)",
+          borderColor: "#7c3aed",
+          backgroundColor: "rgba(124, 58, 237, 0.2)",
           tension: 0.35,
           fill: true,
           pointRadius: 3,
@@ -1252,7 +1311,7 @@ function createBarChart(canvasId, labels, values, metricType) {
         {
           label: "Total",
           data: values,
-          backgroundColor: "#f2c14e",
+          backgroundColor: "#8b5cf6",
           borderRadius: 8,
         },
       ],
@@ -1291,7 +1350,7 @@ function createScatterChart(canvasId, points) {
       datasets: [
         {
           data: points,
-          backgroundColor: "rgba(47, 94, 78, 0.5)",
+          backgroundColor: "rgba(124, 58, 237, 0.5)",
         },
       ],
     },
@@ -1328,7 +1387,7 @@ function createHistogram(canvasId, values) {
       datasets: [
         {
           data: counts,
-          backgroundColor: "#f2c14e",
+          backgroundColor: "#8b5cf6",
         },
       ],
     },
@@ -1398,32 +1457,32 @@ function computeCorrelation(rows, xMetric, yMetric) {
 
 function collectWarnings() {
   const warnings = [];
-  const metric = state.selectedMetric;
+  const metric = state.selections.primaryMetric;
   if (metric) {
-    const missingRate = state.profile[metric]?.missingRate || 0;
+    const missingRate = state.schema.profiles[metric]?.missingRate || 0;
     if (missingRate > 0.3) {
       warnings.push(`Selected metric "${metric}" has ${Math.round(missingRate * 100)}% missing values.`);
     }
-    const nonNumericRate = state.profile[metric]?.nonNumericRate || 0;
+    const nonNumericRate = state.schema.profiles[metric]?.nonNumericRate || 0;
     if (nonNumericRate > 0.05) {
       warnings.push(`Metric "${metric}" has ${Math.round(nonNumericRate * 100)}% non-numeric values.`);
     }
   }
 
   if (state.selectedDimension) {
-    const uniqueCount = state.profile[state.selectedDimension]?.uniqueCount || 0;
+    const uniqueCount = state.schema.profiles[state.selectedDimension]?.uniqueCount || 0;
     if (uniqueCount > 20) {
       warnings.push(`"${state.selectedDimension}" has high cardinality (${uniqueCount} unique values).`);
     }
   }
 
-  const duplicateCount = countDuplicateRows(state.rows);
+  const duplicateCount = countDuplicateRows(state.filteredRows);
   if (duplicateCount > 0) {
     warnings.push(`${duplicateCount} duplicate rows detected.`);
   }
 
   if (state.dateColumn) {
-    const gaps = countDateGaps(state.rows, state.dateColumn);
+    const gaps = countDateGaps(state.filteredRows, state.dateColumn);
     if (gaps > 0) {
       warnings.push(`Detected ${gaps} missing date buckets in the trend.`);
     }
@@ -1463,21 +1522,124 @@ function countDateGaps(rows, dateColumn) {
 }
 function renderInsights(rows) {
   insightsList.innerHTML = "";
-  const insights = buildInsights(rows);
-  insights.slice(0, 6).forEach((text) => {
-    const li = document.createElement("li");
-    li.textContent = text;
-    insightsList.appendChild(li);
+  const insights = buildDecisionInsights(rows);
+  insights.forEach((insight) => {
+    const card = document.createElement("div");
+    card.className = "comparison-card";
+    card.innerHTML = `
+      <strong>${insight.title}</strong>
+      <p class="helper-text">${insight.summary}</p>
+      <ul>
+        ${insight.bullets.map((bullet) => `<li>${bullet}</li>`).join("")}
+      </ul>
+    `;
+    insightsList.appendChild(card);
   });
+}
+
+function buildDecisionInsights(rows) {
+  const insights = [];
+  const metric = state.selections.primaryMetric;
+  if (!metric) return insights;
+  const contextPrefix = state.filters.industry !== "All" ? `Within ${state.filters.industry}, ` : "";
+
+  const segmentColumn = state.industryColumn || chooseBestCategoryForAxis(state.schema.profiles, state.schema.categoricals);
+  if (segmentColumn) {
+    const breakdown = aggregateByCategory(rows, segmentColumn, metric, 12);
+    if (breakdown.labels.length >= 2) {
+      const top = { label: breakdown.labels[0], value: breakdown.values[0] };
+      const bottom = { label: breakdown.labels[breakdown.labels.length - 1], value: breakdown.values[breakdown.values.length - 1] };
+      const delta = top.value - bottom.value;
+      const pct = bottom.value ? delta / bottom.value : 0;
+      insights.push({
+        title: `${contextPrefix}High vs low performing segment`,
+        summary: `${top.label} leads while ${bottom.label} trails on ${metric}.`,
+        bullets: [
+          `Top: ${top.label} (${formatMetricValue(top.value, inferMetricType(metric, [top.value]))})`,
+          `Bottom: ${bottom.label} (${formatMetricValue(bottom.value, inferMetricType(metric, [bottom.value]))}), Δ ${formatMetricValue(delta, inferMetricType(metric, [delta]))} (${percentFormatter.format(pct)})`,
+        ],
+      });
+    }
+  }
+
+  if (state.dateColumn) {
+    const series = aggregateByDate(rows, state.dateColumn, metric, "day", state.dateRange);
+    if (series.values.length >= 14) {
+      const recent = series.values.slice(-7);
+      const prior = series.values.slice(-14, -7);
+      const recentTotal = recent.reduce((sum, val) => sum + val, 0);
+      const priorTotal = prior.reduce((sum, val) => sum + val, 0);
+      const delta = recentTotal - priorTotal;
+      const pct = priorTotal ? delta / priorTotal : 0;
+      insights.push({
+        title: `${contextPrefix}Trend momentum`,
+        summary: `${metric} is ${delta >= 0 ? "up" : "down"} versus the prior period.`,
+        bullets: [
+          `Last 7 days: ${formatMetricValue(recentTotal, inferMetricType(metric, [recentTotal]))}`,
+          `Change: ${formatMetricValue(delta, inferMetricType(metric, [delta]))} (${percentFormatter.format(pct)})`,
+        ],
+      });
+    }
+  }
+
+  if (segmentColumn) {
+    const breakdown = aggregateByCategory(rows, segmentColumn, metric, 8);
+    const total = breakdown.values.reduce((sum, val) => sum + val, 0);
+    const share = total ? breakdown.values[0] / total : 0;
+    insights.push({
+      title: `${contextPrefix}Concentration`,
+      summary: `${breakdown.labels[0]} contributes ${percentFormatter.format(share)} of ${metric}.`,
+      bullets: [
+        `Top segment share: ${percentFormatter.format(share)}`,
+        share > 0.4 ? "High concentration (>40%)" : "Balanced distribution",
+      ],
+    });
+  }
+
+  const variance = computeCoefficientOfVariation(rows, metric);
+  if (variance !== null) {
+    insights.push({
+      title: `${contextPrefix}Volatility`,
+      summary: variance > 0.35 ? "Metric is volatile across segments/time." : "Metric is stable relative to its mean.",
+      bullets: [
+        `Coefficient of variation: ${(variance * 100).toFixed(1)}%`,
+        variance > 0.35 ? "Consider investigating drivers of swings." : "Performance is consistent.",
+      ],
+    });
+  }
+
+  if (state.schema.numeric.length >= 2) {
+    const candidates = state.schema.numeric.filter((m) => m !== metric);
+    let best = null;
+    candidates.forEach((candidate) => {
+      const corr = computeCorrelation(rows, metric, candidate);
+      if (corr === null) return;
+      if (!best || Math.abs(corr) > Math.abs(best.corr)) {
+        best = { metric: candidate, corr };
+      }
+    });
+    if (best) {
+      insights.push({
+        title: `${contextPrefix}Relationship`,
+        summary: `Strongest relationship is with ${best.metric}.`,
+        bullets: [
+          `Correlation: ${best.corr.toFixed(2)}`,
+          `Direction: ${best.corr >= 0 ? "Positive" : "Negative"}`,
+        ],
+      });
+    }
+  }
+
+  return insights.slice(0, 5);
 }
 
 function renderMetricComparison(rows) {
   if (!rows.length) return;
-  const numericMetrics = state.numericColumns;
+  const numericMetrics = state.schema.numeric;
   if (!numericMetrics.length) return;
 
-  const primary = state.selectedMetric || chooseTopNumericByVariance(state.profile, numericMetrics);
-  state.selectedMetric = primary;
+  const primary = state.selections.primaryMetric || chooseTopNumericByVariance(state.schema.profiles, numericMetrics);
+  state.selections.primaryMetric = primary;
 
   if (primaryMetricSelect) {
     primaryMetricSelect.innerHTML = "";
@@ -1489,17 +1651,17 @@ function renderMetricComparison(rows) {
     });
     primaryMetricSelect.value = primary;
     primaryMetricSelect.onchange = () => {
-      state.selectedMetric = primaryMetricSelect.value;
+      state.selections.primaryMetric = primaryMetricSelect.value;
       applyFiltersAndRender();
     };
   }
 
   const availableCompare = numericMetrics.filter((metric) => metric !== primary);
   if (compareMetricSelect) {
-    const selected = state.compareMetrics.length
-      ? state.compareMetrics
-      : chooseTopNumericByVariance(state.profile, availableCompare, 3);
-    state.compareMetrics = selected;
+    const selected = state.selections.compareMetrics.length
+      ? state.selections.compareMetrics
+      : chooseTopNumericByVariance(state.schema.profiles, availableCompare, 3);
+    state.selections.compareMetrics = selected;
     compareMetricSelect.innerHTML = "";
     availableCompare.forEach((metric) => {
       const option = document.createElement("option");
@@ -1510,13 +1672,13 @@ function renderMetricComparison(rows) {
     });
     compareMetricSelect.onchange = () => {
       const chosen = Array.from(compareMetricSelect.selectedOptions).map((opt) => opt.value).slice(0, 5);
-      state.compareMetrics = chosen;
+      state.selections.compareMetrics = chosen;
       applyFiltersAndRender();
     };
   }
 
   renderComparisonTrend(rows, primary);
-  renderDriversList(rows, primary, state.compareMetrics);
+  renderDriversList(rows, primary, state.selections.compareMetrics);
   renderSegmentView(rows, primary);
 }
 
@@ -1531,7 +1693,7 @@ function renderComparisonTrend(rows, primary) {
     comparisonChartInstance = createLineChart("comparisonTrendChart", series.labels, series.values, metricType);
     if (comparisonNote) comparisonNote.textContent = `Primary metric trend by ${state.dateColumn}`;
   } else {
-    const category = chooseBestCategoryForAxis(state.profile, state.categoricalColumns);
+    const category = chooseBestCategoryForAxis(state.schema.profiles, state.schema.categoricals);
     if (category) {
       const series = aggregateByCategory(rows, category, primary, 8);
       comparisonChartInstance = createBarChart("comparisonTrendChart", series.labels, series.values, metricType);
@@ -1582,10 +1744,10 @@ function renderSegmentView(rows, primary) {
 
   let dimension = state.industryColumn;
   if (state.filters.industry && state.filters.industry !== "All") {
-    dimension = findAlternateCategory(state.categoricalColumns, state.industryColumn);
+    dimension = findAlternateCategory(state.schema.categoricals, state.industryColumn);
   }
   if (!dimension) {
-    dimension = chooseBestCategoryForAxis(state.profile, state.categoricalColumns);
+    dimension = chooseBestCategoryForAxis(state.schema.profiles, state.schema.categoricals);
   }
   if (!dimension) return;
 
@@ -1606,19 +1768,19 @@ function chooseTopNumericByVariance(profile, numericColumns, limit = 1) {
 function renderSuggestedTrends() {
   if (!suggestedTrends) return;
   suggestedTrends.innerHTML = "";
-  if (!state.rows.length) {
+  if (!state.rawRows.length) {
     suggestedTrends.innerHTML = "<li>Load a sample to see suggested trends.</li>";
     return;
   }
   const suggestions = [];
-  if (state.dateColumn && state.numericColumns.length) {
-    const metric = state.selectedMetric || state.numericColumns[0];
+  if (state.dateColumn && state.schema.numeric.length) {
+    const metric = state.selections.primaryMetric || state.schema.numeric[0];
     suggestions.push(`${metric} trend over ${state.dateColumn}`);
-    if (state.categoricalColumns.length) {
-      suggestions.push(`${metric} by ${state.categoricalColumns[0]}`);
+    if (state.schema.categoricals.length) {
+      suggestions.push(`${metric} by ${state.schema.categoricals[0]}`);
     }
-  } else if (state.numericColumns.length && state.categoricalColumns.length) {
-    suggestions.push(`${state.selectedMetric || state.numericColumns[0]} by ${state.categoricalColumns[0]}`);
+  } else if (state.schema.numeric.length && state.schema.categoricals.length) {
+    suggestions.push(`${state.selections.primaryMetric || state.schema.numeric[0]} by ${state.schema.categoricals[0]}`);
   }
 
   if (!suggestions.length) {
@@ -1630,62 +1792,6 @@ function renderSuggestedTrends() {
     li.textContent = text;
     suggestedTrends.appendChild(li);
   });
-}
-
-function buildInsights(rows) {
-  const insights = [];
-  const metric = state.selectedMetric;
-  const dimension = state.selectedDimension;
-
-  const correlationPair = findStrongestCorrelation(rows, state.numericColumns);
-  if (correlationPair) {
-    insights.push(
-      `Strongest correlation is between ${correlationPair.x} and ${correlationPair.y} (r = ${correlationPair.corr.toFixed(2)}).`
-    );
-  }
-
-  if (dimension && metric) {
-    const breakdown = aggregateByCategory(rows, dimension, metric, 5);
-    if (breakdown.labels.length) {
-      const total = breakdown.values.reduce((sum, val) => sum + val, 0);
-      const topValue = breakdown.values[0];
-      const share = total ? topValue / total : 0;
-      insights.push(
-        `Top ${dimension} is ${breakdown.labels[0]} contributing ${percentFormatter.format(share)} of ${metric}.`
-      );
-      insights.push(
-        `Best vs worst ${dimension}: ${breakdown.labels[0]} (${numberFormatter.format(breakdown.values[0])}) and ${breakdown.labels[breakdown.labels.length - 1]} (${numberFormatter.format(breakdown.values[breakdown.values.length - 1])}).`
-      );
-    }
-  }
-
-  if (state.dateColumn && metric) {
-    const series = aggregateByDate(rows, state.dateColumn, metric, "day", state.dateRange);
-    const anomalies = detectAnomalies(series.values);
-    if (anomalies.length) {
-      const worst = anomalies[0];
-      insights.push(`Largest day-over-day change in ${metric} occurs on ${series.labels[worst.index]} (z = ${worst.z.toFixed(2)}).`);
-    }
-  }
-
-  Object.entries(state.profile).forEach(([col, stats]) => {
-    if (stats.missingRate > 0.3) {
-      insights.push(`"${col}" has ${Math.round(stats.missingRate * 100)}% missing values and may skew analysis.`);
-    }
-  });
-
-  if (state.dateColumn && metric) {
-    const change = computePeriodChange(rows, metric);
-    if (change) {
-      insights.push(`${metric} change: ${change.label} is ${change.value}.`);
-    }
-  }
-
-  if (!insights.length) {
-    insights.push("Upload more data to generate insights.");
-  }
-
-  return insights;
 }
 
 function detectAnomalies(values) {
@@ -1722,7 +1828,7 @@ function downloadInsights() {
   const content = [
     "Insights",
     `Generated: ${new Date().toLocaleString()}`,
-    `Metric: ${state.selectedMetric}`,
+    `Metric: ${state.selections.primaryMetric}`,
     `Dimension: ${state.selectedDimension || "—"}`,
     "",
     ...insights.map((text, index) => `${index + 1}. ${text}`),
