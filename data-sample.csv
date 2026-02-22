@@ -1,0 +1,17 @@
+﻿Date,Region,Channel,Orders,Revenue,ReturnRate
+2025-01-05,North,Online,120,18450,0.03
+2025-01-06,South,Partner,88,12900,0.02
+2025-01-07,West,Online,140,22100,0.04
+2025-01-08,East,Retail,64,9100,0.01
+2025-01-09,North,Retail,78,11850,0.02
+2025-01-10,South,Online,156,24500,0.05
+2025-01-11,West,Partner,99,15450,0.03
+2025-01-12,East,Online,135,21300,0.02
+2025-01-13,North,Partner,110,17600,0.02
+2025-01-14,South,Retail,72,9900,0.01
+2025-01-15,West,Online,165,26850,0.04
+2025-01-16,East,Partner,84,12400,0.03
+2025-01-17,North,Online,142,23100,0.05
+2025-01-18,South,Partner,96,14800,0.02
+2025-01-19,West,Retail,70,10500,0.02
+2025-01-20,East,Online,150,23900,0.03
