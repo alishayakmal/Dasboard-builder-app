@@ -15,6 +15,7 @@ const dimensionSelect = document.getElementById("dimensionSelect");
 const topNSelect = document.getElementById("topN");
 const domainSelect = document.getElementById("domainSelect");
 const industrySelect = document.getElementById("industrySelect");
+const industryHelper = document.getElementById("industryHelper");
 const dateStartInput = document.getElementById("dateStart");
 const dateEndInput = document.getElementById("dateEnd");
 const exportCsvButton = document.getElementById("exportCsv");
@@ -471,6 +472,7 @@ function ingestRows(rawRows) {
   state.debug.usableNumericMetrics = state.schema.numeric;
   state.debug.dateCandidates = state.schema.dates;
   state.industryColumn = findIndustryColumn(state.schema.columns);
+  state.dateColumn = chooseBestDateColumn(state.schema.profiles);
 
   if (!state.schema.numeric.length) {
     const detail = buildNumericFailureDetail(state.schema.profiles);
@@ -549,16 +551,48 @@ function parseNumber(value) {
 }
 
 function parseDate(value) {
-  if (!value) return null;
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date) return Number.isNaN(value.valueOf()) ? null : value;
   const raw = String(value).trim();
   if (!raw) return null;
-  const dateLike = /^\d{4}[-/]\d{2}[-/]\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)?$/.test(raw);
-  if (!dateLike) return null;
-  const parsed = Date.parse(raw);
-  if (Number.isNaN(parsed)) return null;
-  const date = new Date(parsed);
-  if (Number.isNaN(date.valueOf())) return null;
-  return date;
+
+  if (raw.includes("T") || raw.endsWith("Z")) {
+    const isoDate = new Date(raw);
+    if (!Number.isNaN(isoDate.valueOf())) return isoDate;
+  }
+
+  const ymd = raw.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);
+  if (ymd) {
+    const year = Number(ymd[1]);
+    const month = Number(ymd[2]);
+    const day = Number(ymd[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      date.getUTCFullYear() === year &&
+      date.getUTCMonth() === month - 1 &&
+      date.getUTCDate() === day
+    ) {
+      return date;
+    }
+  }
+
+  const mdy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (mdy) {
+    const month = Number(mdy[1]);
+    const day = Number(mdy[2]);
+    const year = Number(mdy[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      date.getUTCFullYear() === year &&
+      date.getUTCMonth() === month - 1 &&
+      date.getUTCDate() === day
+    ) {
+      return date;
+    }
+  }
+
+  const fallback = new Date(raw);
+  return Number.isNaN(fallback.valueOf()) ? null : fallback;
 }
 
 function profileDataset(rows, columns) {
@@ -794,8 +828,20 @@ function isIdLikeColumn(colName, profile, rowCount) {
 }
 
 function findIndustryColumn(columns) {
-  const match = columns.find((col) => col.toLowerCase() === "industry");
-  return match || null;
+  const normalized = columns.map((c) => ({ raw: c, key: String(c).trim().toLowerCase() }));
+  const exact = normalized.find((c) => c.key === "industry");
+  if (exact) return exact.raw;
+
+  const candidates = ["industry", "vertical", "sector", "category"];
+  const contains = normalized.find((c) => candidates.some((k) => c.key.includes(k)));
+  return contains ? contains.raw : null;
+}
+
+function chooseBestDateColumn(profiles) {
+  const candidates = Object.entries(profiles)
+    .filter(([_, p]) => p.type === "date")
+    .sort((a, b) => (b[1].dateRate || 0) - (a[1].dateRate || 0));
+  return candidates.length ? candidates[0][0] : null;
 }
 
 function initControls(recommendedMetrics) {
@@ -826,11 +872,11 @@ function initControls(recommendedMetrics) {
   state.selectedDimension = state.selectedDimension || uniqueDimensions[0] || state.schema.dates[0] || null;
   dimensionSelect.value = state.selectedDimension;
 
-  if (state.schema.dates[0]) {
+  if (state.dateColumn) {
     dateStartInput.disabled = false;
     dateEndInput.disabled = false;
-    const dateMin = state.schema.profiles[state.schema.dates[0]].dateMin;
-    const dateMax = state.schema.profiles[state.schema.dates[0]].dateMax;
+    const dateMin = state.schema.profiles[state.dateColumn]?.dateMin;
+    const dateMax = state.schema.profiles[state.dateColumn]?.dateMax;
     if (dateMin && dateMax) {
       dateStartInput.min = formatDateInput(dateMin);
       dateStartInput.max = formatDateInput(dateMax);
@@ -861,9 +907,16 @@ function initControls(recommendedMetrics) {
 
     if (state.industryColumn) {
       industrySelect.disabled = false;
-      const values = Array.from(new Set(state.rawRows.map((row) => String(row[state.industryColumn] || "").trim())))
-        .filter((value) => value)
-        .sort();
+      const seen = new Map();
+      state.rawRows.forEach((row) => {
+        const rawValue = row[state.industryColumn];
+        if (rawValue === null || rawValue === undefined) return;
+        const trimmed = String(rawValue).trim();
+        if (!trimmed) return;
+        const key = trimmed.toLowerCase();
+        if (!seen.has(key)) seen.set(key, trimmed);
+      });
+      const values = Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
       values.forEach((value) => {
         const option = document.createElement("option");
         option.value = value;
@@ -877,10 +930,12 @@ function initControls(recommendedMetrics) {
         industrySelect.value = "All";
         state.filters.industry = "All";
       }
+      if (industryHelper) industryHelper.textContent = "";
     } else {
       industrySelect.disabled = true;
       industrySelect.value = "All";
       state.filters.industry = "All";
+      if (industryHelper) industryHelper.textContent = "Industry not found in this file";
     }
   }
 }
@@ -917,7 +972,9 @@ function applyFiltersAndRender() {
   state.debug.numericCandidates = numericCandidates;
   state.debug.usableNumericMetrics = state.schema.numeric;
   state.debug.dateCandidates = state.schema.dates;
-  state.dateColumn = state.schema.dates[0] || null;
+  if (!state.dateColumn) {
+    state.dateColumn = chooseBestDateColumn(state.schema.profiles);
+  }
   if (!state.schema.numeric.length) {
     const message = numericCandidates.length
       ? "No usable numeric metrics detected. Add at least one numeric column."
@@ -960,7 +1017,8 @@ function runStep(step, fn) {
 
 function applyIndustryFilter(rows, industry) {
   if (!state.industryColumn || !industry || industry === "All") return rows;
-  return rows.filter((row) => String(row[state.industryColumn]).trim() === industry);
+  const target = String(industry).trim().toLowerCase();
+  return rows.filter((row) => String(row[state.industryColumn] ?? "").trim().toLowerCase() === target);
 }
 
 function getFilteredRows() {
