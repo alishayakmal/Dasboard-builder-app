@@ -495,6 +495,7 @@ async function logEvent(payload) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      redirect: "follow",
     });
     const body = await response.text();
     console.log("Event log response", response.status, body);
