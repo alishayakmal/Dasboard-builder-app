@@ -21,10 +21,11 @@ Open `index.html` directly in your browser.
 5. Click **Save**.
 
 Your live site will be available at:
-`https://YOUR_USERNAME.github.io/data-to-dashboard/`
+ https://alishayakmal.github.io/Dasboard-builder-app/
 
 ## Live demo
 Add your GitHub Pages URL here once enabled.
 
 ## Notes
 All processing is done client-side using PapaParse and Chart.js loaded via CDN.
+
