@@ -1,0 +1,97 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Data to Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;600;700&family=Fraunces:wght@600;700&display=swap" rel="stylesheet" />
+</head>
+<body>
+  <header class="site-header">
+    <div class="brand">
+      <div class="logo">D2D</div>
+      <div>
+        <h1>Data to Dashboard</h1>
+        <p>Upload a CSV and get a clean, instant dashboard.</p>
+      </div>
+    </div>
+    <div class="controls">
+      <label class="file-picker">
+        <input type="file" id="fileInput" accept=".csv,text/csv" />
+        <span>Upload CSV</span>
+      </label>
+      <button id="loadSample" class="ghost">Load Sample</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section id="state" class="state">
+      <div class="state-card">
+        <h2>Get started</h2>
+        <p>Upload a CSV file to generate KPIs, charts, and a data table. Your data never leaves the browser.</p>
+        <ul class="state-list">
+          <li>Auto-detects numeric metrics</li>
+          <li>Finds date columns for trends</li>
+          <li>Sortable data table</li>
+        </ul>
+        <div class="state-actions">
+          <label class="file-picker">
+            <input type="file" id="fileInputInline" accept=".csv,text/csv" />
+            <span>Upload CSV</span>
+          </label>
+          <button id="loadSampleInline" class="ghost">Load Sample</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="error" class="error hidden"></section>
+
+    <section id="dashboard" class="dashboard hidden">
+      <div class="section-header">
+        <h2>Dashboard</h2>
+        <p id="datasetSummary"></p>
+      </div>
+
+      <section class="kpi-grid" id="kpiGrid"></section>
+
+      <section class="charts">
+        <div class="chart-card">
+          <div class="chart-header">
+            <h3 id="lineTitle">Trend</h3>
+            <p id="lineSubtitle"></p>
+          </div>
+          <canvas id="lineChart" height="140"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="chart-header">
+            <h3 id="barTitle">Breakdown</h3>
+            <p id="barSubtitle"></p>
+          </div>
+          <canvas id="barChart" height="140"></canvas>
+        </div>
+      </section>
+
+      <section class="table-card">
+        <div class="table-header">
+          <h3>Data Preview</h3>
+          <p>Click any column to sort. Showing up to 50 rows.</p>
+        </div>
+        <div class="table-wrap">
+          <table id="dataTable"></table>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>Built with plain HTML, CSS, JavaScript, PapaParse, and Chart.js.</p>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
