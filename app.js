@@ -488,7 +488,7 @@ function renderKPIs(rows) {
       ? computeRateValue(metric, values)
       : total;
 
-    const change = computePeriodChange(metric, metricType);
+    const change = computePeriodChange(rows, metric);
 
     const card = document.createElement("div");
     card.className = "kpi-card";
@@ -666,9 +666,9 @@ function computeMedian(values) {
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
 }
 
-function computePeriodChange(metric, metricType) {
+function computePeriodChange(rows, metric) {
   if (!state.dateColumn) return null;
-  const series = aggregateByDate(state.rows, state.dateColumn, metric, "day", state.dateRange);
+  const series = aggregateByDate(rows, state.dateColumn, metric, "day", state.dateRange);
   if (series.values.length < 6) return null;
   const window = series.values.length >= 14 ? 7 : 3;
   const recent = series.values.slice(-window);
