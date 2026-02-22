@@ -2,6 +2,27 @@
 const fileInputInline = document.getElementById("fileInputInline");
 const loadSample = document.getElementById("loadSample");
 const loadSampleInline = document.getElementById("loadSampleInline");
+const landingView = document.getElementById("landingView");
+const appView = document.getElementById("appView");
+const signInButton = document.getElementById("signInButton");
+const signOutButton = document.getElementById("signOutButton");
+const startFreeButton = document.getElementById("startFree");
+const signupModal = document.getElementById("signupModal");
+const closeModalButton = document.getElementById("closeModal");
+const signupForm = document.getElementById("signupForm");
+const formError = document.getElementById("formError");
+const leadNameInput = document.getElementById("leadName");
+const leadEmailInput = document.getElementById("leadEmail");
+const leadCompanyInput = document.getElementById("leadCompany");
+const leadUseCaseInput = document.getElementById("leadUseCase");
+const leadConsentInput = document.getElementById("leadConsent");
+const contactsTable = document.getElementById("contactsTable");
+const clearContactsButton = document.getElementById("clearContacts");
+const sheetsUrlInput = document.getElementById("sheetsUrl");
+const loadSheetButton = document.getElementById("loadSheet");
+const pdfInput = document.getElementById("pdfInput");
+const pdfStatus = document.getElementById("pdfStatus");
+const pdfMeta = document.getElementById("pdfMeta");
 const stateSection = document.getElementById("state");
 const errorSection = document.getElementById("error");
 const warningsSection = document.getElementById("warnings");
@@ -74,6 +95,7 @@ let currentTableRows = [];
 let currentSort = { key: null, direction: "asc" };
 
 const samplePath = "data-sample.csv";
+const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyX-6CxQt0fo6PkIPsXbKrW7a8oU0QR1ATAqVkUhAUI_K2Oq-NB3NcT7RBSvkNuiUqcCA/exec";
 const sampleManifest = [
   {
     id: "sales",
@@ -154,6 +176,8 @@ function init() {
     buildStamp.textContent = `Build: ${new Date().toISOString()}`;
   }
 
+  window.addEventListener("hashchange", handleRoute);
+
   tabButtons.forEach((button) => {
     button.addEventListener("click", () => switchTab(button.dataset.tab));
   });
@@ -231,7 +255,32 @@ function init() {
     testApiButton.addEventListener("click", testApiConnection);
   }
 
-  loadSampleGallery();
+  if (startFreeButton) startFreeButton.addEventListener("click", openModal);
+  if (closeModalButton) closeModalButton.addEventListener("click", closeModal);
+  if (signupModal) signupModal.addEventListener("click", (event) => {
+    if (event.target === signupModal) closeModal();
+  });
+  if (signupForm) signupForm.addEventListener("submit", handleSignupSubmit);
+  if (signInButton) signInButton.addEventListener("click", handleSignInClick);
+  if (signOutButton) signOutButton.addEventListener("click", handleSignOutClick);
+  if (clearContactsButton) clearContactsButton.addEventListener("click", clearContacts);
+  if (loadSheetButton) loadSheetButton.addEventListener("click", loadSheetData);
+  if (pdfInput) {
+    pdfInput.addEventListener("change", () => {
+      const file = pdfInput.files?.[0];
+      if (!file) return;
+      if (pdfMeta) {
+        const sizeKb = Math.round(file.size / 1024);
+        pdfMeta.textContent = `${file.name} · ${sizeKb} KB`;
+      }
+      if (pdfStatus) pdfStatus.textContent = "PDF ingestion coming soon";
+    });
+  }
+
+  updateSignInButton();
+  renderSampleGallery();
+  renderContactsTable();
+  handleRoute();
   console.log("handlers wired");
 }
 
@@ -282,6 +331,198 @@ function switchTab(tabName) {
   });
 }
 
+function getSignedIn() {
+  return localStorage.getItem("signedIn") === "true";
+}
+
+function setSignedIn(value) {
+  localStorage.setItem("signedIn", value ? "true" : "false");
+}
+
+function routeTo(viewName) {
+  window.location.hash = viewName === "app" ? "#/app" : "#/landing";
+}
+
+function showView(viewName) {
+  if (landingView) landingView.classList.toggle("hidden", viewName !== "landing");
+  if (appView) appView.classList.toggle("hidden", viewName !== "app");
+  if (viewName === "app") {
+    switchTab("upload");
+  }
+}
+
+function handleRoute() {
+  const hash = window.location.hash || "";
+  if (hash === "#/app") {
+    if (!getSignedIn()) {
+      routeTo("landing");
+      return;
+    }
+    showView("app");
+    return;
+  }
+
+  if (hash === "#/landing" || hash === "") {
+    if (getSignedIn()) {
+      routeTo("app");
+      return;
+    }
+    showView("landing");
+    return;
+  }
+
+  routeTo(getSignedIn() ? "app" : "landing");
+}
+
+function updateSignInButton() {
+  if (!signInButton) return;
+  signInButton.textContent = getSignedIn() ? "Dashboard" : "Sign In";
+}
+
+function handleSignInClick() {
+  if (getSignedIn()) {
+    routeTo("app");
+    return;
+  }
+  openModal();
+}
+
+function handleSignOutClick() {
+  setSignedIn(false);
+  localStorage.removeItem("currentUser");
+  updateSignInButton();
+  routeTo("landing");
+}
+
+function openModal() {
+  if (!signupModal) return;
+  signupModal.classList.remove("hidden");
+  signupModal.setAttribute("aria-hidden", "false");
+  if (formError) {
+    formError.textContent = "";
+    formError.classList.add("hidden");
+  }
+}
+
+function closeModal() {
+  if (!signupModal) return;
+  signupModal.classList.add("hidden");
+  signupModal.setAttribute("aria-hidden", "true");
+}
+
+function handleSignupSubmit(event) {
+  event.preventDefault();
+  const name = leadNameInput?.value?.trim() || "";
+  const email = leadEmailInput?.value?.trim() || "";
+  const company = leadCompanyInput?.value?.trim() || "";
+  const useCase = leadUseCaseInput?.value?.trim() || "";
+  const consent = !!leadConsentInput?.checked;
+
+  if (!name || !email) {
+    showFormError("Please provide your name and email.");
+    return;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showFormError("Please enter a valid email address.");
+    return;
+  }
+
+  const lead = {
+    id: `lead_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+    name,
+    email,
+    company,
+    useCase,
+    consent,
+    createdAt: new Date().toISOString(),
+  };
+
+  saveLead(lead);
+  setSignedIn(true);
+  localStorage.setItem("currentUser", email);
+  updateSignInButton();
+  closeModal();
+  showToast("Signed up");
+  routeTo("app");
+  postLeadToWebhook(lead);
+}
+
+function showFormError(message) {
+  if (!formError) return;
+  formError.textContent = message;
+  formError.classList.remove("hidden");
+}
+
+function saveLead(lead) {
+  const existing = JSON.parse(localStorage.getItem("leads") || "[]");
+  existing.unshift(lead);
+  localStorage.setItem("leads", JSON.stringify(existing));
+  renderContactsTable();
+}
+
+function postLeadToWebhook(lead) {
+  if (!WEBHOOK_URL) return;
+  fetch(WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(lead),
+  }).catch(() => null);
+}
+
+function renderContactsTable() {
+  if (!contactsTable) return;
+  const leads = JSON.parse(localStorage.getItem("leads") || "[]").slice(0, 5);
+  contactsTable.innerHTML = "";
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  ["Name", "Email", "Company", "Use case", "Created"].forEach((label) => {
+    const th = document.createElement("th");
+    th.textContent = label;
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+  contactsTable.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  if (!leads.length) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 5;
+    td.textContent = "No contacts yet.";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  } else {
+    leads.forEach((lead) => {
+      const tr = document.createElement("tr");
+      [lead.name, lead.email, lead.company || "—", lead.useCase || "—", lead.createdAt?.slice(0, 10) || "—"]
+        .forEach((value) => {
+          const td = document.createElement("td");
+          td.textContent = value;
+          tr.appendChild(td);
+        });
+      tbody.appendChild(tr);
+    });
+  }
+  contactsTable.appendChild(tbody);
+}
+
+function clearContacts() {
+  localStorage.removeItem("leads");
+  renderContactsTable();
+}
+
+function showToast(message) {
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add("show"));
+  setTimeout(() => {
+    toast.classList.remove("show");
+    setTimeout(() => toast.remove(), 300);
+  }, 1800);
+}
+
 function renderSampleGallery() {
   if (!sampleGallery) return;
   sampleGallery.innerHTML = "";
@@ -312,6 +553,28 @@ async function loadSampleFile(sample) {
   } catch (error) {
     showError("Sample CSV could not be loaded. Check your connection or file path.", `Details: ${error.message}`);
   }
+}
+
+function loadSheetData() {
+  const url = sheetsUrlInput?.value?.trim();
+  if (!url) {
+    showError("Please paste a Google Sheets CSV link.");
+    return;
+  }
+  clearMessages();
+  setStatus("Loading Google Sheet");
+  fetch(url)
+    .then((response) => {
+      if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+      return response.text();
+    })
+    .then((text) => {
+      parseCsvText(text);
+      switchTab("upload");
+    })
+    .catch((error) => {
+      showError("Google Sheets CSV could not be loaded. Check the link and sharing settings.", `Details: ${error.message}`);
+    });
 }
 
 function testApiConnection() {
