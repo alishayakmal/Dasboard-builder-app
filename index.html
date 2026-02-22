@@ -11,35 +11,39 @@
 </head>
 <body>
   <header class="site-header">
-    <div class="brand">
-      <div class="logo">D2D</div>
-      <div>
-        <h1>Data to Dashboard</h1>
-        <p>Upload a CSV, connect an API, or explore samples to generate KPI tiles, trends, and a clean data table.</p>
+    <div class="header-left">
+      <div class="brand">
+        <div class="logo">D2D</div>
+        <div>
+          <h1>Data to Dashboard</h1>
+          <p>Upload a CSV, connect an API, or explore samples to generate KPI tiles, trends, and a clean data table.</p>
+        </div>
+      </div>
+      <div class="tabs header-tabs">
+        <button class="tab-button active" data-tab="upload">Upload CSV</button>
+        <button class="tab-button" data-tab="api">Connect API</button>
+        <button class="tab-button" data-tab="samples">Explore Samples</button>
       </div>
     </div>
-    <div class="controls">
-      <label class="file-picker">
-        <input type="file" id="fileInput" accept=".csv,text/csv" />
-        <span>Upload CSV</span>
-      </label>
-      <button id="loadSample" class="ghost">Load Sample</button>
+    <div class="header-right">
+      <div class="controls">
+        <label class="file-picker">
+          <input type="file" id="fileInput" accept=".csv,text/csv" />
+          <span>Upload CSV</span>
+        </label>
+        <button id="loadSample" class="ghost">Load Sample</button>
+      </div>
       <label class="header-filter">
         <span>Industry</span>
-        <select id="industrySelect">
+        <select id="industrySelect" disabled>
           <option value="All">All</option>
         </select>
+        <span id="industryHelper" class="helper-text"></span>
       </label>
     </div>
   </header>
 
   <main class="container">
-    <section class="tabs">
-      <button class="tab-button active" data-tab="upload">Upload CSV</button>
-      <button class="tab-button" data-tab="api">Connect API</button>
-      <button class="tab-button" data-tab="samples">Explore Samples</button>
-    </section>
-
     <section id="status" class="status hidden"></section>
     <section id="error" class="error hidden"></section>
     <section id="warnings" class="warnings hidden"></section>
@@ -63,13 +67,6 @@
           <li>Finds date columns for trends</li>
           <li>Profiles data quality before analysis</li>
         </ul>
-        <div class="state-actions">
-          <label class="file-picker">
-            <input type="file" id="fileInputInline" accept=".csv,text/csv" />
-            <span>Upload CSV</span>
-          </label>
-          <button id="loadSampleInline" class="ghost">Load Sample</button>
-        </div>
       </div>
     </section>
 
