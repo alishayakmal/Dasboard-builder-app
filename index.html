@@ -167,6 +167,7 @@
       </section>
 
       <section class="charts">
+        <div class="filter-badge" id="filterBadge">Filtered to: All</div>
         <div class="chart-card">
           <div class="chart-header">
             <h3 id="trendTitle">Trend</h3>
@@ -190,14 +191,36 @@
         </div>
       </section>
 
-      <section class="heatmap-card">
+      <section class="heatmap-card" id="comparisonSection">
         <div class="chart-header">
-          <h3>Correlation heat map</h3>
-          <p>How numeric metrics move together.</p>
-          <p id="heatmapNote" class="helper-text"></p>
+          <h3>Metric Comparison</h3>
+          <p>Pick a primary metric and compare drivers, trends, and segments.</p>
+          <p id="comparisonNote" class="helper-text"></p>
+        </div>
+        <div class="comparison-controls">
+          <div class="control-group">
+            <label for="primaryMetricSelect">Primary Metric</label>
+            <select id="primaryMetricSelect"></select>
+          </div>
+          <div class="control-group">
+            <label for="compareMetricSelect">Compare Against (up to 5)</label>
+            <select id="compareMetricSelect" multiple size="4"></select>
+          </div>
         </div>
         <div class="heatmap-wrapper">
-          <canvas id="heatmapChart"></canvas>
+          <canvas id="comparisonTrendChart"></canvas>
+        </div>
+        <div class="comparison-grid">
+          <div class="comparison-card">
+            <h4>Drivers and relationships</h4>
+            <ul id="driversList"></ul>
+          </div>
+          <div class="comparison-card">
+            <h4>Segment view</h4>
+            <div class="heatmap-wrapper small">
+              <canvas id="segmentChart"></canvas>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -237,6 +260,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@1.3.0/dist/chartjs-chart-matrix.min.js"></script>
   <script src="./app.js" defer></script>
 </body>
