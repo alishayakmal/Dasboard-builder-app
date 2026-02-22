@@ -10,250 +10,347 @@
   <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@300;400;600;700&family=Fraunces:wght@600;700&display=swap" rel="stylesheet" />
 </head>
 <body>
-  <header class="site-header">
-    <div class="header-left">
+  <main id="landingView">
+    <header class="landing-header">
       <div class="brand">
-        <div class="logo">D2D</div>
+        <div class="logo">LD</div>
         <div>
-          <h1>Data to Dashboard</h1>
-          <p>Upload a CSV, connect an API, or explore samples to generate KPI tiles, trends, and a clean data table.</p>
+          <h1>LuminaData</h1>
+          <p>Turn raw data into executive-ready dashboards in minutes.</p>
         </div>
       </div>
-      <div class="tabs header-tabs">
-        <button class="tab-button active" data-tab="upload">Upload CSV</button>
-        <button class="tab-button" data-tab="api">Connect API</button>
-        <button class="tab-button" data-tab="samples">Explore Samples</button>
-      </div>
-    </div>
-    <div class="header-right">
-      <div class="controls">
-        <label class="file-picker">
-          <input type="file" id="fileInput" accept=".csv,text/csv" />
-          <span>Upload CSV</span>
-        </label>
-        <button id="loadSample" class="ghost">Load Sample</button>
-      </div>
-      <label class="header-filter">
-        <span>Industry</span>
-        <select id="industrySelect" disabled>
-          <option value="All">All</option>
-        </select>
-        <span id="industryHelper" class="helper-text"></span>
-      </label>
-    </div>
-  </header>
+      <button id="signInButton" class="ghost">Sign In</button>
+    </header>
 
-  <main class="container">
-    <section id="status" class="status hidden"></section>
-    <section id="error" class="error hidden"></section>
-    <section id="warnings" class="warnings hidden"></section>
-
-    <section id="state" class="state tab-panel" data-tab-panel="upload">
-      <div class="upload-panel">
-        <div class="drop-zone" id="dropZone">
-          <p>Drag and drop a CSV here</p>
-          <button id="uploadTrigger" class="ghost">Choose file</button>
-          <input type="file" id="uploadInput" accept=".csv,text/csv" />
-        </div>
-        <div class="upload-help">
-          <p>Supported: CSV with headers. We handle currency symbols, percent values, and thousands separators.</p>
-        </div>
-      </div>
-      <div class="state-card">
-        <h2>Get started</h2>
-        <p>Upload a CSV file to generate KPIs, charts, and a data table. Your data never leaves the browser.</p>
-        <ul class="state-list">
-          <li>Auto-detects numeric metrics</li>
-          <li>Finds date columns for trends</li>
-          <li>Profiles data quality before analysis</li>
-        </ul>
+    <section class="hero">
+      <span class="pill">New: AI Powered Insights</span>
+      <h2>Turn Raw Data into Beautiful Insights</h2>
+      <p>Upload a CSV, connect an API, or pull from Google Sheets to get KPI tiles, trends, and clean data tables instantly.</p>
+      <div class="hero-actions">
+        <button id="startFree" class="primary">Start for Free</button>
+        <button class="ghost">Learn more</button>
       </div>
     </section>
 
-    <section id="apiPanel" class="tab-panel hidden" data-tab-panel="api">
-      <div class="table-card">
-        <div class="table-header">
-          <h3>Connect API (Coming next)</h3>
-          <p>Set up an API source. We will validate inputs and prepare a connector.</p>
-        </div>
-        <div class="api-form">
-          <label>Base URL <input type="text" id="apiBaseUrl" placeholder="https://api.example.com" /></label>
-          <label>Auth type
-            <select id="apiAuthType">
-              <option value="none">None</option>
-              <option value="apiKey">API Key</option>
-              <option value="bearer">Bearer Token</option>
-            </select>
-          </label>
-          <label>API Key / Token <input type="password" id="apiKey" placeholder="••••••••" /></label>
-          <label>Endpoint <input type="text" id="apiEndpoint" placeholder="/v1/data" /></label>
-          <button id="testApi" class="ghost" disabled title="Coming soon">Test Connection</button>
-          <p id="apiStatus" class="helper-text">This is a placeholder. API connections are not enabled yet.</p>
-        </div>
-      </div>
-    </section>
-
-    <section id="samplesPanel" class="tab-panel hidden" data-tab-panel="samples">
-      <div class="table-card">
-        <div class="table-header">
-          <h3>Explore Samples</h3>
-          <p>Pick a curated dataset to preview KPIs and trends.</p>
-        </div>
-        <div id="sampleGallery" class="sample-grid"></div>
-        <div class="suggested-trends">
-          <h4>Suggested trends</h4>
-          <ul id="suggestedTrends"></ul>
-        </div>
-      </div>
-    </section>
-
-    <section id="dashboard" class="dashboard hidden">
+    <section class="admin-sample">
       <div class="section-header">
-        <div class="section-title">
-          <h2>Dashboard</h2>
-          <span id="qualityBadge" class="quality-badge">Quality —</span>
-        </div>
-        <p id="datasetSummary"></p>
+        <h3>Sample contacts saved</h3>
+        <p>Demo only: reads from localStorage.</p>
       </div>
+      <div class="table-wrap">
+        <table id="contactsTable"></table>
+      </div>
+      <button id="clearContacts" class="ghost">Clear contacts</button>
+    </section>
+  </main>
 
-      <section class="kpi-grid" id="kpiGrid"></section>
+  <main id="appView" class="hidden">
+    <header class="app-header">
+      <div class="brand">
+        <div class="logo">LD</div>
+        <div>
+          <h1>LuminaData</h1>
+          <p>Upload, connect, and explore your data.</p>
+        </div>
+      </div>
+      <div class="app-header-actions">
+        <div class="tabs header-tabs">
+          <button class="tab-button active" data-tab="upload">Upload CSV</button>
+          <button class="tab-button" data-tab="api">Connect API</button>
+          <button class="tab-button" data-tab="pdf">Upload PDF</button>
+          <button class="tab-button" data-tab="sheets">Google Sheets</button>
+          <button class="tab-button" data-tab="samples">Samples</button>
+        </div>
+        <button id="signOutButton" class="ghost">Sign out</button>
+      </div>
+    </header>
 
-      <section class="controls-panel">
-        <div class="control-group">
-          <label for="metricSelect">Primary metric</label>
-          <select id="metricSelect"></select>
+    <main class="container">
+      <section id="status" class="status hidden"></section>
+      <section id="error" class="error hidden"></section>
+      <section id="warnings" class="warnings hidden"></section>
+
+      <section id="state" class="state tab-panel" data-tab-panel="upload">
+        <div class="upload-panel">
+          <div class="drop-zone" id="dropZone">
+            <p>Drag and drop a CSV here</p>
+            <button id="uploadTrigger" class="ghost">Choose file</button>
+            <input type="file" id="uploadInput" accept=".csv,text/csv" />
+          </div>
+          <div class="upload-help">
+            <p>Supported: CSV with headers. We handle currency symbols, percent values, and thousands separators.</p>
+          </div>
         </div>
-        <div class="control-group">
-          <label for="dimensionSelect">Breakdown dimension</label>
-          <select id="dimensionSelect"></select>
+        <div class="state-card">
+          <h2>Get started</h2>
+          <p>Upload a CSV file to generate KPIs, charts, and a data table. Your data never leaves the browser.</p>
+          <ul class="state-list">
+            <li>Auto-detects numeric metrics</li>
+            <li>Finds date columns for trends</li>
+            <li>Profiles data quality before analysis</li>
+          </ul>
         </div>
-        <div class="control-group">
-          <label for="topN">Top N</label>
-          <select id="topN">
-            <option value="5">5</option>
-            <option value="8" selected>8</option>
-            <option value="12">12</option>
-          </select>
-        </div>
-        <div class="control-group">
-          <label for="domainSelect">Domain</label>
-          <select id="domainSelect">
-            <option value="auto" selected>Auto-detect</option>
-            <option value="finance">Finance</option>
-            <option value="marketing">Marketing</option>
-            <option value="product">Product</option>
-            <option value="operations">Operations</option>
-            <option value="general">General</option>
-          </select>
-        </div>
-        <div class="control-group">
-          <label for="dateStart">Date start</label>
-          <input type="date" id="dateStart" />
-        </div>
-        <div class="control-group">
-          <label for="dateEnd">Date end</label>
-          <input type="date" id="dateEnd" />
-        </div>
-        <div class="control-group control-actions">
-          <label>Actions</label>
-          <div class="control-buttons">
-            <button id="exportCsv" class="ghost">Export filtered CSV</button>
-            <button id="downloadInsights" class="ghost">Download insights</button>
+      </section>
+
+      <section id="apiPanel" class="tab-panel hidden" data-tab-panel="api">
+        <div class="table-card">
+          <div class="table-header">
+            <h3>Connect API</h3>
+            <p>Provide the endpoint details. We will validate inputs in a future release.</p>
+          </div>
+          <div class="api-form">
+            <label>Base URL <input type="text" id="apiBaseUrl" placeholder="https://api.example.com" /></label>
+            <label>Auth type
+              <select id="apiAuthType">
+                <option value="none">None</option>
+                <option value="apiKey">API Key</option>
+                <option value="bearer">Bearer Token</option>
+              </select>
+            </label>
+            <label>Credential <input type="password" id="apiKey" placeholder="••••••••" /></label>
+            <label>Endpoint <input type="text" id="apiEndpoint" placeholder="/v1/data" /></label>
+            <button id="testApi" class="ghost" disabled title="Coming soon">Test Connection</button>
+            <p id="apiStatus" class="helper-text">Coming soon</p>
           </div>
         </div>
       </section>
 
-      <section class="charts">
-        <div class="filter-badge" id="filterBadge">Filtered to: All</div>
-        <div class="chart-card">
-          <div class="chart-header">
-            <h3 id="trendTitle">Trend</h3>
-            <p id="trendSubtitle"></p>
+      <section id="pdfPanel" class="tab-panel hidden" data-tab-panel="pdf">
+        <div class="table-card">
+          <div class="table-header">
+            <h3>Upload PDF</h3>
+            <p>Drop in a report and we will parse it in a future release.</p>
           </div>
-          <canvas id="trendChart" height="140"></canvas>
-        </div>
-        <div class="chart-card">
-          <div class="chart-header">
-            <h3 id="barTitle">Breakdown</h3>
-            <p id="barSubtitle"></p>
+          <div class="api-form">
+            <label>PDF file
+              <input type="file" id="pdfInput" accept="application/pdf" />
+            </label>
+            <div id="pdfStatus" class="helper-text">PDF ingestion coming soon</div>
+            <div id="pdfMeta" class="helper-text"></div>
           </div>
-          <canvas id="barChart" height="140"></canvas>
-        </div>
-        <div class="chart-card">
-          <div class="chart-header">
-            <h3 id="extraTitle">Analysis</h3>
-            <p id="extraSubtitle"></p>
-          </div>
-          <canvas id="extraChart" height="140"></canvas>
         </div>
       </section>
 
-      <section class="heatmap-card" id="comparisonSection">
-        <div class="chart-header">
-          <h3>Metric Comparison</h3>
-          <p>Pick a primary metric and compare drivers, trends, and segments.</p>
-          <p id="comparisonNote" class="helper-text"></p>
+      <section id="sheetsPanel" class="tab-panel hidden" data-tab-panel="sheets">
+        <div class="table-card">
+          <div class="table-header">
+            <h3>Google Sheets</h3>
+            <p>Paste a public CSV export link from Google Sheets.</p>
+          </div>
+          <div class="api-form">
+            <label>Paste Google Sheets CSV link
+              <input type="text" id="sheetsUrl" placeholder="https://docs.google.com/spreadsheets/.../export?format=csv" />
+            </label>
+            <button id="loadSheet" class="ghost">Load sheet</button>
+            <p class="helper-text">Sheet must be published or shared for anyone with the link.</p>
+          </div>
         </div>
-        <div class="comparison-controls">
+      </section>
+
+      <section id="samplesPanel" class="tab-panel hidden" data-tab-panel="samples">
+        <div class="table-card">
+          <div class="table-header">
+            <h3>Samples</h3>
+            <p>Pick a curated dataset to preview KPIs and trends.</p>
+          </div>
+          <div id="sampleGallery" class="sample-grid"></div>
+          <div class="suggested-trends">
+            <h4>Suggested trends</h4>
+            <ul id="suggestedTrends"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="dashboard" class="dashboard hidden">
+        <div class="section-header">
+          <div class="section-title">
+            <h2>Dashboard</h2>
+            <span id="qualityBadge" class="quality-badge">Quality —</span>
+          </div>
+          <p id="datasetSummary"></p>
+        </div>
+
+        <section class="kpi-grid" id="kpiGrid"></section>
+
+        <section class="controls-panel">
           <div class="control-group">
-            <label for="primaryMetricSelect">Primary Metric</label>
-            <select id="primaryMetricSelect"></select>
+            <label for="industrySelect">Industry</label>
+            <select id="industrySelect" disabled>
+              <option value="All">All</option>
+            </select>
+            <span id="industryHelper" class="helper-text"></span>
           </div>
           <div class="control-group">
-            <label for="compareMetricSelect">Compare Against (up to 5)</label>
-            <select id="compareMetricSelect" multiple size="4"></select>
+            <label for="metricSelect">Primary metric</label>
+            <select id="metricSelect"></select>
           </div>
-        </div>
-        <div class="heatmap-wrapper">
-          <canvas id="comparisonTrendChart"></canvas>
-        </div>
-        <div class="comparison-grid">
-          <div class="comparison-card">
-            <h4>Drivers and relationships</h4>
-            <ul id="driversList"></ul>
+          <div class="control-group">
+            <label for="dimensionSelect">Breakdown dimension</label>
+            <select id="dimensionSelect"></select>
           </div>
-          <div class="comparison-card">
-            <h4>Segment view</h4>
-            <div class="heatmap-wrapper small">
-              <canvas id="segmentChart"></canvas>
+          <div class="control-group">
+            <label for="topN">Top N</label>
+            <select id="topN">
+              <option value="5">5</option>
+              <option value="8" selected>8</option>
+              <option value="12">12</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="domainSelect">Domain</label>
+            <select id="domainSelect">
+              <option value="auto" selected>Auto-detect</option>
+              <option value="finance">Finance</option>
+              <option value="marketing">Marketing</option>
+              <option value="product">Product</option>
+              <option value="operations">Operations</option>
+              <option value="general">General</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label for="dateStart">Date start</label>
+            <input type="date" id="dateStart" />
+          </div>
+          <div class="control-group">
+            <label for="dateEnd">Date end</label>
+            <input type="date" id="dateEnd" />
+          </div>
+          <div class="control-group control-actions">
+            <label>Actions</label>
+            <div class="control-buttons">
+              <button id="exportCsv" class="ghost">Export filtered CSV</button>
+              <button id="downloadInsights" class="ghost">Download insights</button>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section class="insights-card">
-        <div class="chart-header">
-          <h3>Insights</h3>
-          <p>What changed, what stands out, and where to look next.</p>
-        </div>
-        <ul id="insightsList"></ul>
-      </section>
+        <section class="charts">
+          <div class="filter-badge" id="filterBadge">Filtered to: All</div>
+          <div class="chart-card">
+            <div class="chart-header">
+              <h3 id="trendTitle">Trend</h3>
+              <p id="trendSubtitle"></p>
+            </div>
+            <canvas id="trendChart" height="140"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="chart-header">
+              <h3 id="barTitle">Breakdown</h3>
+              <p id="barSubtitle"></p>
+            </div>
+            <canvas id="barChart" height="140"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="chart-header">
+              <h3 id="extraTitle">Analysis</h3>
+              <p id="extraSubtitle"></p>
+            </div>
+            <canvas id="extraChart" height="140"></canvas>
+          </div>
+        </section>
 
-      <section class="table-card">
-        <div class="table-header">
-          <h3>Data Profile</h3>
-          <p>Column schema, quality, and quick stats.</p>
-        </div>
-        <div class="table-wrap">
-          <table id="profileTable"></table>
-        </div>
-      </section>
+        <section class="heatmap-card" id="comparisonSection">
+          <div class="chart-header">
+            <h3>Metric Comparison</h3>
+            <p>Pick a primary metric and compare drivers, trends, and segments.</p>
+            <p id="comparisonNote" class="helper-text"></p>
+          </div>
+          <div class="comparison-controls">
+            <div class="control-group">
+              <label for="primaryMetricSelect">Primary Metric</label>
+              <select id="primaryMetricSelect"></select>
+            </div>
+            <div class="control-group">
+              <label for="compareMetricSelect">Compare Against (up to 5)</label>
+              <select id="compareMetricSelect" multiple size="4"></select>
+            </div>
+          </div>
+          <div class="heatmap-wrapper">
+            <canvas id="comparisonTrendChart"></canvas>
+          </div>
+          <div class="comparison-grid">
+            <div class="comparison-card">
+              <h4>Drivers and relationships</h4>
+              <ul id="driversList"></ul>
+            </div>
+            <div class="comparison-card">
+              <h4>Segment view</h4>
+              <div class="heatmap-wrapper small">
+                <canvas id="segmentChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </section>
 
-      <section class="table-card">
-        <div class="table-header">
-          <h3>Data Preview</h3>
-          <p>Click any column to sort. Showing up to 50 rows.</p>
-        </div>
-        <div class="table-wrap">
-          <table id="dataTable"></table>
-        </div>
+        <section class="insights-card">
+          <div class="chart-header">
+            <h3>Insights</h3>
+            <p>What changed, what stands out, and where to look next.</p>
+          </div>
+          <ul id="insightsList"></ul>
+        </section>
+
+        <section class="table-card">
+          <div class="table-header">
+            <h3>Data Profile</h3>
+            <p>Column schema, quality, and quick stats.</p>
+          </div>
+          <div class="table-wrap">
+            <table id="profileTable"></table>
+          </div>
+        </section>
+
+        <section class="table-card">
+          <div class="table-header">
+            <h3>Data Preview</h3>
+            <p>Click any column to sort. Showing up to 50 rows.</p>
+          </div>
+          <div class="table-wrap">
+            <table id="dataTable"></table>
+          </div>
+        </section>
       </section>
-    </section>
+    </main>
   </main>
 
   <footer class="site-footer">
     <p>Built with plain HTML, CSS, JavaScript, PapaParse, and Chart.js. <span id="buildStamp"></span></p>
   </footer>
+
+  <div id="signupModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <button id="closeModal" class="modal-close">×</button>
+      <h3>Start for Free</h3>
+      <p class="helper-text">Create your account to unlock the dashboard.</p>
+      <form id="signupForm" class="modal-form">
+        <label>Full name
+          <input type="text" id="leadName" required />
+        </label>
+        <label>Email
+          <input type="email" id="leadEmail" required />
+        </label>
+        <label>Company (optional)
+          <input type="text" id="leadCompany" />
+        </label>
+        <label>Use case (optional)
+          <select id="leadUseCase">
+            <option value="">Select one</option>
+            <option value="Executive dashboards">Executive dashboards</option>
+            <option value="Marketing reporting">Marketing reporting</option>
+            <option value="Product analytics">Product analytics</option>
+            <option value="Operations">Operations</option>
+            <option value="Other">Other</option>
+          </select>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="leadConsent" />
+          <span>I agree to be contacted about product updates.</span>
+        </label>
+        <button type="submit" class="primary">Create account</button>
+      </form>
+      <p id="formError" class="error hidden"></p>
+    </div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
