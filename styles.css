@@ -289,9 +289,9 @@ button:disabled {
   color: var(--text-secondary);
 }
 .error {
-  background: #2a1114;
-  color: #fca5a5;
-  border: 1px solid #7f1d1d;
+  background: rgba(124,58,237,0.12);
+  color: #e9d5ff;
+  border: 1px solid rgba(124,58,237,0.4);
   padding: 12px 16px;
   border-radius: 12px;
   margin-bottom: 16px;
@@ -305,9 +305,9 @@ button:disabled {
 }
 
 .warnings {
-  background: #23180b;
-  color: #fcd34d;
-  border: 1px solid #92400e;
+  background: rgba(139,92,246,0.12);
+  color: #f5d0fe;
+  border: 1px solid rgba(139,92,246,0.4);
   padding: 12px 16px;
   border-radius: 12px;
   margin-bottom: 16px;
