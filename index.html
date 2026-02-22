@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Data to Dashboard</title>
+  <title>Shay Analytics AI</title>
   <link rel="stylesheet" href="./styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -13,9 +13,9 @@
   <main id="landingView">
     <header class="landing-header">
       <div class="brand">
-        <div class="logo">LD</div>
+        <div class="logo">SA</div>
         <div>
-          <h1>LuminaData</h1>
+          <h1>Shay Analytics AI</h1>
           <p>Turn raw data into executive-ready dashboards in minutes.</p>
         </div>
       </div>
@@ -32,24 +32,14 @@
       </div>
     </section>
 
-    <section class="admin-sample">
-      <div class="section-header">
-        <h3>Sample contacts saved</h3>
-        <p>Demo only: reads from localStorage.</p>
-      </div>
-      <div class="table-wrap">
-        <table id="contactsTable"></table>
-      </div>
-      <button id="clearContacts" class="ghost">Clear contacts</button>
-    </section>
   </main>
 
   <main id="appView" class="hidden">
     <header class="app-header">
       <div class="brand">
-        <div class="logo">LD</div>
+        <div class="logo">SA</div>
         <div>
-          <h1>LuminaData</h1>
+          <h1>Shay Analytics AI</h1>
           <p>Upload, connect, and explore your data.</p>
         </div>
       </div>
@@ -142,7 +132,7 @@
               <input type="text" id="sheetsUrl" placeholder="https://docs.google.com/spreadsheets/.../export?format=csv" />
             </label>
             <button id="loadSheet" class="ghost">Load sheet</button>
-            <p class="helper-text">Sheet must be published or shared for anyone with the link.</p>
+            <p id="sheetsHelper" class="helper-text">Paste a Google Sheets link. If it is an edit link, the app will convert it to a CSV export link.</p>
           </div>
         </div>
       </section>
@@ -162,6 +152,7 @@
       </section>
 
       <section id="dashboard" class="dashboard hidden">
+        <div class="demo-banner">Demo dataset. No client data.</div>
         <div class="section-header">
           <div class="section-title">
             <h2>Dashboard</h2>
@@ -220,7 +211,10 @@
             <div class="control-buttons">
               <button id="exportCsv" class="ghost">Export filtered CSV</button>
               <button id="downloadInsights" class="ghost">Download insights</button>
+              <button id="exportSheets" class="ghost">Export to Google Sheets</button>
+              <button id="downloadPdf" class="ghost">Download PDF</button>
             </div>
+            <p id="exportStatus" class="helper-text"></p>
           </div>
         </section>
 
