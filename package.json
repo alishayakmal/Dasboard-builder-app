@@ -1,0 +1,16 @@
+{
+  "name": "shay-analytics-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shay Analytics AI - CSV and Google Sheets dashboard app with OAuth.",
+  "main": "server/server.js",
+  "scripts": {
+    "dev": "node server/server.js",
+    "start": "node server/server.js"
+  },
+  "dependencies": {
+    "cookie-parser": "^1.4.6",
+    "express": "^4.19.2",
+    "sqlite3": "^5.1.7"
+  }
+}

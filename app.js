@@ -269,7 +269,7 @@ function init() {
   if (signOutButton) signOutButton.addEventListener("click", handleSignOutClick);
   if (loadSheetButton) loadSheetButton.addEventListener("click", loadSheetData);
   if (connectGoogleButton) connectGoogleButton.addEventListener("click", () => {
-    window.location.href = "/.netlify/functions/oauth-start";
+    window.location.href = "/oauth/start";
   });
   if (exportSheetsButton) exportSheetsButton.addEventListener("click", handleExportToSheets);
   if (downloadPdfButton) downloadPdfButton.addEventListener("click", () => window.print());
@@ -384,7 +384,7 @@ function handleRoute() {
 
 function handleOauthSuccess() {
   const hash = window.location.hash || "";
-  if (hash.includes("oauth=success")) {
+  if (hash.includes("google=connected")) {
     showToast("Google connected");
     window.location.hash = "#/app";
   }
@@ -652,7 +652,7 @@ async function loadSheetData() {
   setStatus("Loading Google Sheet");
   try {
     if (sheetId) {
-      const privateResult = await fetch(`/.netlify/functions/sheets-read?spreadsheetId=${encodeURIComponent(sheetId)}&range=${encodeURIComponent(range)}`, {
+      const privateResult = await fetch(`/api/sheets/read?spreadsheetId=${encodeURIComponent(sheetId)}&range=${encodeURIComponent(range)}`, {
         credentials: "include",
       });
       if (privateResult.ok) {
