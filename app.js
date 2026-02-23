@@ -190,6 +190,12 @@ function init() {
     buildStamp.textContent = `Build: ${new Date().toISOString()}`;
   }
 
+  if (GOOGLE_CLIENT_ID.includes("PASTE_")) {
+    console.warn("Missing GOOGLE_CLIENT_ID. Google Sheets connect will fail until you set it.");
+    if (googleStatus) googleStatus.textContent = "Google connect not configured. Set GOOGLE_CLIENT_ID in app.js";
+    if (connectGoogleButton) connectGoogleButton.disabled = true;
+  }
+
   window.addEventListener("hashchange", handleRoute);
 
   tabButtons.forEach((button) => {
@@ -401,6 +407,9 @@ function handleRoute() {
 
 function initGoogleAuth() {
   if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) return null;
+  if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.includes("PASTE_")) {
+    throw new Error("Missing GOOGLE_CLIENT_ID. Create an OAuth Client ID in Google Cloud and paste it into app.js");
+  }
   if (googleTokenClient) return googleTokenClient;
 
   googleTokenClient = window.google.accounts.oauth2.initTokenClient({
@@ -419,12 +428,17 @@ function initGoogleAuth() {
 }
 
 function handleConnectGoogleClick() {
-  const tokenClient = initGoogleAuth();
-  if (!tokenClient) {
-    showError("Google auth not available. Ensure Google Identity Services is loaded.");
-    return;
+  try {
+    const tokenClient = initGoogleAuth();
+    if (!tokenClient) {
+      showError("Google auth not available. Ensure Google Identity Services is loaded.");
+      return;
+    }
+    tokenClient.requestAccessToken({ prompt: "consent" });
+  } catch (e) {
+    console.error(e);
+    if (googleStatus) googleStatus.textContent = e.message || String(e);
   }
-  tokenClient.requestAccessToken({ prompt: "consent" });
 }
 
 function handleDisconnectGoogleClick() {
@@ -514,18 +528,16 @@ function handleSignupSubmit(event) {
 
   const payload = {
     source: "webapp",
-    user: email || "unknown",
+    user: leadEmailInput?.value?.trim() || "unknown",
     action: "signup",
     entity: "lead",
-    value: "",
+    value: leadCompanyInput?.value?.trim() || "",
     ts: new Date().toISOString(),
   };
 
   postSignupToAppsScript(payload).then((result) => {
-    if (result.ok) {
-      showStatus("Saved to Google Sheets");
-    } else {
-      showStatus(`Signup failed ${result.status}`);
+    if (formError) {
+      formError.textContent = result.ok ? "Saved to Google Sheets" : `Signup failed ${result.status} ${result.body}`;
     }
   });
 
@@ -1178,7 +1190,8 @@ function ingestRows(rawRows) {
     const message = numericCandidates.length
       ? "No usable numeric metrics detected. Add at least one numeric column."
       : "No usable numeric metrics found. We detected numeric identifiers only. Add metrics like revenue, spend, clicks, orders.";
-    showError(message, detail);
+    const debugLine = buildNumericFailureDetail(state.schema.profiles);
+    showError(message, debugLine);
     return;
   }
 
@@ -1517,7 +1530,16 @@ function isIdLikeColumn(colName, profile, rowCount) {
   ];
   if (namePatterns.some((pattern) => lower.includes(pattern))) return true;
   const uniqueRate = profile?.uniqueRate ?? 0;
-  if (rowCount >= 20 && uniqueRate >= 0.9) return true;
+  if (rowCount >= 20 && uniqueRate >= 0.9) {
+    const looksIdNamed = namePatterns.some((pattern) => lower.includes(pattern));
+    if (looksIdNamed) return true;
+
+    if (profile?.integerOnly) {
+      const nonBlank = profile.nonBlankCount || rowCount || 0;
+      const range = (profile?.max !== null && profile?.min !== null) ? Math.abs(profile.max - profile.min) : 0;
+      if (nonBlank >= 20 && uniqueRate >= 0.98 && range > nonBlank * 10) return true;
+    }
+  }
   if (profile?.integerOnly && profile?.min !== null && profile?.max !== null) {
     const range = Math.abs(profile.max - profile.min);
     const nonBlank = profile.nonBlankCount || rowCount || 0;
@@ -1678,7 +1700,8 @@ function applyFiltersAndRender() {
     const message = numericCandidates.length
       ? "No usable numeric metrics detected. Add at least one numeric column."
       : "No usable numeric metrics found. We detected numeric identifiers only. Add metrics like revenue, spend, clicks, orders.";
-    showError(message);
+    const debugLine = buildNumericFailureDetail(state.schema.profiles);
+    showError(message, debugLine);
     return;
   }
   if (!state.selections.primaryMetric || !state.schema.numeric.includes(state.selections.primaryMetric)) {
