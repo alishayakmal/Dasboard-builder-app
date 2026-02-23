@@ -109,13 +109,13 @@
         <div class="table-card">
           <div class="table-header">
             <h3>Upload PDF</h3>
-            <p>Drop in a report and we will parse it in a future release.</p>
+            <p>Upload a PDF that contains a clear, table-like layout. We will extract the first 6 pages.</p>
           </div>
           <div class="api-form">
             <label>PDF file
               <input type="file" id="pdfInput" accept="application/pdf" />
             </label>
-            <div id="pdfStatus" class="helper-text">PDF ingestion coming soon</div>
+            <div id="pdfStatus" class="helper-text">PDFs must include visible table rows and columns.</div>
             <div id="pdfMeta" class="helper-text"></div>
           </div>
         </div>
@@ -125,7 +125,7 @@
         <div class="table-card">
           <div class="table-header">
             <h3>Google Sheets</h3>
-            <p>Paste a public CSV export link from Google Sheets.</p>
+            <p>Paste a public Google Sheets link. Private sheets are not supported.</p>
           </div>
           <div class="api-form">
             <label>Paste Google Sheets CSV link
@@ -350,6 +350,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@1.3.0/dist/chartjs-chart-matrix.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="./app.js" defer></script>
 </body>
 </html>
