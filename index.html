@@ -210,7 +210,7 @@
               <button id="loadSheet" class="ghost" data-action="load-sheet">Load sheet</button>
               <button id="connectGoogle" class="ghost" data-action="connect-google">Connect Google</button>
               <button id="disconnectGoogle" class="ghost" disabled data-action="disconnect-google">Disconnect</button>
-              <span id="googleStatus" class="helper-text">Not connected</span>
+              <span id="googleStatus" class="status-badge offline">Not connected</span>
             </div>
             <p id="sheetsHelper" class="helper-text">Paste a Google Sheets link. If it is an edit link, the app will convert it to a CSV export link.</p>
           </div>
@@ -233,6 +233,7 @@
 
       <section id="dashboard" class="dashboard hidden">
         <div class="demo-banner">Demo dataset. No client data.</div>
+        <div id="metricNotice" class="status hidden"></div>
         <div class="section-header">
           <div class="section-title">
             <h2>Dashboard</h2>
