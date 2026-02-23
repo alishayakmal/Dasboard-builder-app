@@ -1215,6 +1215,7 @@ function parseNumber(value) {
   cleaned = cleaned.trim();
   if (!cleaned) return null;
 
+  if (!/^[-+]?\d*\.?\d+(e[-+]?\d+)?$/i.test(cleaned)) return null;
   const number = Number(cleaned);
   if (Number.isNaN(number)) return null;
   let result = isNegative ? -number : number;
@@ -1227,6 +1228,9 @@ function parseDate(value) {
   if (value instanceof Date) return Number.isNaN(value.valueOf()) ? null : value;
   const raw = String(value).trim();
   if (!raw) return null;
+
+  const digitsOnly = /^[0-9]+$/.test(raw);
+  if (digitsOnly) return null;
 
   if (raw.includes("T") || raw.endsWith("Z")) {
     const isoDate = new Date(raw);
@@ -1275,6 +1279,7 @@ function profileDataset(rows, columns) {
     const missingRate = values.length ? (values.length - nonMissing.length) / values.length : 1;
 
     const numericValues = [];
+    const dateValues = [];
     const failedSamples = [];
     let numericCount = 0;
     let dateCount = 0;
@@ -1287,29 +1292,45 @@ function profileDataset(rows, columns) {
         failedSamples.push(String(value));
       }
       const date = parseDate(value);
-      if (date) dateCount += 1;
+      if (date) {
+        dateCount += 1;
+        dateValues.push(date);
+      }
     });
 
     const numericRate = nonMissing.length ? numericCount / nonMissing.length : 0;
     const dateRate = nonMissing.length ? dateCount / nonMissing.length : 0;
     const nonBlankCount = nonMissing.length;
 
+    const lower = col.toLowerCase();
     let type = "categorical";
-    if (dateRate >= 0.8) type = "date";
-    else if (numericRate >= 0.6) type = "numeric";
-    else if (nonBlankCount >= 20 && numericRate >= 0.7) type = "numeric";
+    if (dateRate >= 0.9) type = "date";
+    else if (numericRate >= 0.9) type = "numeric";
+
+    if (/activeusers|sessions/.test(lower)) type = "numeric";
 
     const uniqueSet = new Set(nonMissing.map((value) => String(value).trim()));
     const uniqueCount = uniqueSet.size;
     const uniqueRate = nonBlankCount ? uniqueCount / nonBlankCount : 0;
 
+    const confidenceScore = type === "numeric"
+      ? numericRate
+      : type === "date"
+        ? dateRate
+        : Math.max(0.3, 1 - Math.max(numericRate, dateRate));
+
     const stats = {
       type,
+      inferredType: type,
+      confidenceScore,
+      parseFailures: nonBlankCount - (type === "date" ? dateCount : numericCount),
+      examples: nonMissing.slice(0, 3).map((value) => String(value)),
       missingRate,
       uniqueCount,
       uniqueRate,
       nonNumericRate: type === "numeric" ? 1 - numericRate : null,
       numericRate,
+      dateRate,
       nonBlankCount,
       failedSamples,
       integerOnly: null,
@@ -1339,10 +1360,7 @@ function profileDataset(rows, columns) {
     }
 
     if (type === "date") {
-      const dates = nonMissing
-        .map((value) => parseDate(value))
-        .filter((value) => value !== null)
-        .sort((a, b) => a - b);
+      const dates = dateValues.sort((a, b) => a - b);
       if (dates.length) {
         stats.dateMin = dates[0];
         stats.dateMax = dates[dates.length - 1];
@@ -1716,6 +1734,17 @@ function applyFiltersAndRender() {
   state.selectedMetric = state.selections.primaryMetric;
   state.selections.compareMetrics = (state.selections.compareMetrics || []).filter((m) => state.schema.numeric.includes(m));
 
+  if (topNSelect) {
+    const uniqueCount = state.selectedDimension ? (state.schema.profiles[state.selectedDimension]?.uniqueCount || 0) : 0;
+    if (uniqueCount && uniqueCount <= 2) {
+      topNSelect.disabled = true;
+      topNSelect.title = "Top N disabled for 2-category breakdowns.";
+    } else {
+      topNSelect.disabled = false;
+      topNSelect.title = "";
+    }
+  }
+
   if (filterBadge) {
     filterBadge.textContent = `Filtered to: ${state.filters.industry || "All"}`;
   }
@@ -1797,11 +1826,8 @@ function renderKPIs(rows) {
     const max = values.length ? Math.max(...values) : 0;
 
     const metricType = inferMetricType(metric, values);
-    const primary = metricType.isRate
-      ? computeRateValue(metric, values)
-      : total;
-
-    const change = computePeriodChange(rows, metric);
+    const primary = metricType.kind === "rate" ? avg : total;
+    const change = computePeriodChange(rows, metric, metricType);
 
     const card = document.createElement("div");
     card.className = "kpi-card";
@@ -1834,18 +1860,19 @@ function renderCharts(rows) {
   if (state.dateColumn) {
     state.chosenXAxisType = "date";
     const bucket = rows.length > 200 ? "week" : "day";
-    const series = aggregateByDate(rows, state.dateColumn, metric, bucket, state.dateRange);
+    const series = aggregateByDate(rows, state.dateColumn, metric, bucket, state.dateRange, metricType);
     trendTitle.textContent = `${metricLabel} trend`;
-    trendSubtitle.textContent = `Grouped by ${bucket}`;
-    trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType);
+    const periodLabel = series.labels.length < 3 ? `${series.labels.length} periods (limited)` : `${series.labels.length} periods`;
+    trendSubtitle.textContent = `Grouped by ${bucket} · ${periodLabel}`;
+    trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType, series.counts);
   } else {
     const category = chooseCategoryColumn(rows, state.schema.profiles);
     if (category) {
       state.chosenXAxisType = "category";
-      const series = aggregateByCategory(rows, category, metric, state.topN);
+      const series = aggregateByCategory(rows, category, metric, state.topN, metricType);
       trendTitle.textContent = `${metricLabel} by ${category}`;
       trendSubtitle.textContent = "No date column detected";
-      trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType);
+      trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType, series.counts);
     } else {
       state.chosenXAxisType = "index";
       const labels = rows.map((_, index) => index + 1);
@@ -1861,10 +1888,10 @@ function renderCharts(rows) {
   if (dimension) {
     state.selectedDimension = dimension;
     if (dimensionSelect.value !== dimension) dimensionSelect.value = dimension;
-    breakdown = aggregateByCategory(rows, dimension, metric, state.topN);
+    breakdown = aggregateByCategory(rows, dimension, metric, state.topN, metricType);
     barTitle.textContent = `${metricLabel} by ${dimension}`;
     barSubtitle.textContent = `Top ${state.topN}`;
-    barChartInstance = createBarChart("barChart", breakdown.labels, breakdown.values, metricType);
+    barChartInstance = createBarChart("barChart", breakdown.labels, breakdown.values, metricType, breakdown.counts);
   } else {
     state.selectedDimension = null;
     if (dimensionSelect) dimensionSelect.value = "";
@@ -1883,7 +1910,7 @@ function renderCharts(rows) {
   } else {
     extraTitle.textContent = `Distribution of ${metric}`;
     extraSubtitle.textContent = "Histogram";
-    extraChartInstance = createHistogram("extraChart", metricValues);
+    extraChartInstance = createHistogram("extraChart", metricValues, metricType);
   }
 }
 
@@ -1913,16 +1940,17 @@ function renderProfileTable(profile) {
       ? stats.topValues.map((item) => `${item.value} (${item.count})`).join(", ")
       : "—";
 
-    const metricType = stats.type === "numeric" ? inferMetricType(col, []) : { isCurrency: false, isRate: false };
+    const metricType = stats.type === "numeric" ? inferMetricType(col, []) : { isCurrency: false, isRate: false, kind: "generic" };
+    const profileKind = metricType.kind === "rate" ? "generic" : metricType.kind;
     const cells = [
       col,
       stats.type,
       `${Math.round(stats.missingRate * 100)}%`,
       stats.uniqueCount ?? "—",
-      stats.min !== null ? formatMetricValue(stats.min, metricType) : "—",
-      stats.max !== null ? formatMetricValue(stats.max, metricType) : "—",
-      stats.mean !== null ? formatMetricValue(stats.mean, metricType) : "—",
-      stats.median !== null ? formatMetricValue(stats.median, metricType) : "—",
+      stats.min !== null ? formatMetric(stats.min, profileKind) : "—",
+      stats.max !== null ? formatMetric(stats.max, profileKind) : "—",
+      stats.mean !== null ? formatMetric(stats.mean, profileKind) : "—",
+      stats.median !== null ? formatMetric(stats.median, profileKind) : "—",
       stats.std !== null ? numberFormatter.format(stats.std) : "—",
       stats.type === "date" ? dateRange : "—",
       stats.type === "categorical" ? topValues : "—",
@@ -2036,12 +2064,14 @@ function sortTable(column) {
 }
 
 function inferMetricType(metric, values) {
-  const lower = metric.toLowerCase();
-  const isCurrency = /(revenue|sales|cost|spend|profit|price|amount)/i.test(lower);
-  const isRateName = /(rate|percent|ctr|cvr|roas|ratio)/i.test(lower);
+  const lower = String(metric || "").toLowerCase();
+  const isCurrency = /(revenue|sales|cost|spend|profit|price|amount|gmv|mrr|arr)/i.test(lower);
+  const isRateName = /(rate|percent|ctr|cvr|roas|ratio|retention)/i.test(lower);
+  const isDuration = /(time|duration|seconds|secs|minutes|mins|hours)/i.test(lower);
   const isRateRange = values.length > 0 && values.every((val) => val >= 0 && val <= 1);
   const isRate = isRateName || isRateRange;
-  return { isCurrency, isRate };
+  const kind = isRate ? "rate" : isCurrency ? "currency" : isDuration ? "duration" : "count";
+  return { isCurrency, isRate, isDuration, kind };
 }
 
 function computeRateValue(metric, values) {
@@ -2078,15 +2108,25 @@ function findRateDenominator(metric, numericColumns) {
   return null;
 }
 
-function formatMetricValue(value, metricType) {
+function formatMetric(value, metricKind, decimals = 2, compact = false) {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
-  if (metricType.isRate) {
-    return percentFormatter.format(value);
+  if (metricKind === "rate") {
+    const pct = value * 100;
+    return `${pct.toFixed(1)}%`;
   }
-  if (metricType.isCurrency) {
+  if (metricKind === "currency") {
     return currencyFormatter.format(value);
   }
-  return numberFormatter.format(value);
+  if (metricKind === "duration") {
+    return `${Number(value).toFixed(1)}s`;
+  }
+  const formatter = compact ? new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: decimals }) : numberFormatter;
+  return formatter.format(value);
+}
+
+function formatMetricValue(value, metricType, compact = false) {
+  const kind = metricType?.kind || (metricType?.isRate ? "rate" : metricType?.isCurrency ? "currency" : "count");
+  return formatMetric(value, kind, 2, compact);
 }
 
 function computeMedian(values) {
@@ -2106,24 +2146,30 @@ function computeCoefficientOfVariation(rows, metric) {
   return std / Math.abs(mean);
 }
 
-function computePeriodChange(rows, metric) {
+function computePeriodChange(rows, metric, metricType) {
   if (!state.dateColumn) return null;
-  const series = aggregateByDate(rows, state.dateColumn, metric, "day", state.dateRange);
+  const series = aggregateByDate(rows, state.dateColumn, metric, "day", state.dateRange, metricType);
   if (series.values.length < 6) return null;
   const window = series.values.length >= 14 ? 7 : 3;
   const recent = series.values.slice(-window);
   const previous = series.values.slice(-window * 2, -window);
   if (!previous.length) return null;
-  const recentTotal = recent.reduce((sum, val) => sum + val, 0);
-  const previousTotal = previous.reduce((sum, val) => sum + val, 0);
-  const change = previousTotal === 0 ? 0 : (recentTotal - previousTotal) / previousTotal;
+  const recentTotal = recent.reduce((sum, val) => sum + val, 0) / recent.length;
+  const previousTotal = previous.reduce((sum, val) => sum + val, 0) / previous.length;
   const label = `Last ${window} vs prior ${window}`;
+  if (metricType?.kind === "rate") {
+    const delta = recentTotal - previousTotal;
+    const value = `${(delta * 100).toFixed(1)} pp`;
+    return { label, value };
+  }
+  const change = previousTotal === 0 ? 0 : (recentTotal - previousTotal) / previousTotal;
   const value = percentFormatter.format(change);
   return { label, value };
 }
 
-function aggregateByDate(rows, dateColumn, metric, bucket, dateRange) {
+function aggregateByDate(rows, dateColumn, metric, bucket, dateRange, metricType) {
   const totals = new Map();
+  const counts = new Map();
   (rows || []).forEach((row) => {
     const dateValue = parseDate(row[dateColumn]);
     const metricValue = parseNumber(row[metric]);
@@ -2132,35 +2178,50 @@ function aggregateByDate(rows, dateColumn, metric, bucket, dateRange) {
     if (dateRange.end && dateValue > dateRange.end) return;
     const key = bucket === "week" ? getWeekStart(dateValue) : formatDateInput(dateValue);
     totals.set(key, (totals.get(key) || 0) + metricValue);
+    counts.set(key, (counts.get(key) || 0) + 1);
   });
 
   const labels = Array.from(totals.keys()).sort();
-  const values = labels.map((label) => totals.get(label));
-  return { labels, values };
+  const values = labels.map((label) => {
+    const total = totals.get(label) || 0;
+    const count = counts.get(label) || 1;
+    if (metricType?.kind === "rate") return total / count;
+    return total;
+  });
+  const ns = labels.map((label) => counts.get(label) || 0);
+  return { labels, values, counts: ns };
 }
 
-function aggregateByCategory(rows, dimension, metric, topN) {
+function aggregateByCategory(rows, dimension, metric, topN, metricType) {
   if (!dimension) {
-    return { labels: [], values: [] };
+    return { labels: [], values: [], counts: [] };
   }
   const totals = new Map();
+  const counts = new Map();
   (rows || []).forEach((row) => {
     const key = row[dimension] ? String(row[dimension]).trim() : "Unknown";
     const metricValue = parseNumber(row[metric]);
     if (metricValue === null) return;
     totals.set(key, (totals.get(key) || 0) + metricValue);
+    counts.set(key, (counts.get(key) || 0) + 1);
   });
 
-  const sorted = Array.from(totals.entries())
-    .sort((a, b) => b[1] - a[1])
+  const entries = Array.from(totals.entries())
+    .map(([label, total]) => ({
+      label,
+      value: metricType?.kind === "rate" ? total / (counts.get(label) || 1) : total,
+      count: counts.get(label) || 0,
+    }))
+    .sort((a, b) => b.value - a.value)
     .slice(0, topN);
 
   return {
-    labels: sorted.map(([label]) => label),
-    values: sorted.map(([, value]) => value),
+    labels: entries.map((item) => item.label),
+    values: entries.map((item) => item.value),
+    counts: entries.map((item) => item.count),
   };
 }
-function createLineChart(canvasId, labels, values, metricType) {
+function createLineChart(canvasId, labels, values, metricType, counts = []) {
   const ctx = document.getElementById(canvasId);
   return new Chart(ctx, {
     type: "line",
@@ -2185,19 +2246,31 @@ function createLineChart(canvasId, labels, values, metricType) {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            label: (context) => formatMetricValue(context.parsed.y, metricType),
+            label: (context) => {
+              const n = counts?.[context.dataIndex] ?? null;
+              const valueLabel = formatMetricValue(context.parsed.y, metricType);
+              return n ? `${valueLabel} (n=${n})` : valueLabel;
+            },
           },
         },
       },
       scales: {
         x: { ticks: { maxTicksLimit: 6 } },
-        y: { beginAtZero: true },
+        y: metricType?.kind === "rate"
+          ? {
+              min: 0,
+              max: 1,
+              ticks: {
+                callback: (value) => `${(Number(value) * 100).toFixed(0)}%`,
+              },
+            }
+          : { beginAtZero: true },
       },
     },
   });
 }
 
-function createBarChart(canvasId, labels, values, metricType) {
+function createBarChart(canvasId, labels, values, metricType, counts = []) {
   const ctx = document.getElementById(canvasId);
   return new Chart(ctx, {
     type: "bar",
@@ -2218,7 +2291,11 @@ function createBarChart(canvasId, labels, values, metricType) {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            label: (context) => formatMetricValue(context.parsed.y, metricType),
+            label: (context) => {
+              const n = counts?.[context.dataIndex] ?? null;
+              const valueLabel = formatMetricValue(context.parsed.y, metricType);
+              return n ? `${valueLabel} (n=${n})` : valueLabel;
+            },
           },
         },
         datalabels: {
@@ -2231,7 +2308,15 @@ function createBarChart(canvasId, labels, values, metricType) {
       },
       scales: {
         x: { ticks: { maxTicksLimit: 6 } },
-        y: { beginAtZero: true },
+        y: metricType?.kind === "rate"
+          ? {
+              min: 0,
+              max: 1,
+              ticks: {
+                callback: (value) => `${(Number(value) * 100).toFixed(0)}%`,
+              },
+            }
+          : { beginAtZero: true },
       },
     },
     plugins: [ChartDataLabels],
@@ -2261,21 +2346,29 @@ function createScatterChart(canvasId, points) {
   });
 }
 
-function createHistogram(canvasId, values) {
+function createHistogram(canvasId, values, metricType) {
   const ctx = document.getElementById(canvasId);
   const bins = 10;
   if (!values.length) {
     return new Chart(ctx, { type: "bar", data: { labels: [], datasets: [] } });
   }
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const min = metricType?.kind === "rate" ? 0 : Math.min(...values);
+  const max = metricType?.kind === "rate" ? 1 : Math.max(...values);
   const step = (max - min) / bins || 1;
   const counts = Array.from({ length: bins }, () => 0);
   values.forEach((value) => {
+    if (metricType?.kind === "rate" && (value < 0 || value > 1)) return;
     const index = Math.min(Math.floor((value - min) / step), bins - 1);
     counts[index] += 1;
   });
-  const labels = counts.map((_, i) => `${(min + i * step).toFixed(1)}-${(min + (i + 1) * step).toFixed(1)}`);
+  const labels = counts.map((_, i) => {
+    const start = min + i * step;
+    const end = min + (i + 1) * step;
+    if (metricType?.kind === "rate") {
+      return `${(start * 100).toFixed(0)}-${(end * 100).toFixed(0)}%`;
+    }
+    return `${start.toFixed(1)}-${end.toFixed(1)}`;
+  });
   return new Chart(ctx, {
     type: "bar",
     data: {
@@ -2439,127 +2532,177 @@ function buildDecisionInsights(rows) {
   const insights = [];
   const metric = state.selections.primaryMetric;
   if (!metric) return insights;
-  const contextPrefix = state.filters.industry !== "All" ? `Within ${state.filters.industry}, ` : "";
-
+  const metricValues = rows.map((row) => parseNumber(row[metric])).filter((value) => value !== null);
+  const metricType = inferMetricType(metric, metricValues);
   const segmentColumn = state.industryColumn || chooseCategoryColumn(rows, state.schema.profiles);
+
+  const coverage = {
+    rows: rows.length,
+    dateRange: state.dateColumn && state.schema.profiles[state.dateColumn]?.dateMin
+      ? `${formatDateInput(state.schema.profiles[state.dateColumn].dateMin)} → ${formatDateInput(state.schema.profiles[state.dateColumn].dateMax)}`
+      : "No date column",
+    dimensions: (state.schema.categoricals || []).slice(0, 3).join(", ") || "None",
+  };
+
+  const primaryValue = metricType.kind === "rate"
+    ? (metricValues.reduce((sum, val) => sum + val, 0) / (metricValues.length || 1))
+    : metricValues.reduce((sum, val) => sum + val, 0);
+
+  const summaryBullets = [
+    `Why: Primary metric is ${formatMetricValue(primaryValue, metricType)} across ${coverage.rows} rows.`,
+    `Evidence: Date range ${coverage.dateRange}.`,
+    `So what: Key dimensions available — ${coverage.dimensions}.`,
+    `Next step: Validate if ${segmentColumn || "segments"} explain variation.`,
+  ];
+  insights.push({
+    title: "Executive summary",
+    summary: `${metric} coverage and baseline.`,
+    bullets: summaryBullets,
+  });
+
   if (segmentColumn) {
-    const breakdown = aggregateByCategory(rows, segmentColumn, metric, 12);
+    const breakdown = aggregateByCategory(rows, segmentColumn, metric, 12, metricType);
     if (breakdown.labels.length >= 2) {
-      const top = { label: breakdown.labels[0], value: breakdown.values[0] };
-      const bottom = { label: breakdown.labels[breakdown.labels.length - 1], value: breakdown.values[breakdown.values.length - 1] };
+      const top = { label: breakdown.labels[0], value: breakdown.values[0], n: breakdown.counts[0] };
+      const bottom = {
+        label: breakdown.labels[breakdown.labels.length - 1],
+        value: breakdown.values[breakdown.values.length - 1],
+        n: breakdown.counts[breakdown.counts.length - 1],
+      };
       const delta = top.value - bottom.value;
-      const pct = bottom.value ? delta / bottom.value : 0;
+      const deltaLabel = metricType.kind === "rate" ? `${(delta * 100).toFixed(1)} pp` : formatMetricValue(delta, metricType);
       insights.push({
-        title: `${contextPrefix}High vs low performing segment`,
-        summary: `${top.label} leads while ${bottom.label} trails on ${metric}.`,
+        title: "Segment lift",
+        summary: `${top.label} vs ${bottom.label} on ${metric}.`,
         bullets: [
-          `Top: ${top.label} (${formatMetricValue(top.value, inferMetricType(metric, [top.value]))})`,
-          `Bottom: ${bottom.label} (${formatMetricValue(bottom.value, inferMetricType(metric, [bottom.value]))}), Δ ${formatMetricValue(delta, inferMetricType(metric, [delta]))} (${percentFormatter.format(pct)})`,
+          `Why: ${top.label} is highest while ${bottom.label} is lowest.`,
+          `Evidence: Top ${formatMetricValue(top.value, metricType)} (n=${top.n}); Bottom ${formatMetricValue(bottom.value, metricType)} (n=${bottom.n}).`,
+          `So what: Absolute gap is ${deltaLabel}.`,
+          `Next step: Compare drivers for ${top.label} vs ${bottom.label}.`,
         ],
       });
     }
   }
 
   if (state.dateColumn) {
-    const series = aggregateByDate(rows, state.dateColumn, metric, "day", state.dateRange);
+    const series = aggregateByDate(rows, state.dateColumn, metric, "day", state.dateRange, metricType);
     const window = series.values.length >= 14 ? 7 : series.values.length >= 6 ? 3 : 0;
     if (window) {
       const recent = series.values.slice(-window);
       const prior = series.values.slice(-window * 2, -window);
-      const recentTotal = recent.reduce((sum, val) => sum + val, 0);
-      const priorTotal = prior.reduce((sum, val) => sum + val, 0);
-      const delta = recentTotal - priorTotal;
-      const pct = priorTotal ? delta / priorTotal : 0;
-      insights.push({
-        title: `${contextPrefix}Period over period change`,
-        summary: `${metric} is ${delta >= 0 ? "up" : "down"} versus the prior period.`,
-        bullets: [
-          `Last ${window}: ${formatMetricValue(recentTotal, inferMetricType(metric, [recentTotal]))}`,
-          `Change: ${formatMetricValue(delta, inferMetricType(metric, [delta]))} (${percentFormatter.format(pct)})`,
-        ],
-      });
+      if (prior.length) {
+        const recentAvg = recent.reduce((sum, val) => sum + val, 0) / recent.length;
+        const priorAvg = prior.reduce((sum, val) => sum + val, 0) / prior.length;
+        const delta = recentAvg - priorAvg;
+        const deltaLabel = metricType.kind === "rate" ? `${(delta * 100).toFixed(1)} pp` : formatMetricValue(delta, metricType);
+        insights.push({
+          title: "Period over period",
+          summary: `${metric} moved ${deltaLabel} vs prior window.`,
+          bullets: [
+            `Why: Recent ${window} periods differ from prior ${window}.`,
+            `Evidence: Recent ${formatMetricValue(recentAvg, metricType)} vs Prior ${formatMetricValue(priorAvg, metricType)}.`,
+            `So what: Change = ${deltaLabel}.`,
+            `Next step: Identify which segments shifted during this window.`,
+          ],
+        });
+      }
     }
+  }
+
+  let driverInsight = null;
+  const numericCandidates = (state.schema.numeric || []).filter((m) => m !== metric);
+  let best = null;
+  numericCandidates.forEach((candidate) => {
+    const corr = computeCorrelation(rows, metric, candidate);
+    if (corr === null) return;
+    if (!best || Math.abs(corr) > Math.abs(best.corr)) best = { metric: candidate, corr };
+  });
+  if (best && rows.length >= 20) {
+    driverInsight = {
+      title: "Drivers and relationships",
+      summary: `${best.metric} shows the strongest relationship to ${metric}.`,
+      bullets: [
+        `Why: Correlation suggests directional influence.`,
+        `Evidence: Correlation r=${best.corr.toFixed(2)}.`,
+        `So what: Changes in ${best.metric} align with ${metric}.`,
+        `Next step: Validate causality with a controlled slice on ${best.metric}.`,
+      ],
+    };
   } else {
-    const category = chooseCategoryColumn(rows, state.schema.profiles);
-    if (category) {
-      const breakdown = aggregateByCategory(rows, category, metric, 5);
-      insights.push({
-        title: `${contextPrefix}Top categories contributing most`,
-        summary: `${breakdown.labels[0]} leads ${metric} among ${category}.`,
-        bullets: [
-          `Top: ${breakdown.labels[0]} (${formatMetricValue(breakdown.values[0], inferMetricType(metric, [breakdown.values[0]]))})`,
-          `Second: ${breakdown.labels[1] || "—"} (${breakdown.values[1] ? formatMetricValue(breakdown.values[1], inferMetricType(metric, [breakdown.values[1]])) : "—"})`,
-        ],
-      });
+    driverInsight = {
+      title: "Drivers and relationships",
+      summary: "Insufficient data to validate numeric drivers.",
+      bullets: [
+        "Why: Fewer than 20 clean rows or no strong numeric pairs.",
+        "Evidence: Driver analysis skipped.",
+        "So what: Focus on segment comparisons first.",
+        "Next step: Collect more rows or add numeric fields like Sessions or ActiveUsers.",
+      ],
+    };
+  }
+  insights.push(driverInsight);
+
+  if (state.dateColumn) {
+    const series = aggregateByDate(rows, state.dateColumn, metric, "day", state.dateRange, metricType);
+    if (series.values.length >= 8) {
+      const mean = series.values.reduce((sum, val) => sum + val, 0) / series.values.length;
+      const variance = series.values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / series.values.length;
+      const std = Math.sqrt(variance);
+      const anomalies = series.values
+        .map((value, idx) => ({ value, label: series.labels[idx] }))
+        .filter((point) => Math.abs(point.value - mean) > 2 * std);
+      if (anomalies.length) {
+        insights.push({
+          title: "Anomalies",
+          summary: `${anomalies.length} periods exceed 2σ from mean.`,
+          bullets: [
+            `Why: Values deviate beyond 2 standard deviations.`,
+            `Evidence: Example ${anomalies[0].label} = ${formatMetricValue(anomalies[0].value, metricType)}.`,
+            "So what: Spikes/drops may reflect campaign or product changes.",
+            "Next step: Review logs or notes for those dates.",
+          ],
+        });
+      }
     }
   }
 
   if (segmentColumn) {
-    const breakdown = aggregateByCategory(rows, segmentColumn, metric, 8);
+    const breakdown = aggregateByCategory(rows, segmentColumn, metric, 8, metricType);
     if (breakdown.labels.length) {
       const total = breakdown.values.reduce((sum, val) => sum + val, 0);
       const share = total ? breakdown.values[0] / total : 0;
-      insights.push({
-        title: `${contextPrefix}Concentration`,
-        summary: `${breakdown.labels[0]} contributes ${percentFormatter.format(share)} of ${metric}.`,
-        bullets: [
-          `Top segment share: ${percentFormatter.format(share)}`,
-          share > 0.4 ? "High concentration (>40%)" : "Balanced distribution",
-        ],
-      });
-    }
-  }
-
-  const variance = computeCoefficientOfVariation(rows, metric);
-  if (variance !== null) {
-    insights.push({
-      title: `${contextPrefix}Volatility`,
-      summary: variance > 0.35 ? "Metric is volatile across segments/time." : "Metric is stable relative to its mean.",
-      bullets: [
-        `Coefficient of variation: ${(variance * 100).toFixed(1)}%`,
-        variance > 0.35 ? "Consider investigating drivers of swings." : "Performance is consistent.",
-      ],
-    });
-  }
-
-  if (state.schema.numeric.length >= 2) {
-    const candidates = state.schema.numeric.filter((m) => m !== metric);
-    let best = null;
-    candidates.forEach((candidate) => {
-      const corr = computeCorrelation(rows, metric, candidate);
-      if (corr === null) return;
-      if (!best || Math.abs(corr) > Math.abs(best.corr)) {
-        best = { metric: candidate, corr };
+      if (share > 0.4) {
+        insights.push({
+          title: "Concentration risk",
+          summary: `${breakdown.labels[0]} contributes ${formatMetric(share, "rate")}.`,
+          bullets: [
+            `Why: Top segment exceeds 40% share.`,
+            `Evidence: Share = ${formatMetric(share, "rate")}.`,
+            "So what: Performance is concentrated and brittle.",
+            "Next step: Diversify growth across other segments.",
+          ],
+        });
       }
-    });
-    if (best) {
-      insights.push({
-        title: `${contextPrefix}Driver candidate`,
-        summary: `Strongest relationship is with ${best.metric}.`,
-        bullets: [
-          `Correlation: ${best.corr.toFixed(2)}`,
-          `Direction: ${best.corr >= 0 ? "Positive" : "Negative"}`,
-        ],
-      });
     }
   }
 
-  const riskColumn = Object.entries(state.schema.profiles || {})
-    .map(([col, stats]) => ({ col, missingRate: stats.missingRate || 0 }))
-    .filter((item) => item.missingRate >= 0.3)
-    .sort((a, b) => b.missingRate - a.missingRate)[0];
-  if (riskColumn) {
-    insights.push({
-      title: `${contextPrefix}Data quality risk`,
-      summary: `${riskColumn.col} has high missing data that could distort insights.`,
-      bullets: [
-        `Missing rate: ${(riskColumn.missingRate * 100).toFixed(0)}%`,
-        "Consider validating data collection or filtering missing rows.",
-      ],
-    });
-  }
+  const actions = [];
+  const preferredDim = segmentColumn
+    || (state.schema.categoricals || []).find((col) => /plan|region/i.test(col))
+    || (state.schema.categoricals || [])[0]
+    || "segment";
+  actions.push(`Investigate ${preferredDim} segments where ${metric} is lowest and compare Sessions/ActiveUsers to spot friction.`);
+  actions.push(`Run a cohort review for ${preferredDim} segments with low ${metric} and validate against ActiveUsers trends.`);
+  const driverMetric = best?.metric || "Sessions";
+  actions.push(`Quantify how changes in ${driverMetric} shift ${metric} and test a targeted uplift plan.`);
 
-  return insights.slice(0, 6);
+  insights.push({
+    title: "Action items",
+    summary: "Three next steps tied to observed segments/drivers.",
+    bullets: actions.slice(0, 3).map((action) => `Next step: ${action}`),
+  });
+
+  return insights;
 }
 
 function renderMetricComparison(rows) {
