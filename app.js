@@ -102,10 +102,13 @@ let segmentChartInstance = null;
 let heatmapChartInstance = null;
 let currentTableRows = [];
 let currentSort = { key: null, direction: "asc" };
+let googleAccessToken = null;
+let googleTokenClient = null;
 
 const samplePath = "data-sample.csv";
 // Use the deployed Apps Script Web App URL ending in /exec (not the editor URL).
-const BACKEND_URL = "http://localhost:8787";
+const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbznq6aHhsHA6uiQg_AoJ6PG-WioCqriL_Z82SutiX1VeoI1TstpdqYvNPfahI8ZhwjsEQ/exec";
+const GOOGLE_CLIENT_ID = "611908111462-d5mfvb991hgbfvinop8hgeec3li7rqbp.apps.googleusercontent.com";
 const sampleManifest = [
   {
     id: "sales",
@@ -185,10 +188,6 @@ function init() {
   console.log("init started");
   if (buildStamp) {
     buildStamp.textContent = `Build: ${new Date().toISOString()}`;
-  }
-
-  if (BACKEND_URL.includes("localhost") && location.hostname !== "localhost") {
-    console.warn("BACKEND_URL points to localhost. Update it for production.");
   }
 
   window.addEventListener("hashchange", handleRoute);
@@ -303,7 +302,13 @@ function init() {
   renderSampleGallery();
   handleRoute();
   updateGoogleStatus(false);
-  checkBackendHealth();
+  checkWebhookHealth();
+
+  if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.includes("PASTE_")) {
+    console.warn("Missing GOOGLE_CLIENT_ID. Google Sheets connect will fail until you set it.");
+    if (googleStatus) googleStatus.textContent = "Google connect not configured. Set GOOGLE_CLIENT_ID in app.js";
+    if (loginGoogleButton) loginGoogleButton.disabled = true;
+  }
   disableUnavailableButtons();
   auditActionHandlers();
   console.log("handlers wired");
@@ -399,17 +404,39 @@ function handleRoute() {
   routeTo(getSignedIn() ? "app" : "landing");
 }
 
-function handleLoginGoogleClick() {
-  if (!BACKEND_URL) {
-    showError("Backend URL not configured.");
-    return;
+function initGoogleTokenClient() {
+  if (googleTokenClient) return googleTokenClient;
+  if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.includes("PASTE_")) {
+    throw new Error("Missing GOOGLE_CLIENT_ID. Paste your OAuth Client ID in app.js.");
   }
-  window.location.href = `${BACKEND_URL}/auth/google`;
+  if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) {
+    throw new Error("Google Identity Services not available. Refresh the page.");
+  }
+  googleTokenClient = window.google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: "https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/drive.readonly",
+    callback: (tokenResponse) => {
+      googleAccessToken = tokenResponse?.access_token || null;
+      updateGoogleStatus(!!googleAccessToken);
+      if (googleAccessToken) showToast("Google connected");
+    },
+  });
+  return googleTokenClient;
+}
+
+function handleLoginGoogleClick() {
+  try {
+    const client = initGoogleTokenClient();
+    client.requestAccessToken({ prompt: "consent" });
+  } catch (error) {
+    console.error(error);
+    if (googleStatus) googleStatus.textContent = error.message || String(error);
+  }
 }
 
 function updateGoogleStatus(isLoggedIn) {
   if (googleStatus) {
-    googleStatus.textContent = isLoggedIn ? "Logged in" : "Not logged in";
+    googleStatus.textContent = isLoggedIn ? "Connected" : "Not connected";
     googleStatus.classList.toggle("offline", !isLoggedIn);
   }
 }
@@ -471,7 +498,7 @@ function handleSignupSubmit(event) {
     email,
     company,
     useCase,
-    source: "shalytics landing",
+    source: "shay analytics ai landing",
     userAgent: navigator.userAgent,
     createdAt: new Date().toISOString(),
   };
@@ -518,14 +545,13 @@ function showStatus(msg) {
 }
 
 async function postSignupToAppsScript(payload) {
-  if (!BACKEND_URL) {
-    return { ok: false, status: 0, body: "missing backend" };
+  if (!WEBHOOK_URL) {
+    return { ok: false, status: 0, body: "missing webhook" };
   }
 
-  const res = await fetch(`${BACKEND_URL}/api/sheets/append`, {
+  const res = await fetch(WEBHOOK_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify(payload),
   });
 
@@ -588,12 +614,11 @@ function auditActionHandlers() {
 }
 
 async function logEvent(payload) {
-  if (!BACKEND_URL) return { ok: false, status: 0, body: "missing backend" };
+  if (!WEBHOOK_URL) return { ok: false, status: 0, body: "missing webhook" };
   try {
-    const response = await fetch(`${BACKEND_URL}/api/sheets/append`, {
+    const response = await fetch(WEBHOOK_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(payload),
     });
     const text = await response.text();
@@ -603,18 +628,22 @@ async function logEvent(payload) {
   }
 }
 
-function checkBackendHealth() {
-  if (!BACKEND_URL || !webhookStatus) return;
-  fetch(`${BACKEND_URL}/health`, { credentials: "include" })
-    .then((response) => {
-      if (response.ok) {
-        webhookStatus.textContent = "Backend online";
-      } else {
-        webhookStatus.textContent = "Backend offline. Check server and CORS settings.";
-      }
+function checkWebhookHealth() {
+  if (!WEBHOOK_URL || !webhookStatus) return;
+  fetch(WEBHOOK_URL)
+    .then((response) => response.text().then((text) => ({ response, text })))
+    .then(({ response, text }) => {
+      let ok = response.ok;
+      try {
+        const json = JSON.parse(text);
+        ok = !!json.ok;
+      } catch (e) {}
+      webhookStatus.textContent = ok
+        ? "Webhook online"
+        : "Webhook offline. Verify the Apps Script Web App URL and deployment.";
     })
     .catch(() => {
-      webhookStatus.textContent = "Backend offline. Check server and CORS settings.";
+      webhookStatus.textContent = "Webhook offline. Verify the Apps Script Web App URL and deployment.";
     });
 }
 
@@ -793,7 +822,9 @@ function normalizeSheetsUrl(input) {
 function extractSheetId(input) {
   const url = input?.trim() || "";
   const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
-  return match ? match[1] : "";
+  if (match) return match[1];
+  if (/^[a-zA-Z0-9-_]{20,}$/.test(url)) return url;
+  return "";
 }
 
 function buildSheetsFallback(url) {
@@ -814,37 +845,64 @@ async function fetchSheetText(url) {
 async function loadSheetData() {
   const input = sheetsUrlInput?.value || "";
   const range = sheetsRangeInput?.value?.trim() || "A1:Z1000";
-  if (!BACKEND_URL) {
-    showError("Backend URL not configured.");
-    return;
-  }
   clearMessages();
   setStatus("Loading Google Sheet");
   try {
-    const response = await fetch(`${BACKEND_URL}/api/sheets/read?range=${encodeURIComponent(range)}`, {
-      credentials: "include",
-    });
-    if (response.status === 401) {
-      showError("Login required to load private sheets.");
-      updateGoogleStatus(false);
+    const spreadsheetId = extractSheetId(input);
+    if (googleAccessToken && spreadsheetId) {
+      const apiRange = encodeURIComponent(range || "A1:Z1000");
+      const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${apiRange}?majorDimension=ROWS`;
+      const response = await fetch(apiUrl, {
+        headers: { Authorization: `Bearer ${googleAccessToken}` },
+      });
+      if (response.status === 401 || response.status === 403) {
+        updateGoogleStatus(false);
+        showError("Permission denied or token expired. Reconnect Google.");
+        return;
+      }
+      if (!response.ok) {
+        const body = await response.text();
+        showError("Google Sheets read failed.", `Details: ${body}`);
+        return;
+      }
+      const payload = await response.json();
+      if (!payload?.values || !payload.values.length) {
+        showError("No rows returned from Google Sheets.");
+        return;
+      }
+      updateGoogleStatus(true);
+      const csvText = valuesToCsv(payload.values || []);
+      parseCsvText(csvText);
+      switchTab("upload");
       return;
     }
-    if (!response.ok) {
-      const body = await response.text();
-      showError("Google Sheets read failed.", `Details: ${body}`);
+
+    const normalizedUrl = normalizeSheetsUrl(input);
+    if (!normalizedUrl) {
+      showError("Paste a Google Sheets link first.");
       return;
     }
-    const payload = await response.json();
-    if (!payload?.values || !payload.values.length) {
-      showError("No rows returned from Google Sheets.");
-      return;
-    }
-    updateGoogleStatus(true);
-    const csvText = valuesToCsv(payload.values || []);
-    parseCsvText(csvText);
+    const text = await fetchSheetText(normalizedUrl);
+    parseCsvText(text);
     switchTab("upload");
   } catch (error) {
-    showError("Request failed. Confirm backend is running and CORS is configured.", `Details: ${error.message}`);
+    const fallback = buildSheetsFallback(normalizeSheetsUrl(input) || input);
+    if (fallback) {
+      try {
+        const text = await fetchSheetText(fallback);
+        parseCsvText(text);
+        switchTab("upload");
+        return;
+      } catch (fallbackError) {
+        console.warn("Fallback CSV fetch failed", fallbackError);
+      }
+    }
+    const detail = error?.message || String(error);
+    if (detail.includes("Failed to fetch")) {
+      showError("This sheet is likely private. Publish it or share a public CSV export link.");
+    } else {
+      showError("Google Sheets CSV could not be loaded. Check the link and sharing settings.", `Details: ${detail}`);
+    }
   }
 }
 
