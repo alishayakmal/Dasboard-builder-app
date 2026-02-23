@@ -105,7 +105,7 @@ let currentSort = { key: null, direction: "asc" };
 
 const samplePath = "data-sample.csv";
 // Use the deployed Apps Script Web App URL ending in /exec (not the editor URL).
-const WEBHOOK_URL = "PASTE_APPS_SCRIPT_EXEC_URL_HERE";
+const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbznq6aHhsHA6uiQg_AoJ6PG-WioCqriL_Z82SutiX1VeoI1TstpdqYvNPfahI8ZhwjsEQ/exec";
 // TODO: Replace with your Google OAuth Client ID for GitHub Pages.
 const GOOGLE_CLIENT_ID = "PASTE_YOUR_CLIENT_ID.apps.googleusercontent.com";
 let googleAccessToken = null;
@@ -512,6 +512,23 @@ function handleSignupSubmit(event) {
     createdAt: new Date().toISOString(),
   };
 
+  const payload = {
+    source: "webapp",
+    user: email || "unknown",
+    action: "signup",
+    entity: "lead",
+    value: "",
+    ts: new Date().toISOString(),
+  };
+
+  postSignupToAppsScript(payload).then((result) => {
+    if (result.ok) {
+      showStatus("Saved to Google Sheets");
+    } else {
+      showStatus(`Signup failed ${result.status}`);
+    }
+  });
+
   saveLead(lead);
   setSignedIn(true);
   localStorage.setItem("currentUser", email);
@@ -519,7 +536,6 @@ function handleSignupSubmit(event) {
   closeModal();
   showToast("Signed up");
   routeTo("app");
-  logSignupEvent(lead);
 }
 
 function showFormError(message) {
@@ -534,26 +550,32 @@ function saveLead(lead) {
   localStorage.setItem("leads", JSON.stringify(existing));
 }
 
-function logSignupEvent(payload) {
-  if (signupSubmitButton) signupSubmitButton.disabled = true;
-  if (webhookStatus) webhookStatus.textContent = "Saving...";
-  postWebhookPlain(payload)
-    .then((result) => {
-      if (result.ok) {
-        if (webhookStatus) webhookStatus.textContent = "Saved to Google Sheets";
-        showToast("Saved");
-      } else {
-        if (webhookStatus) webhookStatus.textContent = "Saved locally only";
-        showToast("Saved locally");
-      }
-    })
-    .catch(() => {
-      if (webhookStatus) webhookStatus.textContent = "Saved locally only";
-      showToast("Saved locally");
-    })
-    .finally(() => {
-      if (signupSubmitButton) signupSubmitButton.disabled = false;
-    });
+function showStatus(msg) {
+  const el = document.getElementById("signup-status");
+  if (el) el.textContent = msg;
+}
+
+async function postSignupToAppsScript(payload) {
+  if (!WEBHOOK_URL) {
+    return { ok: false, status: 0, body: "missing webhook" };
+  }
+
+  const res = await fetch(WEBHOOK_URL, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+  });
+
+  const text = await res.text();
+
+  let ok = res.ok;
+  try {
+    const json = JSON.parse(text);
+    ok = !!json.ok;
+  } catch (e) {}
+
+  console.log("Apps Script response:", res.status, text);
+  return { ok, status: res.status, body: text };
 }
 
 function showToast(message) {
@@ -610,54 +632,14 @@ async function logEvent(payload) {
   try {
     const response = await fetch(WEBHOOK_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      redirect: "follow",
-    });
-    const body = await response.text();
-    console.log("Event log response", response.status, body);
-    if (response.ok) return { ok: true, status: response.status, body };
-    // If not ok, still try a no-cors fallback to ensure write happens.
-    await fetch(WEBHOOK_URL, {
-      method: "POST",
-      mode: "no-cors",
-      body: JSON.stringify(payload),
-    });
-    return { ok: false, status: response.status, body };
-  } catch (error) {
-    console.log("Event log error", error);
-    try {
-      await fetch(WEBHOOK_URL, {
-        method: "POST",
-        mode: "no-cors",
-        body: JSON.stringify(payload),
-      });
-      return { ok: true, status: 0, body: "no-cors fallback" };
-    } catch (fallbackError) {
-      console.log("Event log fallback error", fallbackError);
-      return { ok: false, status: 0, body: String(error) };
-    }
-  }
-}
-
-async function postWebhookPlain(payload) {
-  if (!WEBHOOK_URL) return { ok: true, status: 0, body: "" };
-  try {
-    const response = await fetch(WEBHOOK_URL, {
-      method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(payload),
     });
-    if (response.type === "opaque") {
-      console.log("Signup webhook response opaque");
-      return { ok: true, status: 0, body: "opaque" };
-    }
-    const body = await response.text();
-    const okText = body.trim().toLowerCase() === "ok";
-    console.log("Signup webhook response", response.status, body);
-    return { ok: response.ok && okText, status: response.status, body };
+    const text = await response.text();
+    console.log("Apps Script response:", response.status, text);
+    return { ok: response.ok, status: response.status, body: text };
   } catch (error) {
-    console.log("Signup webhook error", error);
+    console.log("Apps Script error", error);
     return { ok: false, status: 0, body: String(error) };
   }
 }
