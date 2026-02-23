@@ -134,8 +134,12 @@
             <label>Range (optional)
               <input type="text" id="sheetsRange" placeholder="Sheet1!A1:Z1000" />
             </label>
-            <button id="loadSheet" class="ghost">Load sheet</button>
-            <button id="connectGoogle" class="ghost">Connect Google</button>
+            <div class="sheets-actions">
+              <button id="loadSheet" class="ghost">Load sheet</button>
+              <button id="connectGoogle" class="ghost">Connect Google</button>
+              <button id="disconnectGoogle" class="ghost" disabled>Disconnect</button>
+              <span id="googleStatus" class="helper-text">Not connected</span>
+            </div>
             <p id="sheetsHelper" class="helper-text">Paste a Google Sheets link. If it is an edit link, the app will convert it to a CSV export link.</p>
           </div>
         </div>
@@ -355,6 +359,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@1.3.0/dist/chartjs-chart-matrix.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="./app.js" defer></script>
 </body>
 </html>
