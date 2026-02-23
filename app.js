@@ -17,8 +17,10 @@ const leadCompanyInput = document.getElementById("leadCompany");
 const leadUseCaseInput = document.getElementById("leadUseCase");
 const leadConsentInput = document.getElementById("leadConsent");
 const sheetsUrlInput = document.getElementById("sheetsUrl");
+const sheetsRangeInput = document.getElementById("sheetsRange");
 const sheetsHelper = document.getElementById("sheetsHelper");
 const loadSheetButton = document.getElementById("loadSheet");
+const connectGoogleButton = document.getElementById("connectGoogle");
 const pdfInput = document.getElementById("pdfInput");
 const pdfStatus = document.getElementById("pdfStatus");
 const pdfMeta = document.getElementById("pdfMeta");
@@ -266,6 +268,9 @@ function init() {
   if (signInButton) signInButton.addEventListener("click", handleSignInClick);
   if (signOutButton) signOutButton.addEventListener("click", handleSignOutClick);
   if (loadSheetButton) loadSheetButton.addEventListener("click", loadSheetData);
+  if (connectGoogleButton) connectGoogleButton.addEventListener("click", () => {
+    window.location.href = "/.netlify/functions/oauth-start";
+  });
   if (exportSheetsButton) exportSheetsButton.addEventListener("click", handleExportToSheets);
   if (downloadPdfButton) downloadPdfButton.addEventListener("click", () => window.print());
   if (pdfInput) {
@@ -283,6 +288,7 @@ function init() {
   updateSignInButton();
   renderSampleGallery();
   handleRoute();
+  handleOauthSuccess();
   console.log("handlers wired");
 }
 
@@ -374,6 +380,14 @@ function handleRoute() {
   }
 
   routeTo(getSignedIn() ? "app" : "landing");
+}
+
+function handleOauthSuccess() {
+  const hash = window.location.hash || "";
+  if (hash.includes("oauth=success")) {
+    showToast("Google connected");
+    window.location.hash = "#/app";
+  }
 }
 
 function updateSignInButton() {
@@ -597,12 +611,36 @@ function normalizeSheetsUrl(input) {
   const idMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
   if (!idMatch) return url;
   const gidMatch = url.match(/gid=([0-9]+)/);
-  const gid = gidMatch ? `&gid=${gidMatch[1]}` : "";
-  return `https://docs.google.com/spreadsheets/d/${idMatch[1]}/export?format=csv${gid}`;
+  const gid = gidMatch ? gidMatch[1] : "0";
+  return `https://docs.google.com/spreadsheets/d/${idMatch[1]}/export?format=csv&gid=${gid}`;
 }
 
-function loadSheetData() {
-  const url = normalizeSheetsUrl(sheetsUrlInput?.value || "");
+function extractSheetId(input) {
+  const url = input?.trim() || "";
+  const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  return match ? match[1] : "";
+}
+
+function buildSheetsFallback(url) {
+  if (!url.includes("docs.google.com/spreadsheets")) return "";
+  const idMatch = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (!idMatch) return "";
+  const gidMatch = url.match(/gid=([0-9]+)/);
+  const gid = gidMatch ? gidMatch[1] : "0";
+  return `https://docs.google.com/spreadsheets/d/${idMatch[1]}/gviz/tq?tqx=out:csv&gid=${gid}`;
+}
+
+async function fetchSheetText(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+  return response.text();
+}
+
+async function loadSheetData() {
+  const input = sheetsUrlInput?.value || "";
+  const url = normalizeSheetsUrl(input);
+  const sheetId = extractSheetId(input);
+  const range = sheetsRangeInput?.value?.trim() || "A1:Z1000";
   if (!url) {
     showError("Please paste a Google Sheets CSV link.");
     return;
@@ -612,25 +650,49 @@ function loadSheetData() {
   }
   clearMessages();
   setStatus("Loading Google Sheet");
-  fetch(url)
-    .then((response) => {
-      if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
-      return response.text();
-    })
-    .then((text) => {
-      parseCsvText(text);
-      switchTab("upload");
-    })
-    .catch((error) => {
-      if (sheetsHelper) {
-        if (String(error?.message || "").includes("Failed to fetch")) {
-          sheetsHelper.textContent = "This sheet is likely private. Publish it or share a public CSV export link.";
-        } else {
-          sheetsHelper.textContent = "Make the sheet public or use a shared CSV export link.";
-        }
+  try {
+    if (sheetId) {
+      const privateResult = await fetch(`/.netlify/functions/sheets-read?spreadsheetId=${encodeURIComponent(sheetId)}&range=${encodeURIComponent(range)}`, {
+        credentials: "include",
+      });
+      if (privateResult.ok) {
+        const payload = await privateResult.json();
+        const csvText = valuesToCsv(payload.values || []);
+        parseCsvText(csvText);
+        switchTab("upload");
+        return;
       }
-      showError("Google Sheets CSV could not be loaded. Check the link and sharing settings.", `Details: ${error.message}`);
-    });
+    }
+
+    const text = await fetchSheetText(url);
+    parseCsvText(text);
+    switchTab("upload");
+  } catch (error) {
+    const fallback = buildSheetsFallback(url);
+    if (fallback) {
+      try {
+        const text = await fetchSheetText(fallback);
+        parseCsvText(text);
+        switchTab("upload");
+        return;
+      } catch (fallbackError) {
+        error = fallbackError;
+      }
+    }
+    if (sheetsHelper) {
+      if (String(error?.message || "").includes("Failed to fetch")) {
+        sheetsHelper.textContent = "This sheet is likely private. Publish it or share a public CSV export link.";
+      } else {
+        sheetsHelper.textContent = "Make the sheet public or use a shared CSV export link.";
+      }
+    }
+    showError("Google Sheets CSV could not be loaded. Check the link and sharing settings.", `Details: ${error.message}`);
+  }
+}
+
+function valuesToCsv(values) {
+  if (!values.length) return "";
+  return values.map((row) => row.map(csvEscape).join(",")).join("\n");
 }
 
 async function handlePdfUpload(file) {

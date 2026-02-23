@@ -125,13 +125,17 @@
         <div class="table-card">
           <div class="table-header">
             <h3>Google Sheets</h3>
-            <p>Paste a public Google Sheets link. Private sheets are not supported.</p>
+            <p>Paste a Google Sheets link. Private sheets require Google connect.</p>
           </div>
           <div class="api-form">
             <label>Paste Google Sheets CSV link
               <input type="text" id="sheetsUrl" placeholder="https://docs.google.com/spreadsheets/.../export?format=csv" />
             </label>
+            <label>Range (optional)
+              <input type="text" id="sheetsRange" placeholder="Sheet1!A1:Z1000" />
+            </label>
             <button id="loadSheet" class="ghost">Load sheet</button>
+            <button id="connectGoogle" class="ghost">Connect Google</button>
             <p id="sheetsHelper" class="helper-text">Paste a Google Sheets link. If it is an edit link, the app will convert it to a CSV export link.</p>
           </div>
         </div>
