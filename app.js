@@ -36,6 +36,7 @@ const stateSection = document.getElementById("state");
 const errorSection = document.getElementById("error");
 const warningsSection = document.getElementById("warnings");
 const statusSection = document.getElementById("status");
+const metricNotice = document.getElementById("metricNotice");
 const dashboard = document.getElementById("dashboard");
 const datasetSummary = document.getElementById("datasetSummary");
 const kpiGrid = document.getElementById("kpiGrid");
@@ -107,7 +108,7 @@ const samplePath = "data-sample.csv";
 // Use the deployed Apps Script Web App URL ending in /exec (not the editor URL).
 const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbznq6aHhsHA6uiQg_AoJ6PG-WioCqriL_Z82SutiX1VeoI1TstpdqYvNPfahI8ZhwjsEQ/exec";
 // TODO: Replace with your Google OAuth Client ID for GitHub Pages.
-const GOOGLE_CLIENT_ID = "PASTE_YOUR_CLIENT_ID.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = "611908111462-d5mfvb991hgbfvinop8hgeec3li7rqbp.apps.googleusercontent.com";
 let googleAccessToken = null;
 let googleTokenClient = null;
 const sampleManifest = [
@@ -160,6 +161,7 @@ const state = {
     categoricals: [],
   },
   numericColumns: [],
+  syntheticMetric: false,
   debug: {
     numericCandidates: [],
     usableNumericMetrics: [],
@@ -455,6 +457,7 @@ function handleDisconnectGoogleClick() {
 function updateGoogleStatus() {
   if (googleStatus) {
     googleStatus.textContent = googleAccessToken ? "Connected" : "Not connected";
+    googleStatus.classList.toggle("offline", !googleAccessToken);
   }
   if (disconnectGoogleButton) {
     disconnectGoogleButton.disabled = !googleAccessToken;
@@ -1185,15 +1188,7 @@ function ingestRows(rawRows) {
   state.industryColumn = findIndustryColumn(state.schema.columns);
   state.dateColumn = chooseBestDateColumn(state.schema.profiles);
 
-  if (!state.schema.numeric.length) {
-    const detail = buildNumericFailureDetail(state.schema.profiles);
-    const message = numericCandidates.length
-      ? "No usable numeric metrics detected. Add at least one numeric column."
-      : "No usable numeric metrics found. We detected numeric identifiers only. Add metrics like revenue, spend, clicks, orders.";
-    const debugLine = buildNumericFailureDetail(state.schema.profiles);
-    showError(message, debugLine);
-    return;
-  }
+  ensureMetrics(state.schema, state.rawRows);
 
   const recommendedMetrics = chooseKpiMetrics(state.schema.profiles, state.schema.numeric);
   state.selections.primaryMetric = recommendedMetrics[0] || state.schema.numeric[0] || null;
@@ -1494,6 +1489,59 @@ function chooseKpiMetrics(profile, numericColumns) {
     .map((item) => item.col);
 }
 
+function formatMetricLabel(metric) {
+  return metric === "__row_count__" ? "Row Count" : metric;
+}
+
+function ensureMetrics(schema, rows) {
+  const numeric = schema.numeric || [];
+  if (numeric.length > 0) {
+    state.syntheticMetric = false;
+    if (metricNotice) {
+      metricNotice.classList.add("hidden");
+      metricNotice.textContent = "";
+    }
+    console.assert(numeric.length > 0, "Numeric metrics should not be empty when real metrics exist.");
+    return numeric;
+  }
+
+  const syntheticId = "__row_count__";
+  if (!schema.columns.includes(syntheticId)) {
+    schema.columns.push(syntheticId);
+  }
+  rows.forEach((row) => {
+    row[syntheticId] = 1;
+  });
+  schema.profiles[syntheticId] = {
+    type: "numeric",
+    missingRate: 0,
+    uniqueCount: 1,
+    uniqueRate: 0,
+    nonNumericRate: 0,
+    numericRate: 1,
+    nonBlankCount: rows.length,
+    failedSamples: [],
+    integerOnly: true,
+    min: 1,
+    max: 1,
+    mean: 1,
+    median: 1,
+    std: 0,
+    dateMin: null,
+    dateMax: null,
+    topValues: [],
+  };
+  schema.numeric = [syntheticId];
+  state.numericColumns = schema.numeric;
+  state.syntheticMetric = true;
+  if (metricNotice) {
+    metricNotice.textContent = "No numeric columns detected. Using Row Count as the primary metric.";
+    metricNotice.classList.remove("hidden");
+  }
+  console.assert(schema.numeric.length === 1 && schema.numeric[0] === syntheticId, "Synthetic metric injection failed.");
+  return schema.numeric;
+}
+
 function chooseBestDimension(profile, categoricalColumns) {
   const filtered = categoricalColumns
     .filter((col) => profile[col].uniqueCount > 1)
@@ -1571,7 +1619,7 @@ function initControls(recommendedMetrics) {
   (allMetrics || []).forEach((metric) => {
     const option = document.createElement("option");
     option.value = metric;
-    option.textContent = metric;
+    option.textContent = formatMetricLabel(metric);
     metricSelect.appendChild(option);
   });
   if (!state.selections.primaryMetric || !allMetrics.includes(state.selections.primaryMetric)) {
@@ -1696,14 +1744,7 @@ function applyFiltersAndRender() {
   if (!state.dateColumn) {
     state.dateColumn = chooseBestDateColumn(state.schema.profiles);
   }
-  if (!state.schema.numeric.length) {
-    const message = numericCandidates.length
-      ? "No usable numeric metrics detected. Add at least one numeric column."
-      : "No usable numeric metrics found. We detected numeric identifiers only. Add metrics like revenue, spend, clicks, orders.";
-    const debugLine = buildNumericFailureDetail(state.schema.profiles);
-    showError(message, debugLine);
-    return;
-  }
+  ensureMetrics(state.schema, scopedRows);
   if (!state.selections.primaryMetric || !state.schema.numeric.includes(state.selections.primaryMetric)) {
     state.selections.primaryMetric = state.schema.numeric[0] || null;
   }
@@ -1744,9 +1785,11 @@ function updateIngestionStatus(rows) {
   const dateColumn = state.dateColumn || "—";
   const excludedIds = (state.debug.numericCandidates || []).filter((col) => !numeric.includes(col));
   const rowCount = rows?.length || 0;
+  const primaryMetric = formatMetricLabel(state.selections.primaryMetric || numeric[0] || "—");
   statusSection.innerHTML = `
     <strong>Ingestion status</strong><br>
-    Rows: ${rowCount} · Date column: ${dateColumn} · Metrics: ${numeric.slice(0, 6).join(", ") || "—"}<br>
+    Rows: ${rowCount} · Date column: ${dateColumn} · Primary metric: ${primaryMetric}<br>
+    Metrics: ${numeric.map(formatMetricLabel).slice(0, 6).join(", ") || "—"}<br>
     Excluded IDs: ${excludedIds.join(", ") || "—"}
   `;
   statusSection.classList.remove("hidden");
@@ -1778,6 +1821,7 @@ function renderKPIs(rows) {
   const metrics = (chosenMetrics && chosenMetrics.length ? chosenMetrics : (state.schema.numeric || []).slice(0, 6)) || [];
 
   (metrics || []).forEach((metric) => {
+    const metricLabel = formatMetricLabel(metric);
     const values = rows
       .map((row) => parseNumber(row[metric]))
       .filter((value) => value !== null);
@@ -1797,7 +1841,7 @@ function renderKPIs(rows) {
     const card = document.createElement("div");
     card.className = "kpi-card";
     card.innerHTML = `
-      <h4>${metric}</h4>
+      <h4>${metricLabel}</h4>
       <div class="kpi-value">${formatMetricValue(primary, metricType)}</div>
       <div class="kpi-sub">Avg: ${formatMetricValue(avg, metricType, true)}</div>
       <div class="kpi-meta">
@@ -1818,6 +1862,7 @@ function renderCharts(rows) {
   const metric = state.selections.primaryMetric || chooseTopNumericByVariance(state.schema.profiles, state.schema.numeric || []);
   state.selections.primaryMetric = metric;
   state.selectedMetric = metric;
+  const metricLabel = formatMetricLabel(metric);
   const metricValues = rows.map((row) => parseNumber(row[metric])).filter((value) => value !== null);
   const metricType = inferMetricType(metric, metricValues);
 
@@ -1825,7 +1870,7 @@ function renderCharts(rows) {
     state.chosenXAxisType = "date";
     const bucket = rows.length > 200 ? "week" : "day";
     const series = aggregateByDate(rows, state.dateColumn, metric, bucket, state.dateRange);
-    trendTitle.textContent = `${metric} trend`;
+    trendTitle.textContent = `${metricLabel} trend`;
     trendSubtitle.textContent = `Grouped by ${bucket}`;
     trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType);
   } else {
@@ -1833,14 +1878,14 @@ function renderCharts(rows) {
     if (category) {
       state.chosenXAxisType = "category";
       const series = aggregateByCategory(rows, category, metric, state.topN);
-      trendTitle.textContent = `${metric} by ${category}`;
+      trendTitle.textContent = `${metricLabel} by ${category}`;
       trendSubtitle.textContent = "No date column detected";
       trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType);
     } else {
       state.chosenXAxisType = "index";
       const labels = rows.map((_, index) => index + 1);
       const values = rows.map((row) => parseNumber(row[metric])).map((value) => value ?? 0);
-      trendTitle.textContent = `${metric} by row`;
+      trendTitle.textContent = `${metricLabel} by row`;
       trendSubtitle.textContent = "No date column detected";
       trendChartInstance = createLineChart("trendChart", labels, values, metricType);
     }
@@ -1852,7 +1897,7 @@ function renderCharts(rows) {
     state.selectedDimension = dimension;
     if (dimensionSelect.value !== dimension) dimensionSelect.value = dimension;
     breakdown = aggregateByCategory(rows, dimension, metric, state.topN);
-    barTitle.textContent = `${metric} by ${dimension}`;
+    barTitle.textContent = `${metricLabel} by ${dimension}`;
     barSubtitle.textContent = `Top ${state.topN}`;
     barChartInstance = createBarChart("barChart", breakdown.labels, breakdown.values, metricType);
   } else {
