@@ -1,4 +1,4 @@
-# Shalytics AI
+# Shay Analytics AI
 
 A static, client-side web app that turns CSVs into an analysis-ready dashboard with KPIs, trends, and insights. Runs entirely in the browser and supports a lightweight signup gate with localStorage.
 
