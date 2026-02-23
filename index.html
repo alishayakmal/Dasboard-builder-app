@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Shay Analytics AI</title>
+  <title>Shalytics AI</title>
   <link rel="stylesheet" href="./styles.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -15,24 +15,85 @@
       <div class="brand">
         <div class="logo">SA</div>
         <div>
-          <h1>Shay Analytics AI</h1>
-          <p>Turn raw data into executive-ready dashboards in minutes.</p>
+          <h1>Shalytics AI</h1>
+          <p>AI analytics copilots for modern teams.</p>
         </div>
       </div>
-      <button id="signInBtn" class="ghost">Sign In</button>
+      <nav class="landing-nav">
+        <a href="#product">Product</a>
+        <a href="#samples">Samples</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#docs">Docs</a>
+      </nav>
+      <div class="landing-actions">
+        <button id="signInBtn" class="ghost" data-action="signin">Sign In</button>
+        <button id="startFreeBtn" class="primary" data-action="start-free">Start free analysis</button>
+      </div>
     </header>
 
-    <section class="hero">
-      <span class="pill">New: AI Powered Insights</span>
-      <h2>Turn Raw Data into Beautiful Insights</h2>
-      <p>Upload a CSV, connect an API, or pull from Google Sheets to get KPI tiles, trends, and clean data tables instantly.</p>
+    <section class="hero" id="product">
+      <span class="pill">New AI powered insights</span>
+      <h2>AI that turns raw data into executive insights</h2>
+      <p>Upload CSV, connect APIs, sync Google Sheets, and export an AI brief in minutes.</p>
       <div class="hero-actions">
-        <button id="startFreeBtn" class="primary">Start for Free</button>
-        <button class="ghost" disabled title="Coming soon">Learn more</button>
+        <button id="heroStartBtn" class="primary" data-action="start-free">Start free analysis</button>
+        <button id="viewSamplesBtn" class="ghost" data-action="view-samples">View sample insights</button>
       </div>
       <p id="webhookStatus" class="helper-text">Webhook status: checking...</p>
     </section>
 
+    <section class="feature-grid">
+      <div class="feature-card">
+        <h3>Auto profiling</h3>
+        <p>Detects metrics, dates, and quality signals instantly.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Industry insights</h3>
+        <p>Segmented views reveal performance by vertical.</p>
+      </div>
+      <div class="feature-card">
+        <h3>KPI trends</h3>
+        <p>Time-series summaries highlight momentum.</p>
+      </div>
+      <div class="feature-card">
+        <h3>Exportable reports</h3>
+        <p>Share a polished PDF in seconds.</p>
+      </div>
+    </section>
+
+    <section class="sample-preview" id="samples">
+      <div class="sample-copy">
+        <h3>Sample insights</h3>
+        <p>Preview how Shalytics AI surfaces lift, risk, and growth opportunities.</p>
+        <div class="sample-cards">
+          <div class="insight-card">
+            <h4>Revenue acceleration</h4>
+            <p>Top segment grew 18% WoW.</p>
+          </div>
+          <div class="insight-card">
+            <h4>Channel mix shift</h4>
+            <p>Paid search now drives 42% of pipeline.</p>
+          </div>
+          <div class="insight-card">
+            <h4>Risk signal</h4>
+            <p>Retention dip detected in EU region.</p>
+          </div>
+        </div>
+      </div>
+      <div class="sample-visual">
+        <div class="mock-dashboard">Mini dashboard preview</div>
+      </div>
+    </section>
+
+    <section class="social-proof" id="pricing">
+      <p>Built for modern analytics teams</p>
+    </section>
+
+    <footer class="landing-footer" id="docs">
+      <a href="#" aria-disabled="true">Terms</a>
+      <a href="#" aria-disabled="true">Privacy</a>
+      <a href="#" aria-disabled="true">Contact</a>
+    </footer>
   </main>
 
   <main id="appView" class="hidden">
@@ -40,19 +101,29 @@
       <div class="brand">
         <div class="logo">SA</div>
         <div>
-          <h1>Shay Analytics AI</h1>
+          <h1>Shalytics AI</h1>
           <p>Upload, connect, and explore your data.</p>
         </div>
       </div>
       <div class="app-header-actions">
         <div class="tabs header-tabs">
-          <button class="tab-button active" data-tab="upload">Upload CSV</button>
-          <button class="tab-button" data-tab="api">Connect API</button>
-          <button class="tab-button" data-tab="pdf">Upload PDF</button>
-          <button class="tab-button" data-tab="sheets">Google Sheets</button>
-          <button class="tab-button" data-tab="samples">Samples</button>
+          <button class="tab-button active" data-tab="upload" data-action="tab-upload">Upload CSV</button>
+          <button class="tab-button" data-tab="sheets" data-action="tab-sheets">Google Sheets</button>
+          <button class="tab-button" data-tab="api" data-action="tab-api">Connect API</button>
+          <button class="tab-button" data-tab="pdf" data-action="tab-pdf">Upload PDF</button>
+          <button class="tab-button" data-tab="samples" data-action="tab-samples">Samples</button>
         </div>
-        <button id="signOutButton" class="ghost">Sign out</button>
+        <div class="app-toolbar">
+          <label class="toolbar-field">
+            <span>Industry</span>
+            <select id="industrySelect" disabled>
+              <option value="All">All</option>
+            </select>
+            <span id="industryHelper" class="helper-text"></span>
+          </label>
+          <button id="downloadPdf" class="primary" data-action="export-pdf">Export PDF</button>
+          <button id="signOutButton" class="ghost" data-action="signout">Sign out</button>
+        </div>
       </div>
     </header>
 
@@ -87,7 +158,7 @@
         <div class="table-card">
           <div class="table-header">
             <h3>Connect API</h3>
-            <p>Provide the endpoint details. We will validate inputs in a future release.</p>
+            <p>Provide a GET endpoint that returns a JSON array of objects.</p>
           </div>
           <div class="api-form">
             <label>Base URL <input type="text" id="apiBaseUrl" placeholder="https://api.example.com" /></label>
@@ -100,8 +171,8 @@
             </label>
             <label>Credential <input type="password" id="apiKey" placeholder="••••••••" /></label>
             <label>Endpoint <input type="text" id="apiEndpoint" placeholder="/v1/data" /></label>
-            <button id="testApi" class="ghost" disabled title="Coming soon">Test Connection</button>
-            <p id="apiStatus" class="helper-text">Coming soon</p>
+            <button id="testApi" class="ghost" data-action="test-api">Fetch data</button>
+            <p id="apiStatus" class="helper-text">Supports JSON arrays of objects.</p>
           </div>
         </div>
       </section>
@@ -136,9 +207,9 @@
               <input type="text" id="sheetsRange" placeholder="Sheet1!A1:Z1000" />
             </label>
             <div class="sheets-actions">
-              <button id="loadSheet" class="ghost">Load sheet</button>
-              <button id="connectGoogle" class="ghost">Connect Google</button>
-              <button id="disconnectGoogle" class="ghost" disabled>Disconnect</button>
+              <button id="loadSheet" class="ghost" data-action="load-sheet">Load sheet</button>
+              <button id="connectGoogle" class="ghost" data-action="connect-google">Connect Google</button>
+              <button id="disconnectGoogle" class="ghost" disabled data-action="disconnect-google">Disconnect</button>
               <span id="googleStatus" class="helper-text">Not connected</span>
             </div>
             <p id="sheetsHelper" class="helper-text">Paste a Google Sheets link. If it is an edit link, the app will convert it to a CSV export link.</p>
@@ -173,13 +244,6 @@
         <section class="kpi-grid" id="kpiGrid"></section>
 
         <section class="controls-panel">
-          <div class="control-group">
-            <label for="industrySelect">Industry</label>
-            <select id="industrySelect" disabled>
-              <option value="All">All</option>
-            </select>
-            <span id="industryHelper" class="helper-text"></span>
-          </div>
           <div class="control-group">
             <label for="metricSelect">Primary metric</label>
             <select id="metricSelect"></select>
@@ -218,10 +282,9 @@
           <div class="control-group control-actions">
             <label>Actions</label>
             <div class="control-buttons">
-              <button id="exportCsv" class="ghost">Export filtered CSV</button>
-              <button id="downloadInsights" class="ghost">Download insights</button>
-              <button id="exportSheets" class="ghost">Export to Google Sheets</button>
-              <button id="downloadPdf" class="ghost">Download PDF</button>
+              <button id="exportCsv" class="ghost" data-action="export-csv">Export filtered CSV</button>
+              <button id="downloadInsights" class="ghost" data-action="download-insights">Download insights</button>
+              <button id="exportSheets" class="ghost" data-action="export-sheets">Export to Google Sheets</button>
             </div>
             <p id="exportStatus" class="helper-text"></p>
           </div>
@@ -357,6 +420,8 @@
   <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@1.3.0/dist/chartjs-chart-matrix.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="./app.js" defer></script>
 </body>
 </html>
