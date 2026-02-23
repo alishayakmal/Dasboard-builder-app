@@ -4,18 +4,18 @@ const loadSample = document.getElementById("loadSample");
 const loadSampleInline = document.getElementById("loadSampleInline");
 const landingView = document.getElementById("landingView");
 const appView = document.getElementById("appView");
-const signInButton = document.getElementById("signInButton");
+const signInButton = document.getElementById("signInBtn");
 const signOutButton = document.getElementById("signOutButton");
-const startFreeButton = document.getElementById("startFree");
+const startFreeButton = document.getElementById("startFreeBtn");
 const signupModal = document.getElementById("signupModal");
 const closeModalButton = document.getElementById("closeModal");
 const signupForm = document.getElementById("signupForm");
 const formError = document.getElementById("formError");
-const leadNameInput = document.getElementById("leadName");
-const leadEmailInput = document.getElementById("leadEmail");
-const leadCompanyInput = document.getElementById("leadCompany");
-const leadUseCaseInput = document.getElementById("leadUseCase");
-const leadConsentInput = document.getElementById("leadConsent");
+const leadNameInput = document.getElementById("signupName");
+const leadEmailInput = document.getElementById("signupEmail");
+const leadCompanyInput = document.getElementById("signupCompany");
+const leadUseCaseInput = document.getElementById("signupUseCase");
+const signupSubmitButton = document.getElementById("signupSubmit");
 const sheetsUrlInput = document.getElementById("sheetsUrl");
 const sheetsRangeInput = document.getElementById("sheetsRange");
 const sheetsHelper = document.getElementById("sheetsHelper");
@@ -103,7 +103,7 @@ let currentSort = { key: null, direction: "asc" };
 
 const samplePath = "data-sample.csv";
 // Use the deployed Apps Script Web App URL ending in /exec (not the editor URL).
-const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbznq6aHhsHA6uiQg_AoJ6PG-WioCqriL_Z82SutiX1VeoI1TstpdqYvNPfahI8ZhwjsEQ/exec";
+const WEBHOOK_URL = "PASTE_APPS_SCRIPT_EXEC_URL_HERE";
 // TODO: Replace with your Google OAuth Client ID for GitHub Pages.
 const GOOGLE_CLIENT_ID = "PASTE_YOUR_CLIENT_ID.apps.googleusercontent.com";
 let googleAccessToken = null;
@@ -483,7 +483,6 @@ function handleSignupSubmit(event) {
   const email = leadEmailInput?.value?.trim() || "";
   const company = leadCompanyInput?.value?.trim() || "";
   const useCase = leadUseCaseInput?.value?.trim() || "";
-  const consent = !!leadConsentInput?.checked;
 
   if (!name || !email) {
     showFormError("Please provide your name and email.");
@@ -495,12 +494,12 @@ function handleSignupSubmit(event) {
   }
 
   const lead = {
-    id: `lead_${Date.now()}_${Math.random().toString(16).slice(2)}`,
     name,
     email,
     company,
     useCase,
-    consent,
+    source: "shalytics landing",
+    userAgent: navigator.userAgent,
     createdAt: new Date().toISOString(),
   };
 
@@ -511,7 +510,7 @@ function handleSignupSubmit(event) {
   closeModal();
   showToast("Signed up");
   routeTo("app");
-  logSignupEvent(email);
+  logSignupEvent(lead);
 }
 
 function showFormError(message) {
@@ -526,19 +525,26 @@ function saveLead(lead) {
   localStorage.setItem("leads", JSON.stringify(existing));
 }
 
-function logSignupEvent(email) {
-  const payload = {
-    source: "web_app",
-    user: email,
-    action: "signup",
-    entity: "account",
-    value: 1,
-    app: "Shay Analytics AI",
-    ts: new Date().toISOString(),
-  };
-  postWebhookPlain(payload).then((result) => {
-    if (!result.ok) showToast("Signup logged with delay. Try again later.");
-  });
+function logSignupEvent(payload) {
+  if (signupSubmitButton) signupSubmitButton.disabled = true;
+  if (webhookStatus) webhookStatus.textContent = "Saving...";
+  postWebhookPlain(payload)
+    .then((result) => {
+      if (result.ok) {
+        if (webhookStatus) webhookStatus.textContent = "Saved to Google Sheets";
+        showToast("Saved");
+      } else {
+        if (webhookStatus) webhookStatus.textContent = "Saved locally only";
+        showToast("Saved locally");
+      }
+    })
+    .catch(() => {
+      if (webhookStatus) webhookStatus.textContent = "Saved locally only";
+      showToast("Saved locally");
+    })
+    .finally(() => {
+      if (signupSubmitButton) signupSubmitButton.disabled = false;
+    });
 }
 
 function showToast(message) {
@@ -596,9 +602,14 @@ async function postWebhookPlain(payload) {
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(payload),
     });
+    if (response.type === "opaque") {
+      console.log("Signup webhook response opaque");
+      return { ok: true, status: 0, body: "opaque" };
+    }
     const body = await response.text();
+    const okText = body.trim().toLowerCase() === "ok";
     console.log("Signup webhook response", response.status, body);
-    return { ok: response.ok, status: response.status, body };
+    return { ok: response.ok && okText, status: response.status, body };
   } catch (error) {
     console.log("Signup webhook error", error);
     return { ok: false, status: 0, body: String(error) };
@@ -607,6 +618,10 @@ async function postWebhookPlain(payload) {
 
 function checkWebhookHealth() {
   if (!WEBHOOK_URL || !webhookStatus) return;
+  if (WEBHOOK_URL.includes("PASTE_")) {
+    webhookStatus.textContent = "Webhook not configured. Paste your /exec URL.";
+    return;
+  }
   fetch(WEBHOOK_URL)
     .then((response) => {
       if (response.ok) {
