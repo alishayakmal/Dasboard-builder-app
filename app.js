@@ -22,8 +22,7 @@ const sheetsUrlInput = document.getElementById("sheetsUrl");
 const sheetsRangeInput = document.getElementById("sheetsRange");
 const sheetsHelper = document.getElementById("sheetsHelper");
 const loadSheetButton = document.getElementById("loadSheet");
-const connectGoogleButton = document.getElementById("connectGoogle");
-const disconnectGoogleButton = document.getElementById("disconnectGoogle");
+const loginGoogleButton = document.getElementById("loginGoogle");
 const googleStatus = document.getElementById("googleStatus");
 const pdfInput = document.getElementById("pdfInput");
 const pdfStatus = document.getElementById("pdfStatus");
@@ -106,11 +105,7 @@ let currentSort = { key: null, direction: "asc" };
 
 const samplePath = "data-sample.csv";
 // Use the deployed Apps Script Web App URL ending in /exec (not the editor URL).
-const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbznq6aHhsHA6uiQg_AoJ6PG-WioCqriL_Z82SutiX1VeoI1TstpdqYvNPfahI8ZhwjsEQ/exec";
-// TODO: Replace with your Google OAuth Client ID for GitHub Pages.
-const GOOGLE_CLIENT_ID = "611908111462-d5mfvb991hgbfvinop8hgeec3li7rqbp.apps.googleusercontent.com";
-let googleAccessToken = null;
-let googleTokenClient = null;
+const BACKEND_URL = "http://localhost:8787";
 const sampleManifest = [
   {
     id: "sales",
@@ -192,10 +187,8 @@ function init() {
     buildStamp.textContent = `Build: ${new Date().toISOString()}`;
   }
 
-  if (GOOGLE_CLIENT_ID.includes("PASTE_")) {
-    console.warn("Missing GOOGLE_CLIENT_ID. Google Sheets connect will fail until you set it.");
-    if (googleStatus) googleStatus.textContent = "Google connect not configured. Set GOOGLE_CLIENT_ID in app.js";
-    if (connectGoogleButton) connectGoogleButton.disabled = true;
+  if (BACKEND_URL.includes("localhost") && location.hostname !== "localhost") {
+    console.warn("BACKEND_URL points to localhost. Update it for production.");
   }
 
   window.addEventListener("hashchange", handleRoute);
@@ -291,8 +284,7 @@ function init() {
   if (signInButton) signInButton.addEventListener("click", handleSignInClick);
   if (signOutButton) signOutButton.addEventListener("click", handleSignOutClick);
   if (loadSheetButton) loadSheetButton.addEventListener("click", loadSheetData);
-  if (connectGoogleButton) connectGoogleButton.addEventListener("click", handleConnectGoogleClick);
-  if (disconnectGoogleButton) disconnectGoogleButton.addEventListener("click", handleDisconnectGoogleClick);
+  if (loginGoogleButton) loginGoogleButton.addEventListener("click", handleLoginGoogleClick);
   if (exportSheetsButton) exportSheetsButton.addEventListener("click", handleExportToSheets);
   if (downloadPdfButton) downloadPdfButton.addEventListener("click", handleExportPdf);
   if (pdfInput) {
@@ -310,8 +302,8 @@ function init() {
   updateSignInButton();
   renderSampleGallery();
   handleRoute();
-  updateGoogleStatus();
-  checkWebhookHealth();
+  updateGoogleStatus(false);
+  checkBackendHealth();
   disableUnavailableButtons();
   auditActionHandlers();
   console.log("handlers wired");
@@ -407,63 +399,18 @@ function handleRoute() {
   routeTo(getSignedIn() ? "app" : "landing");
 }
 
-function initGoogleAuth() {
-  if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) return null;
-  if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.includes("PASTE_")) {
-    throw new Error("Missing GOOGLE_CLIENT_ID. Create an OAuth Client ID in Google Cloud and paste it into app.js");
+function handleLoginGoogleClick() {
+  if (!BACKEND_URL) {
+    showError("Backend URL not configured.");
+    return;
   }
-  if (googleTokenClient) return googleTokenClient;
-
-  googleTokenClient = window.google.accounts.oauth2.initTokenClient({
-    client_id: GOOGLE_CLIENT_ID,
-    scope: "https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/drive.readonly",
-    callback: (response) => {
-      if (response?.access_token) {
-        googleAccessToken = response.access_token;
-        updateGoogleStatus();
-        showToast("Google connected");
-      }
-    },
-  });
-
-  return googleTokenClient;
+  window.location.href = `${BACKEND_URL}/auth/google`;
 }
 
-function handleConnectGoogleClick() {
-  try {
-    const tokenClient = initGoogleAuth();
-    if (!tokenClient) {
-      showError("Google auth not available. Ensure Google Identity Services is loaded.");
-      return;
-    }
-    tokenClient.requestAccessToken({ prompt: "consent" });
-  } catch (e) {
-    console.error(e);
-    if (googleStatus) googleStatus.textContent = e.message || String(e);
-  }
-}
-
-function handleDisconnectGoogleClick() {
-  if (!googleAccessToken) return;
-  const token = googleAccessToken;
-  googleAccessToken = null;
-  updateGoogleStatus();
-  showToast("Google disconnected");
-  if (window.google?.accounts?.oauth2?.revoke) {
-    window.google.accounts.oauth2.revoke(token, () => {});
-  }
-}
-
-function updateGoogleStatus() {
+function updateGoogleStatus(isLoggedIn) {
   if (googleStatus) {
-    googleStatus.textContent = googleAccessToken ? "Connected" : "Not connected";
-    googleStatus.classList.toggle("offline", !googleAccessToken);
-  }
-  if (disconnectGoogleButton) {
-    disconnectGoogleButton.disabled = !googleAccessToken;
-  }
-  if (connectGoogleButton) {
-    connectGoogleButton.textContent = googleAccessToken ? "Reconnect Google" : "Connect Google";
+    googleStatus.textContent = isLoggedIn ? "Logged in" : "Not logged in";
+    googleStatus.classList.toggle("offline", !isLoggedIn);
   }
 }
 
@@ -571,25 +518,24 @@ function showStatus(msg) {
 }
 
 async function postSignupToAppsScript(payload) {
-  if (!WEBHOOK_URL) {
-    return { ok: false, status: 0, body: "missing webhook" };
+  if (!BACKEND_URL) {
+    return { ok: false, status: 0, body: "missing backend" };
   }
 
-  const res = await fetch(WEBHOOK_URL, {
+  const res = await fetch(`${BACKEND_URL}/api/sheets/append`, {
     method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify(payload),
   });
 
   const text = await res.text();
-
   let ok = res.ok;
   try {
     const json = JSON.parse(text);
     ok = !!json.ok;
   } catch (e) {}
 
-  console.log("Apps Script response:", res.status, text);
   return { ok, status: res.status, body: text };
 }
 
@@ -627,8 +573,7 @@ function auditActionHandlers() {
     ["export-pdf", handleExportPdf],
     ["test-api", handleApiFetch],
     ["load-sheet", loadSheetData],
-    ["connect-google", handleConnectGoogleClick],
-    ["disconnect-google", handleDisconnectGoogleClick],
+    ["login-google", handleLoginGoogleClick],
     ["export-csv", exportFilteredCsv],
     ["download-insights", downloadInsights],
     ["export-sheets", handleExportToSheets],
@@ -643,38 +588,33 @@ function auditActionHandlers() {
 }
 
 async function logEvent(payload) {
-  if (!WEBHOOK_URL) return { ok: true, status: 0, body: "" };
+  if (!BACKEND_URL) return { ok: false, status: 0, body: "missing backend" };
   try {
-    const response = await fetch(WEBHOOK_URL, {
+    const response = await fetch(`${BACKEND_URL}/api/sheets/append`, {
       method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify(payload),
     });
     const text = await response.text();
-    console.log("Apps Script response:", response.status, text);
     return { ok: response.ok, status: response.status, body: text };
   } catch (error) {
-    console.log("Apps Script error", error);
     return { ok: false, status: 0, body: String(error) };
   }
 }
 
-function checkWebhookHealth() {
-  if (!WEBHOOK_URL || !webhookStatus) return;
-  if (WEBHOOK_URL.includes("PASTE_")) {
-    webhookStatus.textContent = "Webhook not configured. Paste your /exec URL.";
-    return;
-  }
-  fetch(WEBHOOK_URL)
+function checkBackendHealth() {
+  if (!BACKEND_URL || !webhookStatus) return;
+  fetch(`${BACKEND_URL}/health`, { credentials: "include" })
     .then((response) => {
       if (response.ok) {
-        webhookStatus.textContent = "Webhook online";
+        webhookStatus.textContent = "Backend online";
       } else {
-        webhookStatus.textContent = "Webhook offline. Verify the Apps Script Web App URL and deployment.";
+        webhookStatus.textContent = "Backend offline. Check server and CORS settings.";
       }
     })
     .catch(() => {
-      webhookStatus.textContent = "Webhook offline. Verify the Apps Script Web App URL and deployment.";
+      webhookStatus.textContent = "Backend offline. Check server and CORS settings.";
     });
 }
 
@@ -873,71 +813,38 @@ async function fetchSheetText(url) {
 
 async function loadSheetData() {
   const input = sheetsUrlInput?.value || "";
-  const url = normalizeSheetsUrl(input);
-  const sheetId = extractSheetId(input);
   const range = sheetsRangeInput?.value?.trim() || "A1:Z1000";
-  if (!url) {
-    showError("Please paste a Google Sheets CSV link.");
+  if (!BACKEND_URL) {
+    showError("Backend URL not configured.");
     return;
-  }
-  if (sheetsHelper) {
-    sheetsHelper.textContent = "Paste a Google Sheets link. If it is an edit link, the app will convert it to a CSV export link.";
   }
   clearMessages();
   setStatus("Loading Google Sheet");
   try {
-    if (sheetId) {
-      if (!googleAccessToken) {
-        showError("Connect Google to load private sheets.");
-        return;
-      }
-      const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(range)}?majorDimension=ROWS`;
-      const privateResult = await fetch(apiUrl, {
-        headers: { Authorization: `Bearer ${googleAccessToken}` },
-      });
-      if (privateResult.ok) {
-        const payload = await privateResult.json();
-        const csvText = valuesToCsv(payload.values || []);
-        parseCsvText(csvText);
-        switchTab("upload");
-        return;
-      }
-      if (privateResult.status === 401 || privateResult.status === 403) {
-        showError("Permission denied or token expired. Reconnect Google.");
-        return;
-      }
-      const errorText = await privateResult.text();
-      showError("Google Sheets API error.", `Details: ${errorText}`);
+    const response = await fetch(`${BACKEND_URL}/api/sheets/read?range=${encodeURIComponent(range)}`, {
+      credentials: "include",
+    });
+    if (response.status === 401) {
+      showError("Login required to load private sheets.");
+      updateGoogleStatus(false);
       return;
     }
-
-    const text = await fetchSheetText(url);
-    parseCsvText(text);
+    if (!response.ok) {
+      const body = await response.text();
+      showError("Google Sheets read failed.", `Details: ${body}`);
+      return;
+    }
+    const payload = await response.json();
+    if (!payload?.values || !payload.values.length) {
+      showError("No rows returned from Google Sheets.");
+      return;
+    }
+    updateGoogleStatus(true);
+    const csvText = valuesToCsv(payload.values || []);
+    parseCsvText(csvText);
     switchTab("upload");
   } catch (error) {
-    const fallback = buildSheetsFallback(url);
-    if (fallback) {
-      try {
-        const text = await fetchSheetText(fallback);
-        parseCsvText(text);
-        switchTab("upload");
-        return;
-      } catch (fallbackError) {
-        error = fallbackError;
-      }
-    }
-    if (sheetsHelper) {
-      if (String(error?.message || "").includes("Failed to fetch")) {
-        sheetsHelper.textContent = "This sheet is likely private. Publish it or share a public CSV export link.";
-      } else {
-        sheetsHelper.textContent = "Make the sheet public or use a shared CSV export link.";
-      }
-    }
-    if (String(error?.message || "").includes("Failed to fetch")) {
-      showError("Request failed. Confirm Sheets API enabled and origin added in Google Cloud.", `Details: ${error.message}`);
-      return;
-    }
-    showError("Google Sheets CSV could not be loaded. Check the link and sharing settings.", `Details: ${error.message}`);
+    showError("Request failed. Confirm backend is running and CORS is configured.", `Details: ${error.message}`);
   }
 }
 
