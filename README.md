@@ -41,3 +41,15 @@ Manual test plan:
 2. Click **Connect Google** and approve access.
 3. Paste a private Google Sheets link and load it; dashboard should render.
 4. If you use a public sheet, it should also load without auth.
+
+## Leads Webhook Setup
+Use a Google Apps Script Web App to capture signups in a sheet named **Leads**.
+
+Deployment requirements:
+- Deploy as **Web App**
+- Execute as **Me**
+- Who has access: **Anyone**
+- Use the URL ending in `/exec`
+
+In `app.js`, set:
+`const WEBHOOK_URL = "YOUR_EXEC_URL_HERE";`
