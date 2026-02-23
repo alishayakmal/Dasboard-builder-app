@@ -220,9 +220,8 @@
             </label>
             <div class="sheets-actions">
               <button id="loadSheet" class="ghost" data-action="load-sheet">Load sheet</button>
-              <button id="connectGoogle" class="ghost" data-action="connect-google">Connect Google</button>
-              <button id="disconnectGoogle" class="ghost" disabled data-action="disconnect-google">Disconnect</button>
-              <span id="googleStatus" class="status-badge offline">Not connected</span>
+              <button id="loginGoogle" class="ghost" data-action="login-google">Login with Google</button>
+              <span id="googleStatus" class="status-badge offline">Not logged in</span>
             </div>
             <p id="sheetsHelper" class="helper-text">Paste a Google Sheets link. If it is an edit link, the app will convert it to a CSV export link.</p>
           </div>
@@ -437,7 +436,6 @@
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-matrix@1.3.0/dist/chartjs-chart-matrix.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="./app.js" defer></script>
