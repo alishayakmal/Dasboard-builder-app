@@ -700,7 +700,7 @@ async function handleExportPdf() {
   const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
   pdf.setFontSize(14);
-  pdf.text("Shalytics AI Report", margin, margin);
+  pdf.text("Shay Analytics AI Report", margin, margin);
   pdf.setFontSize(10);
   pdf.text(new Date().toLocaleString(), margin, margin + 14);
 
@@ -794,7 +794,7 @@ function handleExportToSheets() {
     entity: "dashboard",
     value: state.selectedMetric || "Dashboard",
     filters,
-    app: "Shalytics AI",
+    app: "Shay Analytics AI",
     ts: new Date().toISOString(),
   };
 
