@@ -9,6 +9,7 @@
   --accent-hover:#8b5cf6;
   --accent-soft: rgba(124,58,237,0.15);
   --focus-ring: rgba(124,58,237,0.45);
+  --card-glow: 0 24px 60px rgba(0, 0, 0, 0.45);
 }
 
 * {
@@ -21,6 +22,7 @@ body {
   color: var(--text-primary);
   background: var(--bg-primary);
   min-height: 100vh;
+  line-height: 1.6;
 }
 
 h1, h2, h3 {
@@ -78,6 +80,7 @@ p {
   place-items: center;
   font-size: 18px;
   letter-spacing: 0.08em;
+  box-shadow: 0 10px 22px rgba(124, 58, 237, 0.35);
 }
 
 .controls {
@@ -161,7 +164,7 @@ button:disabled {
   border-radius: 24px;
   padding: 36px;
   border: 1px solid var(--border-color);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--card-glow);
   max-width: 720px;
   width: 100%;
 }
@@ -567,7 +570,7 @@ button:disabled {
   padding: 18px;
   border-radius: 18px;
   border: 1px solid var(--border-color);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--card-glow);
 }
 
 .kpi-card h4 {
@@ -654,7 +657,7 @@ button:disabled {
   border-radius: 18px;
   border: 1px solid var(--border-color);
   padding: 16px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--card-glow);
 }
 
 .chart-header {
@@ -710,6 +713,13 @@ button:disabled {
   border-radius: 999px;
   font-size: 12px;
   width: fit-content;
+}
+
+.sheets-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .heatmap-card .chart-header {
