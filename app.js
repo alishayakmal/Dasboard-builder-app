@@ -1695,7 +1695,13 @@ function initControls(recommendedMetrics) {
 function applyFiltersAndRender() {
   clearMessages();
   state.filteredRows = applyIndustryFilter(state.rawRows, state.filters.industry);
-  const scopedRows = getFilteredRows();
+  let scopedRows = getFilteredRows();
+  if ((!scopedRows || scopedRows.length === 0) && state.filters.industry !== "All") {
+    state.filters.industry = "All";
+    if (industrySelect) industrySelect.value = "All";
+    state.filteredRows = applyIndustryFilter(state.rawRows, state.filters.industry);
+    scopedRows = getFilteredRows();
+  }
   if (!Array.isArray(scopedRows) || scopedRows.length === 0) {
     showError("No rows match this filter.");
     return;
