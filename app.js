@@ -29,6 +29,7 @@ const pdfMeta = document.getElementById("pdfMeta");
 const exportSheetsButton = document.getElementById("exportSheets");
 const downloadPdfButton = document.getElementById("downloadPdf");
 const exportStatus = document.getElementById("exportStatus");
+const webhookStatus = document.getElementById("webhookStatus");
 const stateSection = document.getElementById("state");
 const errorSection = document.getElementById("error");
 const warningsSection = document.getElementById("warnings");
@@ -101,6 +102,7 @@ let currentTableRows = [];
 let currentSort = { key: null, direction: "asc" };
 
 const samplePath = "data-sample.csv";
+// Use the deployed Apps Script Web App URL ending in /exec (not the editor URL).
 const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbznq6aHhsHA6uiQg_AoJ6PG-WioCqriL_Z82SutiX1VeoI1TstpdqYvNPfahI8ZhwjsEQ/exec";
 // TODO: Replace with your Google OAuth Client ID for GitHub Pages.
 const GOOGLE_CLIENT_ID = "PASTE_YOUR_CLIENT_ID.apps.googleusercontent.com";
@@ -294,6 +296,7 @@ function init() {
   renderSampleGallery();
   handleRoute();
   updateGoogleStatus();
+  checkWebhookHealth();
   console.log("handlers wired");
 }
 
@@ -533,7 +536,7 @@ function logSignupEvent(email) {
     app: "Shay Analytics AI",
     ts: new Date().toISOString(),
   };
-  logEvent(payload).then((result) => {
+  postWebhookPlain(payload).then((result) => {
     if (!result.ok) showToast("Signup logged with delay. Try again later.");
   });
 }
@@ -583,6 +586,38 @@ async function logEvent(payload) {
       return { ok: false, status: 0, body: String(error) };
     }
   }
+}
+
+async function postWebhookPlain(payload) {
+  if (!WEBHOOK_URL) return { ok: true, status: 0, body: "" };
+  try {
+    const response = await fetch(WEBHOOK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.text();
+    console.log("Signup webhook response", response.status, body);
+    return { ok: response.ok, status: response.status, body };
+  } catch (error) {
+    console.log("Signup webhook error", error);
+    return { ok: false, status: 0, body: String(error) };
+  }
+}
+
+function checkWebhookHealth() {
+  if (!WEBHOOK_URL || !webhookStatus) return;
+  fetch(WEBHOOK_URL)
+    .then((response) => {
+      if (response.ok) {
+        webhookStatus.textContent = "Webhook online";
+      } else {
+        webhookStatus.textContent = "Webhook offline. Verify the Apps Script Web App URL and deployment.";
+      }
+    })
+    .catch(() => {
+      webhookStatus.textContent = "Webhook offline. Verify the Apps Script Web App URL and deployment.";
+    });
 }
 
 function handleExportToSheets() {
