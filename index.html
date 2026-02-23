@@ -19,7 +19,7 @@
           <p>Turn raw data into executive-ready dashboards in minutes.</p>
         </div>
       </div>
-      <button id="signInButton" class="ghost">Sign In</button>
+      <button id="signInBtn" class="ghost">Sign In</button>
     </header>
 
     <section class="hero">
@@ -27,7 +27,7 @@
       <h2>Turn Raw Data into Beautiful Insights</h2>
       <p>Upload a CSV, connect an API, or pull from Google Sheets to get KPI tiles, trends, and clean data tables instantly.</p>
       <div class="hero-actions">
-        <button id="startFree" class="primary">Start for Free</button>
+        <button id="startFreeBtn" class="primary">Start for Free</button>
         <button class="ghost" disabled title="Coming soon">Learn more</button>
       </div>
       <p id="webhookStatus" class="helper-text">Webhook status: checking...</p>
@@ -327,16 +327,16 @@
       <p class="helper-text">Create your account to unlock the dashboard.</p>
       <form id="signupForm" class="modal-form">
         <label>Full name
-          <input type="text" id="leadName" required />
+          <input type="text" id="signupName" required />
         </label>
         <label>Email
-          <input type="email" id="leadEmail" required />
+          <input type="email" id="signupEmail" required />
         </label>
         <label>Company (optional)
-          <input type="text" id="leadCompany" />
+          <input type="text" id="signupCompany" />
         </label>
         <label>Use case (optional)
-          <select id="leadUseCase">
+          <select id="signupUseCase">
             <option value="">Select one</option>
             <option value="Executive dashboards">Executive dashboards</option>
             <option value="Marketing reporting">Marketing reporting</option>
@@ -345,11 +345,7 @@
             <option value="Other">Other</option>
           </select>
         </label>
-        <label class="checkbox">
-          <input type="checkbox" id="leadConsent" />
-          <span>I agree to be contacted about product updates.</span>
-        </label>
-        <button type="submit" class="primary">Create account</button>
+        <button id="signupSubmit" type="submit" class="primary">Create account</button>
       </form>
       <p id="formError" class="error hidden"></p>
     </div>
