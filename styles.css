@@ -55,12 +55,32 @@ p {
   backdrop-filter: blur(10px);
 }
 
+.landing-nav {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.landing-nav a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.landing-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .app-header-actions {
   display: flex;
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  justify-content: space-between;
+  flex: 1;
 }
 
 .brand {
@@ -106,13 +126,16 @@ p {
 .file-picker {
   background: var(--accent-primary);
   color: white;
-  padding: 10px 18px;
+  padding: 0 18px;
   border-radius: 999px;
   cursor: pointer;
   font-weight: 600;
   transition: all 0.2s ease;
   border: 1px solid rgba(124, 58, 237, 0.6);
   box-shadow: 0 10px 22px rgba(124, 58, 237, 0.18);
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .file-picker input {
@@ -128,12 +151,15 @@ p {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   color: var(--text-primary);
-  padding: 10px 16px;
+  padding: 0 18px;
   border-radius: 999px;
   cursor: pointer;
   font-weight: 600;
   transition: all 0.2s ease;
   box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .ghost:hover {
@@ -196,10 +222,13 @@ button:disabled {
   background: var(--bg-secondary);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
-  padding: 10px 16px;
+  padding: 0 16px;
   border-radius: 999px;
   cursor: pointer;
   transition: all 0.2s ease;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .tab-button.active,
@@ -210,7 +239,7 @@ button:disabled {
 }
 
 .hero {
-  padding: 64px 48px 40px;
+  padding: 72px 48px 56px;
   max-width: 900px;
   margin: 0 auto;
   display: grid;
@@ -240,16 +269,109 @@ button:disabled {
   flex-wrap: wrap;
 }
 
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  padding: 0 48px 48px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.feature-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 18px;
+  box-shadow: var(--card-glow);
+}
+
+.sample-preview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+  padding: 0 48px 56px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.sample-cards {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.insight-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.mock-dashboard {
+  background: linear-gradient(135deg, rgba(124,58,237,0.2), rgba(16,16,20,0.9));
+  border: 1px solid var(--border-color);
+  border-radius: 18px;
+  padding: 24px;
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  color: var(--text-secondary);
+}
+
+.social-proof {
+  padding: 24px 48px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.landing-footer {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  padding: 24px 48px 48px;
+  color: var(--text-secondary);
+}
+
+.landing-footer a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.app-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.toolbar-field {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.toolbar-field select {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
 .primary {
   background: var(--accent-primary);
   color: #fff;
   border: 1px solid rgba(124, 58, 237, 0.6);
-  padding: 12px 20px;
+  padding: 0 20px;
   border-radius: 999px;
   cursor: pointer;
   font-weight: 700;
   transition: all 0.2s ease;
   box-shadow: 0 12px 24px rgba(124, 58, 237, 0.28);
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
 }
 
 .primary:hover {
