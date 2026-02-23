@@ -276,7 +276,7 @@ function init() {
         const sizeKb = Math.round(file.size / 1024);
         pdfMeta.textContent = `${file.name} · ${sizeKb} KB`;
       }
-      if (pdfStatus) pdfStatus.textContent = "PDF ingestion coming soon";
+      handlePdfUpload(file);
     });
   }
 
@@ -623,10 +623,96 @@ function loadSheetData() {
     })
     .catch((error) => {
       if (sheetsHelper) {
-        sheetsHelper.textContent = "Make the sheet public or use a shared CSV export link.";
+        if (String(error?.message || "").includes("Failed to fetch")) {
+          sheetsHelper.textContent = "This sheet is likely private. Publish it or share a public CSV export link.";
+        } else {
+          sheetsHelper.textContent = "Make the sheet public or use a shared CSV export link.";
+        }
       }
       showError("Google Sheets CSV could not be loaded. Check the link and sharing settings.", `Details: ${error.message}`);
     });
+}
+
+async function handlePdfUpload(file) {
+  if (!file) return;
+  if (pdfStatus) pdfStatus.textContent = "Extracting table data from PDF...";
+  try {
+    if (!window.pdfjsLib) {
+      showError("PDF parser not available. Please refresh and try again.");
+      return;
+    }
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const maxPages = Math.min(6, pdf.numPages || 0);
+    const rows = [];
+
+    for (let pageNum = 1; pageNum <= maxPages; pageNum += 1) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const items = (textContent.items || [])
+        .filter((item) => String(item.str || "").trim() !== "")
+        .map((item) => ({
+          text: String(item.str || "").trim(),
+          x: item.transform[4],
+          y: item.transform[5],
+        }));
+
+      const rowMap = new Map();
+      items.forEach((item) => {
+        const yKey = Math.round(item.y / 3) * 3;
+        if (!rowMap.has(yKey)) rowMap.set(yKey, []);
+        rowMap.get(yKey).push(item);
+      });
+
+      const pageRows = Array.from(rowMap.entries())
+        .sort((a, b) => b[0] - a[0])
+        .map(([, rowItems]) => {
+          const sorted = rowItems.sort((a, b) => a.x - b.x);
+          const cells = [];
+          let current = sorted[0]?.text || "";
+          let lastX = sorted[0]?.x ?? 0;
+          for (let i = 1; i < sorted.length; i += 1) {
+            const gap = sorted[i].x - lastX;
+            if (gap > 20) {
+              cells.push(current);
+              current = sorted[i].text;
+            } else {
+              current = `${current} ${sorted[i].text}`.trim();
+            }
+            lastX = sorted[i].x;
+          }
+          if (current) cells.push(current);
+          return cells;
+        })
+        .filter((cells) => cells.length >= 2);
+
+      rows.push(...pageRows);
+    }
+
+    if (rows.length < 2) {
+      showError("No table like content detected. Export a CSV or use a PDF with a clear table.");
+      if (pdfStatus) pdfStatus.textContent = "PDF ingestion failed";
+      return;
+    }
+
+    const csvText = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
+    parseCsvText(csvText);
+    if (pdfStatus) pdfStatus.textContent = "PDF parsed. Generating dashboard...";
+    switchTab("upload");
+  } catch (error) {
+    showError("No table like content detected. Export a CSV or use a PDF with a clear table.", `Details: ${error.message}`);
+    if (pdfStatus) pdfStatus.textContent = "PDF ingestion failed";
+  }
+}
+
+function csvEscape(value) {
+  const text = String(value ?? "");
+  if (/[",\n]/.test(text)) {
+    return `"${text.replace(/"/g, "\"\"")}"`;
+  }
+  return text;
 }
 
 function testApiConnection() {
