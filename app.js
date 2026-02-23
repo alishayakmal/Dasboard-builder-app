@@ -21,6 +21,8 @@ const sheetsRangeInput = document.getElementById("sheetsRange");
 const sheetsHelper = document.getElementById("sheetsHelper");
 const loadSheetButton = document.getElementById("loadSheet");
 const connectGoogleButton = document.getElementById("connectGoogle");
+const disconnectGoogleButton = document.getElementById("disconnectGoogle");
+const googleStatus = document.getElementById("googleStatus");
 const pdfInput = document.getElementById("pdfInput");
 const pdfStatus = document.getElementById("pdfStatus");
 const pdfMeta = document.getElementById("pdfMeta");
@@ -100,6 +102,10 @@ let currentSort = { key: null, direction: "asc" };
 
 const samplePath = "data-sample.csv";
 const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbznq6aHhsHA6uiQg_AoJ6PG-WioCqriL_Z82SutiX1VeoI1TstpdqYvNPfahI8ZhwjsEQ/exec";
+// TODO: Replace with your Google OAuth Client ID for GitHub Pages.
+const GOOGLE_CLIENT_ID = "PASTE_YOUR_CLIENT_ID.apps.googleusercontent.com";
+let googleAccessToken = null;
+let googleTokenClient = null;
 const sampleManifest = [
   {
     id: "sales",
@@ -268,9 +274,8 @@ function init() {
   if (signInButton) signInButton.addEventListener("click", handleSignInClick);
   if (signOutButton) signOutButton.addEventListener("click", handleSignOutClick);
   if (loadSheetButton) loadSheetButton.addEventListener("click", loadSheetData);
-  if (connectGoogleButton) connectGoogleButton.addEventListener("click", () => {
-    window.location.href = "/oauth/start";
-  });
+  if (connectGoogleButton) connectGoogleButton.addEventListener("click", handleConnectGoogleClick);
+  if (disconnectGoogleButton) disconnectGoogleButton.addEventListener("click", handleDisconnectGoogleClick);
   if (exportSheetsButton) exportSheetsButton.addEventListener("click", handleExportToSheets);
   if (downloadPdfButton) downloadPdfButton.addEventListener("click", () => window.print());
   if (pdfInput) {
@@ -288,7 +293,7 @@ function init() {
   updateSignInButton();
   renderSampleGallery();
   handleRoute();
-  handleOauthSuccess();
+  updateGoogleStatus();
   console.log("handlers wired");
 }
 
@@ -382,11 +387,54 @@ function handleRoute() {
   routeTo(getSignedIn() ? "app" : "landing");
 }
 
-function handleOauthSuccess() {
-  const hash = window.location.hash || "";
-  if (hash.includes("google=connected")) {
-    showToast("Google connected");
-    window.location.hash = "#/app";
+function initGoogleAuth() {
+  if (!window.google || !window.google.accounts || !window.google.accounts.oauth2) return null;
+  if (googleTokenClient) return googleTokenClient;
+
+  googleTokenClient = window.google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: "https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/drive.readonly",
+    callback: (response) => {
+      if (response?.access_token) {
+        googleAccessToken = response.access_token;
+        updateGoogleStatus();
+        showToast("Google connected");
+      }
+    },
+  });
+
+  return googleTokenClient;
+}
+
+function handleConnectGoogleClick() {
+  const tokenClient = initGoogleAuth();
+  if (!tokenClient) {
+    showError("Google auth not available. Ensure Google Identity Services is loaded.");
+    return;
+  }
+  tokenClient.requestAccessToken({ prompt: "consent" });
+}
+
+function handleDisconnectGoogleClick() {
+  if (!googleAccessToken) return;
+  const token = googleAccessToken;
+  googleAccessToken = null;
+  updateGoogleStatus();
+  showToast("Google disconnected");
+  if (window.google?.accounts?.oauth2?.revoke) {
+    window.google.accounts.oauth2.revoke(token, () => {});
+  }
+}
+
+function updateGoogleStatus() {
+  if (googleStatus) {
+    googleStatus.textContent = googleAccessToken ? "Connected" : "Not connected";
+  }
+  if (disconnectGoogleButton) {
+    disconnectGoogleButton.disabled = !googleAccessToken;
+  }
+  if (connectGoogleButton) {
+    connectGoogleButton.textContent = googleAccessToken ? "Reconnect Google" : "Connect Google";
   }
 }
 
@@ -652,8 +700,13 @@ async function loadSheetData() {
   setStatus("Loading Google Sheet");
   try {
     if (sheetId) {
-      const privateResult = await fetch(`/api/sheets/read?spreadsheetId=${encodeURIComponent(sheetId)}&range=${encodeURIComponent(range)}`, {
-        credentials: "include",
+      if (!googleAccessToken) {
+        showError("Connect Google to load private sheets.");
+        return;
+      }
+      const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}/values/${encodeURIComponent(range)}?majorDimension=ROWS`;
+      const privateResult = await fetch(apiUrl, {
+        headers: { Authorization: `Bearer ${googleAccessToken}` },
       });
       if (privateResult.ok) {
         const payload = await privateResult.json();
@@ -662,6 +715,13 @@ async function loadSheetData() {
         switchTab("upload");
         return;
       }
+      if (privateResult.status === 401 || privateResult.status === 403) {
+        showError("Permission denied or token expired. Reconnect Google.");
+        return;
+      }
+      const errorText = await privateResult.text();
+      showError("Google Sheets API error.", `Details: ${errorText}`);
+      return;
     }
 
     const text = await fetchSheetText(url);
@@ -685,6 +745,10 @@ async function loadSheetData() {
       } else {
         sheetsHelper.textContent = "Make the sheet public or use a shared CSV export link.";
       }
+    }
+    if (String(error?.message || "").includes("Failed to fetch")) {
+      showError("Request failed. Confirm Sheets API enabled and origin added in Google Cloud.", `Details: ${error.message}`);
+      return;
     }
     showError("Google Sheets CSV could not be loaded. Check the link and sharing settings.", `Details: ${error.message}`);
   }
