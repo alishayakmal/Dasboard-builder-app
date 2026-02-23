@@ -7,6 +7,8 @@ const appView = document.getElementById("appView");
 const signInButton = document.getElementById("signInBtn");
 const signOutButton = document.getElementById("signOutButton");
 const startFreeButton = document.getElementById("startFreeBtn");
+const heroStartButton = document.getElementById("heroStartBtn");
+const viewSamplesButton = document.getElementById("viewSamplesBtn");
 const signupModal = document.getElementById("signupModal");
 const closeModalButton = document.getElementById("closeModal");
 const signupForm = document.getElementById("signupForm");
@@ -264,10 +266,15 @@ function init() {
   downloadInsightsButton.addEventListener("click", () => downloadInsights());
 
   if (testApiButton) {
-    testApiButton.addEventListener("click", testApiConnection);
+    testApiButton.addEventListener("click", handleApiFetch);
   }
 
   if (startFreeButton) startFreeButton.addEventListener("click", openModal);
+  if (heroStartButton) heroStartButton.addEventListener("click", openModal);
+  if (viewSamplesButton) viewSamplesButton.addEventListener("click", () => {
+    const target = document.getElementById("samples");
+    if (target) target.scrollIntoView({ behavior: "smooth" });
+  });
   if (closeModalButton) closeModalButton.addEventListener("click", closeModal);
   if (signupModal) signupModal.addEventListener("click", (event) => {
     if (event.target === signupModal) closeModal();
@@ -279,7 +286,7 @@ function init() {
   if (connectGoogleButton) connectGoogleButton.addEventListener("click", handleConnectGoogleClick);
   if (disconnectGoogleButton) disconnectGoogleButton.addEventListener("click", handleDisconnectGoogleClick);
   if (exportSheetsButton) exportSheetsButton.addEventListener("click", handleExportToSheets);
-  if (downloadPdfButton) downloadPdfButton.addEventListener("click", () => window.print());
+  if (downloadPdfButton) downloadPdfButton.addEventListener("click", handleExportPdf);
   if (pdfInput) {
     pdfInput.addEventListener("change", () => {
       const file = pdfInput.files?.[0];
@@ -297,6 +304,8 @@ function init() {
   handleRoute();
   updateGoogleStatus();
   checkWebhookHealth();
+  disableUnavailableButtons();
+  auditActionHandlers();
   console.log("handlers wired");
 }
 
@@ -559,6 +568,43 @@ function showToast(message) {
   }, 1800);
 }
 
+function disableUnavailableButtons() {
+  if (exportSheetsButton) {
+    exportSheetsButton.disabled = true;
+    exportSheetsButton.title = "Coming soon: Google Sheets export";
+    if (exportStatus) exportStatus.textContent = "Export to Google Sheets coming soon.";
+  }
+}
+
+function auditActionHandlers() {
+  const handlerMap = new Map([
+    ["start-free", openModal],
+    ["signin", openModal],
+    ["view-samples", () => {}],
+    ["tab-upload", () => {}],
+    ["tab-sheets", () => {}],
+    ["tab-api", () => {}],
+    ["tab-pdf", () => {}],
+    ["tab-samples", () => {}],
+    ["signout", handleSignOutClick],
+    ["export-pdf", handleExportPdf],
+    ["test-api", handleApiFetch],
+    ["load-sheet", loadSheetData],
+    ["connect-google", handleConnectGoogleClick],
+    ["disconnect-google", handleDisconnectGoogleClick],
+    ["export-csv", exportFilteredCsv],
+    ["download-insights", downloadInsights],
+    ["export-sheets", handleExportToSheets],
+  ]);
+
+  document.querySelectorAll("[data-action]").forEach((button) => {
+    const action = button.getAttribute("data-action");
+    if (!handlerMap.has(action) && !button.disabled) {
+      console.warn(`Missing handler for data-action="${action}"`);
+    }
+  });
+}
+
 async function logEvent(payload) {
   if (!WEBHOOK_URL) return { ok: true, status: 0, body: "" };
   try {
@@ -635,6 +681,100 @@ function checkWebhookHealth() {
     });
 }
 
+async function handleExportPdf() {
+  const target = document.getElementById("dashboard");
+  if (!target || target.classList.contains("hidden")) {
+    showError("Load a dataset before exporting the report.");
+    return;
+  }
+  if (!window.html2canvas || !window.jspdf) {
+    showError("PDF export library not available. Please refresh and try again.");
+    return;
+  }
+
+  showToast("Preparing PDF...");
+  const canvas = await window.html2canvas(target, { scale: 2, backgroundColor: "#ffffff" });
+  const imgData = canvas.toDataURL("image/png");
+  const pdf = new window.jspdf.jsPDF("p", "pt", "a4");
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 24;
+  const imgWidth = pageWidth - margin * 2;
+  const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+  pdf.setFontSize(14);
+  pdf.text("Shalytics AI Report", margin, margin);
+  pdf.setFontSize(10);
+  pdf.text(new Date().toLocaleString(), margin, margin + 14);
+
+  let position = margin + 24;
+  let remainingHeight = imgHeight;
+
+  while (remainingHeight > 0) {
+    pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
+    remainingHeight -= pageHeight - margin * 2;
+    if (remainingHeight > 0) {
+      pdf.addPage();
+      position = margin - (imgHeight - remainingHeight) + margin * 2;
+    }
+  }
+
+  const dateStamp = new Date().toISOString().slice(0, 10);
+  pdf.save(`shalytics-report-${dateStamp}.pdf`);
+}
+
+async function handleApiFetch() {
+  const base = apiBaseUrl?.value?.trim();
+  const endpoint = apiEndpoint?.value?.trim();
+  if (!base || !endpoint) {
+    apiStatus.textContent = "Please enter Base URL and Endpoint to fetch data.";
+    return;
+  }
+  const url = `${base.replace(/\/$/, "")}/${endpoint.replace(/^\//, "")}`;
+  const authType = apiAuthType?.value || "none";
+  const credential = apiKey?.value?.trim();
+  const headers = {};
+  if (authType === "bearer" && credential) {
+    headers.Authorization = `Bearer ${credential}`;
+  } else if (authType === "apiKey" && credential) {
+    headers["x-api-key"] = credential;
+  }
+
+  clearMessages();
+  setStatus("Fetching API data");
+  try {
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      apiStatus.textContent = `Request failed: ${response.status}`;
+      showError("API request failed.", `Details: ${response.status}`);
+      return;
+    }
+    const json = await response.json();
+    if (!Array.isArray(json) || !json.length || typeof json[0] !== "object") {
+      apiStatus.textContent = "Expected a JSON array of objects.";
+      showError("API payload must be a JSON array of objects.");
+      return;
+    }
+    apiStatus.textContent = "API data loaded";
+    ingestJsonRows(json);
+    switchTab("upload");
+  } catch (error) {
+    apiStatus.textContent = "Network error while fetching API data.";
+    showError("API request failed.", `Details: ${error.message}`);
+  }
+}
+
+function ingestJsonRows(rows) {
+  const columns = Array.from(
+    rows.reduce((set, row) => {
+      Object.keys(row || {}).forEach((key) => set.add(key));
+      return set;
+    }, new Set())
+  );
+  const rawRows = [columns, ...rows.map((row) => columns.map((col) => row[col]))];
+  ingestRows(rawRows);
+}
+
 function handleExportToSheets() {
   const user = localStorage.getItem("currentUser") || "anonymous";
   const filters = {};
@@ -657,7 +797,7 @@ function handleExportToSheets() {
     entity: "dashboard",
     value: state.selectedMetric || "Dashboard",
     filters,
-    app: "Shay Analytics AI",
+    app: "Shalytics AI",
     ts: new Date().toISOString(),
   };
 
@@ -1578,6 +1718,7 @@ function applyFiltersAndRender() {
   runStep("buildQuality", () => renderQualityBadge(scopedRows));
   runStep("buildWarnings", () => showWarnings(collectWarnings()));
   runStep("buildSuggestions", () => renderSuggestedTrends());
+  updateIngestionStatus(scopedRows);
 }
 
 function runStep(step, fn) {
@@ -1590,6 +1731,20 @@ function runStep(step, fn) {
     showError(`Dashboard step failed: ${step}.`, `Details: ${error?.message || error}`);
     return false;
   }
+}
+
+function updateIngestionStatus(rows) {
+  if (!statusSection) return;
+  const numeric = state.schema.numeric || [];
+  const dateColumn = state.dateColumn || "—";
+  const excludedIds = (state.debug.numericCandidates || []).filter((col) => !numeric.includes(col));
+  const rowCount = rows?.length || 0;
+  statusSection.innerHTML = `
+    <strong>Ingestion status</strong><br>
+    Rows: ${rowCount} · Date column: ${dateColumn} · Metrics: ${numeric.slice(0, 6).join(", ") || "—"}<br>
+    Excluded IDs: ${excludedIds.join(", ") || "—"}
+  `;
+  statusSection.classList.remove("hidden");
 }
 
 function applyIndustryFilter(rows, industry) {
