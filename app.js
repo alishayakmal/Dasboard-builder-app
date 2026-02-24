@@ -17,6 +17,13 @@ const leadNameInput = document.getElementById("signupName");
 const leadEmailInput = document.getElementById("signupEmail");
 const leadCompanyInput = document.getElementById("signupCompany");
 const leadUseCaseInput = document.getElementById("signupUseCase");
+const leadUseCaseDetailInput = document.getElementById("signupUseCaseDetail");
+const useCaseDetailField = document.getElementById("useCaseDetailField");
+const nameError = document.getElementById("nameError");
+const emailError = document.getElementById("emailError");
+const companyError = document.getElementById("companyError");
+const useCaseError = document.getElementById("useCaseError");
+const useCaseDetailError = document.getElementById("useCaseDetailError");
 const signupSubmitButton = document.getElementById("signupSubmit");
 const sheetsUrlInput = document.getElementById("sheetsUrl");
 const sheetsRangeInput = document.getElementById("sheetsRange");
@@ -291,6 +298,13 @@ function init() {
     if (event.target === signupModal) closeModal();
   });
   if (signupForm) signupForm.addEventListener("submit", handleSignupSubmit);
+  if (leadUseCaseInput) {
+    leadUseCaseInput.addEventListener("change", handleUseCaseToggle);
+  }
+  [leadNameInput, leadEmailInput, leadCompanyInput, leadUseCaseInput, leadUseCaseDetailInput].forEach((input) => {
+    if (!input) return;
+    input.addEventListener("input", updateSignupButtonState);
+  });
   if (signInButton) signInButton.addEventListener("click", handleSignInClick);
   if (signOutButton) signOutButton.addEventListener("click", handleSignOutClick);
   if (loadSheetButton) loadSheetButton.addEventListener("click", loadSheetData);
@@ -526,6 +540,13 @@ function openModal() {
     formError.textContent = "";
     formError.classList.add("hidden");
   }
+  if (nameError) nameError.textContent = "";
+  if (emailError) emailError.textContent = "";
+  if (companyError) companyError.textContent = "";
+  if (useCaseError) useCaseError.textContent = "";
+  if (useCaseDetailError) useCaseDetailError.textContent = "";
+  handleUseCaseToggle();
+  updateSignupButtonState();
 }
 
 function closeModal() {
@@ -536,42 +557,40 @@ function closeModal() {
 
 function handleSignupSubmit(event) {
   event.preventDefault();
-  const name = leadNameInput?.value?.trim() || "";
-  const email = leadEmailInput?.value?.trim() || "";
-  const company = leadCompanyInput?.value?.trim() || "";
-  const useCase = leadUseCaseInput?.value?.trim() || "";
+  const validation = validateSignupForm();
+  if (!validation.isValid) {
+    updateSignupButtonState();
+    return;
+  }
 
-  if (!name || !email) {
-    showFormError("Please provide your name and email.");
-    return;
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    showFormError("Please enter a valid email address.");
-    return;
-  }
+  const { name, email, company, useCase, useCaseDetail } = validation.cleaned;
 
   const lead = {
     name,
     email,
     company,
     useCase,
+    useCaseDetail,
     source: "shay analytics ai landing",
     userAgent: navigator.userAgent,
     createdAt: new Date().toISOString(),
   };
 
   const payload = {
-    source: "webapp",
-    user: leadEmailInput?.value?.trim() || "unknown",
-    action: "signup",
-    entity: "lead",
-    value: leadCompanyInput?.value?.trim() || "",
-    ts: new Date().toISOString(),
+    fullName: name,
+    email,
+    company,
+    useCase,
+    useCaseDetail: useCaseDetail || "",
+    createdAt: new Date().toISOString(),
+    source: "signup",
   };
 
   postSignupToAppsScript(payload).then((result) => {
     if (formError) {
-      formError.textContent = result.ok ? "Saved to Google Sheets" : `Signup failed ${result.status} ${result.body}`;
+      formError.textContent = result.ok
+        ? "Account created. You can now access the dashboard."
+        : "Account created, but logging failed. Please try again.";
     }
   });
 
@@ -580,8 +599,51 @@ function handleSignupSubmit(event) {
   localStorage.setItem("currentUser", email);
   updateSignInButton();
   closeModal();
-  showToast("Signed up");
+  showToast("Account created. You can now access the dashboard.");
   routeTo("app");
+}
+
+function handleUseCaseToggle() {
+  const useCase = leadUseCaseInput?.value?.trim() || "";
+  if (useCaseDetailField) {
+    const show = useCase === "Other";
+    useCaseDetailField.classList.toggle("hidden", !show);
+  }
+  updateSignupButtonState();
+}
+
+function validateSignupForm() {
+  const name = leadNameInput?.value?.trim() || "";
+  const email = leadEmailInput?.value?.trim() || "";
+  const company = leadCompanyInput?.value?.trim() || "";
+  const useCase = leadUseCaseInput?.value?.trim() || "";
+  const useCaseDetail = leadUseCaseDetailInput?.value?.trim() || "";
+
+  const errors = {};
+  if (name.length < 2) errors.name = "Full name is required.";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = "Enter a valid email.";
+  if (company.length < 2) errors.company = "Company is required.";
+  if (!useCase) errors.useCase = "Select a use case.";
+  if (useCase === "Other" && useCaseDetail.length < 10) {
+    errors.useCaseDetail = "Please describe your use case (min 10 characters).";
+  }
+
+  if (nameError) nameError.textContent = errors.name || "";
+  if (emailError) emailError.textContent = errors.email || "";
+  if (companyError) companyError.textContent = errors.company || "";
+  if (useCaseError) useCaseError.textContent = errors.useCase || "";
+  if (useCaseDetailError) useCaseDetailError.textContent = errors.useCaseDetail || "";
+
+  return {
+    isValid: Object.keys(errors).length === 0,
+    cleaned: { name, email, company, useCase, useCaseDetail },
+  };
+}
+
+function updateSignupButtonState() {
+  if (!signupSubmitButton) return;
+  const validation = validateSignupForm();
+  signupSubmitButton.disabled = !validation.isValid;
 }
 
 function showFormError(message) {
