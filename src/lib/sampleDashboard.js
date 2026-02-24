@@ -218,7 +218,28 @@ function toDayKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-export function computeKpiMiniTrend(rows, metricKey, windowDays = 30) {
+function movingAverage(values, windowSize = 3) {
+  if (!Array.isArray(values) || values.length === 0) return [];
+  return values.map((_, index) => {
+    const start = Math.max(0, index - (windowSize - 1));
+    const slice = values.slice(start, index + 1);
+    const sum = slice.reduce((acc, value) => acc + value, 0);
+    return sum / slice.length;
+  });
+}
+
+export function computeKpiMiniTrend(rows, metricKey, windowDays = 30, options = {}) {
+  const { smoothSparkline = true } = options;
+  const hasDateField = rows.some((row) => row.date instanceof Date && !Number.isNaN(row.date.getTime()));
+  if (!hasDateField) {
+    return {
+      hasDateField: false,
+      currentSeries: [],
+      priorSeries: [],
+      currentLabels: [],
+      priorLabels: [],
+    };
+  }
   const { start, end, priorStart, priorEnd } = computePeriods(rows, windowDays);
   const bucketRange = (rangeStart, rangeEnd) => {
     const days = [];
@@ -235,12 +256,21 @@ export function computeKpiMiniTrend(rows, metricKey, windowDays = 30) {
       if (!buckets[key]) buckets[key] = [];
       buckets[key].push(row);
     });
-    return dayKeys.map((key) => computeMetricValue(buckets[key] || [], metricKey));
+    const series = dayKeys.map((key) => computeMetricValue(buckets[key] || [], metricKey));
+    return {
+      labels: dayKeys,
+      series: smoothSparkline ? movingAverage(series, 3) : series,
+    };
   };
+  const current = bucketRange(start, end);
+  const prior = bucketRange(priorStart, priorEnd);
 
   return {
-    currentSeries: bucketRange(start, end),
-    priorSeries: bucketRange(priorStart, priorEnd),
+    hasDateField: true,
+    currentSeries: current.series,
+    priorSeries: prior.series,
+    currentLabels: current.labels,
+    priorLabels: prior.labels,
   };
 }
 
