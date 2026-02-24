@@ -79,8 +79,9 @@ export async function renderMiniDashboardPreview(container) {
     pill.className = "kpi-pill";
     pill.innerHTML = `
       <span>${kpi.label}</span>
-      <strong>${kpi.value}</strong>
+      <strong title="${kpi.definition}">${kpi.value}</strong>
       <em>${kpi.delta}</em>
+      <small class="kpi-caption">${kpi.window}</small>
     `;
     kpiRow.appendChild(pill);
   });
