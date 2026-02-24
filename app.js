@@ -3266,24 +3266,25 @@ function renderInsights(rows) {
     evidencePanel.classList.add("hidden");
     evidencePanel.innerHTML = `<div class="helper-text">Select an insight to view evidence details.</div>`;
   }
-  const insights = buildDecisionInsights(rows);
+  const insights = buildUnifiedInsights(rows);
   insights.forEach((insight) => {
     const card = document.createElement("li");
     card.className = "insight-card user-insight-card";
-    const confidenceLevel = inferUserInsightConfidence(insight);
+    const confidenceLevel = insight?.confidence?.level || inferUserInsightConfidence(insight);
     const confidenceLabel = confidenceLevel.charAt(0).toUpperCase() + confidenceLevel.slice(1);
     const whyLine = confidenceLevel !== "high"
-      ? `<p class="insight-meta confidence-why"><strong>Why this confidence:</strong> ${buildUserInsightConfidenceReason(insight)}</p>`
+      ? `<p class="insight-meta confidence-why"><strong>Why this confidence:</strong> ${escapeHtml((insight?.confidence?.reasons || [buildUserInsightConfidenceReason(insight)]).slice(0, 2).join(" "))}</p>`
       : "";
-    const evidenceSummary = extractInsightBullet(insight, "Evidence:") || insight.summary || "";
-    const driverLine = extractInsightBullet(insight, "Why:")
-      ?.replace(/^Why:\s*/i, "")
+    const evidenceSummary = insight?.deltaSummary || extractInsightBullet(insight, "Evidence:") || insight.summary || "";
+    const driverLine = insight?.driverNarrative
+      || extractInsightBullet(insight, "Why:")?.replace(/^Why:\s*/i, "")
       || insight.summary;
-    const actionLine = extractInsightBullet(insight, "Next step:")
-      ?.replace(/^Next step:\s*/i, "")
+    const actionLine = insight?.action
+      || extractInsightBullet(insight, "Next step:")?.replace(/^Next step:\s*/i, "")
       || "Investigate top drivers and validate with a controlled slice.";
+    const headline = insight?.headline || insight?.title || "Insight";
     card.innerHTML = `
-      <h4>${escapeHtml(insight.title)}</h4>
+      <h4>${escapeHtml(headline)}</h4>
       <p class="insight-meta">${escapeHtml(evidenceSummary)}</p>
       <p class="insight-meta">Driver: ${escapeHtml(driverLine)}</p>
       <p class="insight-meta">Action: ${escapeHtml(actionLine)}</p>
@@ -3331,31 +3332,402 @@ function buildUserInsightConfidenceReason(insight) {
 function renderUserInsightEvidence(panel, insight) {
   if (!panel) return;
   panel.classList.remove("hidden");
-  const bullets = insight?.bullets || [];
+  if (!insight?.evidence) {
+    const bullets = insight?.bullets || [];
+    panel.innerHTML = `
+      <div class="evidence-section">
+        <strong>Evidence detail</strong>
+        <div class="helper-text">${escapeHtml(insight.summary || "")}</div>
+      </div>
+      <div class="evidence-section">
+        <strong>Analytical proof</strong>
+        <div class="evidence-table-wrap">
+          <table class="evidence-table">
+            <thead>
+              <tr><th>Type</th><th>Detail</th></tr>
+            </thead>
+            <tbody>
+              ${bullets.map((bullet) => {
+                const parts = String(bullet).split(":");
+                const type = parts.length > 1 ? parts.shift() : "Note";
+                const detail = parts.length > 0 ? parts.join(":").trim() : String(bullet);
+                return `<tr><td>${escapeHtml(String(type))}</td><td>${escapeHtml(detail)}</td></tr>`;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+    return;
+  }
+  const evidence = insight.evidence;
+  const comparisonRows = (evidence.comparisonTable || []).map((row) => `
+    <tr>
+      <td>${escapeHtml(String(row.segment))}</td>
+      <td>${escapeHtml(String(row.value))}</td>
+      <td>${escapeHtml(String(row.share))}</td>
+      <td>${escapeHtml(String(row.rank))}</td>
+    </tr>
+  `).join("");
+  const driverRows = (evidence.driverBreakdownTable || []).map((row) => `
+    <tr>
+      <td>${escapeHtml(String(row.combination))}</td>
+      <td>${escapeHtml(String(row.current))}</td>
+      <td>${escapeHtml(String(row.prior))}</td>
+      <td>${escapeHtml(String(row.delta))}</td>
+      <td>${escapeHtml(String(row.liftShare))}</td>
+    </tr>
+  `).join("");
+  const confidenceReasons = (insight?.confidence?.reasons || []).map((reason) => `<li>${escapeHtml(reason)}</li>`).join("");
+  const periods = insight?.confidence?.metrics?.periods ?? 0;
+  const periodsText = periods === 1
+    ? "Only one time period available. Trend reliability is limited."
+    : periods > 1 && periods < 3
+      ? `Limited history: this insight is based on only ${periods} time period(s).`
+      : periods >= 3
+        ? `Based on ${periods} time periods.`
+        : "No historical time buckets available.";
+  const trendConsistency = evidence.trendSummary
+    ? `
+      <div class="evidence-section">
+        <strong>Trend consistency</strong>
+        <div class="evidence-stats">
+          <div><span>Periods analysed</span><strong>${escapeHtml(String(evidence.trendSummary.periodsAnalysed ?? periods))}</strong><p class="helper-text">${escapeHtml(periodsText)}</p></div>
+          <div><span>Stability score</span><strong>${escapeHtml(String(evidence.consistencyScore ?? "—"))}</strong></div>
+          <div><span>Variance</span><strong>${escapeHtml(String(evidence.trendSummary.variance ?? "—"))}</strong></div>
+        </div>
+      </div>`
+    : `
+      <div class="evidence-section">
+        <strong>Trend consistency</strong>
+        <div class="helper-text">Trend analysis unavailable due to missing date field.</div>
+      </div>`;
+
   panel.innerHTML = `
     <div class="evidence-section">
-      <strong>Evidence detail</strong>
-      <div class="helper-text">${escapeHtml(insight.summary || "")}</div>
-    </div>
-    <div class="evidence-section">
-      <strong>Analytical proof</strong>
+      <strong>Segment comparison</strong>
       <div class="evidence-table-wrap">
         <table class="evidence-table">
-          <thead>
-            <tr><th>Type</th><th>Detail</th></tr>
-          </thead>
-          <tbody>
-            ${bullets.map((bullet) => {
-              const parts = String(bullet).split(":");
-              const type = parts.length > 1 ? parts.shift() : "Note";
-              const detail = parts.length > 0 ? parts.join(":").trim() : String(bullet);
-              return `<tr><td>${escapeHtml(String(type))}</td><td>${escapeHtml(detail)}</td></tr>`;
-            }).join("")}
-          </tbody>
+          <thead><tr><th>Segment</th><th>Value</th><th>Share</th><th>Rank</th></tr></thead>
+          <tbody>${comparisonRows || `<tr><td colspan="4">No segment comparison available.</td></tr>`}</tbody>
         </table>
       </div>
     </div>
+    <div class="evidence-section">
+      <strong>What drives this insight</strong>
+      <div class="helper-text">${escapeHtml(evidence.contributionSummary || evidence.driverNarrative || "No dominant driver identified.")}</div>
+    </div>
+    <div class="evidence-section">
+      <strong>Driver breakdown</strong>
+      <div class="evidence-table-wrap">
+        <table class="evidence-table">
+          <thead><tr><th>Combination</th><th>Current</th><th>Prior</th><th>Delta</th><th>Lift share</th></tr></thead>
+          <tbody>${driverRows || `<tr><td colspan="5">No dominant driver combination identified.</td></tr>`}</tbody>
+        </table>
+      </div>
+      <div class="helper-text">${escapeHtml((evidence.filtersUsed || []).join(" · "))}</div>
+    </div>
+    ${trendConsistency}
+    <div class="evidence-section">
+      <strong>Confidence explanation</strong>
+      ${confidenceReasons ? `<ul class="evidence-reasons">${confidenceReasons}</ul>` : `<div class="helper-text">No confidence factors available.</div>`}
+    </div>
   `;
+}
+
+function buildUnifiedInsights(rows) {
+  const metric = state.selections.primaryMetric;
+  if (!metric) return buildDecisionInsights(rows);
+  const dimension = state.selectedDimension || chooseBestDimension(state.schema.profiles, state.schema.categoricals || []);
+  const metricValues = (rows || []).map((row) => parseNumber(row[metric])).filter((value) => value !== null);
+  const metricType = inferMetricType(metric, metricValues);
+  if (!dimension) {
+    return buildDecisionInsights(rows);
+  }
+  const comparison = aggregateByCategory(rows, dimension, metric, Math.max(state.topN || 8, 8), metricType);
+  if ((comparison.labels || []).length < 2) {
+    return buildDecisionInsights(rows);
+  }
+
+  const totalValue = (comparison.values || []).reduce((sum, value) => sum + (Number(value) || 0), 0);
+  const comparisonTable = comparison.labels.map((label, index) => ({
+    segment: label,
+    value: formatMetricValue(comparison.values[index], metricType),
+    share: totalValue ? percentFormatter.format((comparison.values[index] || 0) / totalValue) : "—",
+    rank: index + 1,
+    rawValue: comparison.values[index] || 0,
+  }));
+
+  const top = comparisonTable[0];
+  const runnerUp = comparisonTable[1];
+  const deltaRaw = (top?.rawValue || 0) - (runnerUp?.rawValue || 0);
+  const deltaPercent = (runnerUp?.rawValue || 0) > 0 ? (deltaRaw / runnerUp.rawValue) * 100 : 0;
+  const deltaSummary = metricType.kind === "rate"
+    ? `Delta ${((deltaRaw || 0) * 100).toFixed(1)} pp (${top.segment} vs ${runnerUp.segment})`
+    : `Delta ${formatMetricValue(deltaRaw, metricType)} (${top.segment} vs ${runnerUp.segment})`;
+
+  const periodSplit = splitRowsIntoCurrentPrior(rows);
+  const driverInfo = computeUserTopDriver({
+    rows,
+    metric,
+    metricType,
+    primaryDimension: dimension,
+    topSegment: top.segment,
+    periodSplit,
+  });
+  const periods = periodSplit.hasDateField ? periodSplit.periodsAnalysed : 0;
+  const confidence = computeUserUnifiedConfidence({
+    periods,
+    sampleSize: driverInfo.sampleSize || comparison.counts?.[0] || 0,
+    deltaPercent: Math.abs(deltaPercent || 0),
+    variance: driverInfo.varianceScore ?? 0,
+    hasDateField: periodSplit.hasDateField,
+  });
+  const action = buildUserDynamicAction({
+    metricKey: metric,
+    topSegment: top.segment,
+    driverCombination: driverInfo.driverCombinationText || top.segment,
+    confidence,
+    deltaStrength: Math.abs(deltaPercent || 0),
+  });
+
+  const insight = {
+    id: `user:${metric}:${dimension}:${top.segment}`,
+    headline: `${formatMetricLabel(metric)} is higher in ${top.segment} than ${runnerUp.segment}.`,
+    deltaSummary,
+    metricKey: metric,
+    dimensionKey: dimension,
+    topSegment: top.segment,
+    driverCombination: driverInfo.driverCombinationText || top.segment,
+    driverNarrative: driverInfo.narrative,
+    confidence,
+    action,
+    evidence: {
+      comparisonTable: comparisonTable.slice(0, 8),
+      contributionSummary: driverInfo.contributionSummary,
+      trendSummary: periodSplit.hasDateField ? {
+        periodsAnalysed: periods,
+        variance: driverInfo.varianceScore == null ? "—" : driverInfo.varianceScore.toFixed(2),
+      } : null,
+      consistencyScore: periodSplit.hasDateField ? Math.max(1, Math.min(100, Math.round((1 - Math.min(driverInfo.varianceScore || 0, 1)) * 100))) : null,
+      driverBreakdownTable: driverInfo.breakdownTable,
+      driverNarrative: driverInfo.narrative,
+      filtersUsed: [
+        `Metric: ${formatMetricLabel(metric)}`,
+        `Dimension: ${dimension}`,
+        periodSplit.hasDateField ? "Window: Last 30 days vs prior 30 days" : "Window: Snapshot (no date field)",
+      ],
+    },
+  };
+  return [insight];
+}
+
+function splitRowsIntoCurrentPrior(rows) {
+  if (!state.dateColumn) {
+    return { hasDateField: false, currentRows: rows || [], priorRows: [], periodsAnalysed: 0 };
+  }
+  const datedRows = (rows || [])
+    .map((row) => ({ row, date: parseDate(row[state.dateColumn]) }))
+    .filter((item) => item.date);
+  if (!datedRows.length) {
+    return { hasDateField: false, currentRows: rows || [], priorRows: [], periodsAnalysed: 0 };
+  }
+  const maxDate = new Date(Math.max(...datedRows.map((item) => item.date.getTime())));
+  const currentStart = new Date(maxDate);
+  currentStart.setDate(currentStart.getDate() - 29);
+  const priorEnd = new Date(currentStart);
+  priorEnd.setDate(priorEnd.getDate() - 1);
+  const priorStart = new Date(priorEnd);
+  priorStart.setDate(priorStart.getDate() - 29);
+  const currentRows = [];
+  const priorRows = [];
+  datedRows.forEach((item) => {
+    if (item.date >= currentStart && item.date <= maxDate) currentRows.push(item.row);
+    else if (item.date >= priorStart && item.date <= priorEnd) priorRows.push(item.row);
+  });
+  const dayKeys = new Set(datedRows.map((item) => formatDateInput(item.date)));
+  return {
+    hasDateField: true,
+    currentRows,
+    priorRows,
+    periodsAnalysed: Math.min(12, dayKeys.size >= 365 ? 12 : dayKeys.size >= 90 ? 3 : dayKeys.size >= 30 ? 2 : 1),
+    currentRange: [currentStart, maxDate],
+    priorRange: [priorStart, priorEnd],
+  };
+}
+
+function aggregateMetricForRows(rows, metric, metricType) {
+  const values = (rows || []).map((row) => parseNumber(row[metric])).filter((value) => value !== null);
+  if (!values.length) return { value: 0, count: 0 };
+  if (metricType?.kind === "rate") {
+    return { value: values.reduce((sum, value) => sum + value, 0) / values.length, count: values.length };
+  }
+  return { value: values.reduce((sum, value) => sum + value, 0), count: values.length };
+}
+
+function computeUserTopDriver({ rows, metric, metricType, primaryDimension, topSegment, periodSplit }) {
+  const candidates = (state.schema.categoricals || []).filter((col) => col && col !== primaryDimension).slice(0, 4);
+  const filteredRows = (rows || []).filter((row) => String(row[primaryDimension] ?? "Unknown").trim() === String(topSegment));
+  const sourceRows = filteredRows.length ? filteredRows : (rows || []);
+  const combos = [];
+  const comboDefs = [];
+  candidates.forEach((dim) => comboDefs.push([primaryDimension, dim]));
+  if (candidates.length >= 2) comboDefs.push([primaryDimension, candidates[0], candidates[1]]);
+  if (!comboDefs.length) comboDefs.push([primaryDimension]);
+
+  comboDefs.forEach((dims) => {
+    const map = new Map();
+    sourceRows.forEach((row) => {
+      const keyParts = dims.map((dim) => String(row[dim] ?? "Unknown").trim() || "Unknown");
+      if (String(row[primaryDimension] ?? "Unknown").trim() !== String(topSegment)) return;
+      const key = keyParts.join(" | ");
+      if (!map.has(key)) {
+        map.set(key, { key, dims, keyParts, rows: [] });
+      }
+      map.get(key).rows.push(row);
+    });
+    map.forEach((entry) => combos.push(entry));
+  });
+
+  if (!combos.length) {
+    return {
+      narrative: `No dominant driver identified.`,
+      contributionSummary: `No dominant driver identified.`,
+      driverCombinationText: topSegment,
+      breakdownTable: [],
+      sampleSize: 0,
+      varianceScore: null,
+    };
+  }
+
+  const scored = combos.map((combo) => {
+    const current = periodSplit.hasDateField
+      ? aggregateMetricForRows((periodSplit.currentRows || []).filter((row) => combo.rows.includes(row)), metric, metricType)
+      : aggregateMetricForRows(combo.rows, metric, metricType);
+    const prior = periodSplit.hasDateField
+      ? aggregateMetricForRows((periodSplit.priorRows || []).filter((row) => combo.rows.includes(row)), metric, metricType)
+      : { value: 0, count: 0 };
+    const delta = periodSplit.hasDateField ? (current.value - prior.value) : current.value;
+    return {
+      ...combo,
+      currentValue: current.value,
+      priorValue: prior.value,
+      delta,
+      sampleSize: current.count + prior.count,
+    };
+  });
+
+  const totalDelta = scored.reduce((sum, item) => sum + Math.max(item.delta, 0), 0) || 0;
+  const winnerTotal = scored.reduce((sum, item) => sum + Math.max(item.currentValue, 0), 0) || 0;
+  scored.forEach((item) => {
+    item.shareOfWinner = winnerTotal > 0 ? item.currentValue / winnerTotal : 0;
+    item.liftShare = totalDelta > 0 ? Math.max(item.delta, 0) / totalDelta : 0;
+    item.score = (item.liftShare * 0.6) + (item.shareOfWinner * 0.4);
+  });
+  scored.sort((a, b) => b.score - a.score);
+  const topDriver = scored[0];
+
+  const comboLabel = formatDriverCombinationLabel(topDriver?.keyParts || []);
+  const liftPct = percentFormatter.format(topDriver?.liftShare || 0);
+  const narrative = topDriver && (topDriver.liftShare > 0.05 || topDriver.shareOfWinner > 0.2)
+    ? `${comboLabel} contributes ${liftPct} of the lift.`
+    : "No dominant driver identified.";
+  const contributionSummary = topDriver && periodSplit.hasDateField
+    ? `${comboLabel} contributes ${liftPct} of the lift versus the prior 30-day period.`
+    : topDriver
+      ? `${comboLabel} is the largest contributing combination in the current snapshot.`
+      : "No dominant driver identified.";
+  const breakdownTable = scored.slice(0, 5).map((item) => ({
+    combination: formatDriverCombinationLabel(item.keyParts),
+    current: formatMetricValue(item.currentValue, metricType),
+    prior: periodSplit.hasDateField ? formatMetricValue(item.priorValue, metricType) : "—",
+    delta: periodSplit.hasDateField
+      ? (metricType.kind === "rate" ? `${((item.delta || 0) * 100).toFixed(1)} pp` : formatMetricValue(item.delta, metricType))
+      : "—",
+    liftShare: percentFormatter.format(item.liftShare || 0),
+  }));
+
+  let varianceScore = null;
+  if (periodSplit.hasDateField && topDriver) {
+    const daySeries = aggregateByDate(topDriver.rows, state.dateColumn, metric, "day", state.dateRange, metricType);
+    const values = daySeries.values || [];
+    if (values.length >= 2) {
+      const mean = values.reduce((sum, v) => sum + v, 0) / values.length || 0;
+      if (mean !== 0) {
+        const variance = values.reduce((sum, v) => sum + ((v - mean) ** 2), 0) / values.length;
+        varianceScore = Math.min(1, Math.sqrt(variance) / Math.abs(mean));
+      } else {
+        varianceScore = 1;
+      }
+    }
+  }
+
+  return {
+    narrative,
+    contributionSummary,
+    driverCombinationText: comboLabel,
+    breakdownTable,
+    sampleSize: topDriver?.sampleSize || 0,
+    varianceScore,
+  };
+}
+
+function formatDriverCombinationLabel(parts) {
+  const clean = (parts || []).filter(Boolean);
+  if (!clean.length) return "Unknown";
+  if (clean.length === 1) return clean[0];
+  if (clean.length === 2) return `${clean[0]} in ${clean[1]}`;
+  return `${clean[0]} in ${clean[1]} via ${clean.slice(2).join(" / ")}`;
+}
+
+function computeUserUnifiedConfidence({ periods, sampleSize, deltaPercent, variance, hasDateField }) {
+  let level = "high";
+  const reasons = [];
+  if (!hasDateField) {
+    level = "medium";
+    reasons.push("No historical time buckets available.");
+  }
+  if (periods < 3) {
+    level = "low";
+    reasons.push("Not enough time periods to confirm a stable trend.");
+  }
+  if (sampleSize < 8 && level !== "low") {
+    level = "medium";
+    reasons.push("Limited sample size in the top driver combination.");
+  }
+  if ((variance || 0) > 0.4 && level !== "low") {
+    level = "medium";
+    reasons.push("Trend shows volatility across periods.");
+  }
+  if ((deltaPercent || 0) < 10 && level !== "low") {
+    level = "medium";
+    reasons.push("Performance gap is relatively small.");
+  }
+  return {
+    level,
+    reasons: reasons.slice(0, 2),
+    metrics: { periods, sampleSize, deltaPercent, variance: variance || 0 },
+  };
+}
+
+function buildUserDynamicAction({ metricKey, topSegment, driverCombination, confidence, deltaStrength }) {
+  const name = formatMetricLabel(metricKey);
+  if (confidence?.level === "low") {
+    return `Validate whether ${driverCombination} remains the primary driver with additional time periods before reallocating budget.`;
+  }
+  if (/retention|churn|rate/i.test(name)) {
+    return `Identify what is unique about ${driverCombination} and apply the same lifecycle tactics to lift performance outside ${topSegment}.`;
+  }
+  if (/revenue|sales|arr|mrr|gmv/i.test(name)) {
+    return `Rebalance investment toward ${driverCombination} while protecting efficiency, then test expansion into the next best segment.`;
+  }
+  if (/pipeline|opportunit/i.test(name)) {
+    return `Inspect funnel stage conversion for ${driverCombination} and replicate the strongest stage improvements in lower performing segments.`;
+  }
+  if ((deltaStrength || 0) < 10) {
+    return `Monitor performance before reallocating budget due to a small performance gap.`;
+  }
+  return `Investigate drivers behind ${driverCombination} and run a controlled test to validate impact.`;
 }
 
 function buildDecisionInsights(rows) {
