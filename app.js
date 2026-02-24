@@ -1391,7 +1391,7 @@ function setStatus(message) {
  * @typedef {{
  * rows: Record<string, any>[],
  * columns: { name: string, type: "number" | "currency" | "percent" | "date" | "string" }[],
- * meta: { sourceType: "csv" | "pdf" | "sheet" | "api" | "demo", name?: string, dateField?: string, pdfMode?: "table" | "text" }
+ * meta: { sourceType: "csv" | "pdf" | "sheet" | "api" | "demo", name?: string, dateField?: string, hasDateField: boolean, pdfMode?: "table" | "text" }
  * }} NormalizedDataset
  */
 
@@ -1410,17 +1410,24 @@ function inferNormalizedColumnType(columnName, profile) {
 }
 
 function buildNormalizedDataset({ rows, columns, profiles, sourceMeta = {} }) {
+  const normalizedColumns = (columns || []).map((name) => ({
+    name,
+    type: inferNormalizedColumnType(name, profiles?.[name]),
+  }));
+  const inferredDateField = sourceMeta.dateField || state.dateColumn || undefined;
+  const hasDateField = Boolean(
+    inferredDateField
+    || normalizedColumns.some((column) => column.type === "date")
+  );
   /** @type {NormalizedDataset} */
   const dataset = {
     rows: Array.isArray(rows) ? rows : [],
-    columns: (columns || []).map((name) => ({
-      name,
-      type: inferNormalizedColumnType(name, profiles?.[name]),
-    })),
+    columns: normalizedColumns,
     meta: {
       sourceType: sourceMeta.sourceType || "csv",
       name: sourceMeta.name || undefined,
-      dateField: sourceMeta.dateField || state.dateColumn || undefined,
+      dateField: inferredDateField,
+      hasDateField,
       pdfMode: sourceMeta.pdfMode || undefined,
     },
   };
@@ -1439,6 +1446,11 @@ function renderDashboardRenderer({ dataset, mode }) {
   if (!dataset) return;
   state.normalizedDataset = dataset;
   state.mode = mode;
+  if (dataset.meta && dataset.meta.hasDateField === false) {
+    state.dateColumn = null;
+  } else if (dataset.meta?.dateField) {
+    state.dateColumn = dataset.meta.dateField;
+  }
   applyFiltersAndRender();
 }
 
@@ -2274,14 +2286,14 @@ function renderCharts(rows) {
       state.chosenXAxisType = "category";
       const series = aggregateByCategory(rows, category, metric, state.topN, metricType);
       trendTitle.textContent = `${metricLabel} by ${category}`;
-      trendSubtitle.textContent = "No date column detected";
+      trendSubtitle.textContent = "No date field detected in this dataset. Time based trends are unavailable.";
       trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType, series.counts);
     } else {
       state.chosenXAxisType = "index";
       const labels = rows.map((_, index) => index + 1);
       const values = rows.map((row) => parseNumber(row[metric])).map((value) => value ?? 0);
       trendTitle.textContent = `${metricLabel} by row`;
-      trendSubtitle.textContent = "No date column detected";
+      trendSubtitle.textContent = "No date field detected in this dataset. Time based trends are unavailable.";
       trendChartInstance = createLineChart("trendChart", labels, values, metricType);
     }
   }
