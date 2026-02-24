@@ -92,6 +92,7 @@ const uploadSheetsQuick = document.getElementById("uploadSheetsQuick");
 const uploadApiQuick = document.getElementById("uploadApiQuick");
 const modalDropZone = document.getElementById("modalDropZone");
 const modalUploadTrigger = document.getElementById("modalUploadTrigger");
+const modalUploadInput = document.getElementById("modalUploadInput");
 const modalCsvQuick = document.getElementById("modalCsvQuick");
 const modalPdfQuick = document.getElementById("modalPdfQuick");
 const modalSheetsQuick = document.getElementById("modalSheetsQuick");
@@ -256,14 +257,14 @@ function init() {
   if (uploadTrigger && uploadInput) {
     uploadTrigger.addEventListener("click", () => uploadInput.click());
   }
-  if (modalUploadTrigger && uploadInput) {
-    modalUploadTrigger.addEventListener("click", () => uploadInput.click());
+  if (modalUploadTrigger && modalUploadInput) {
+    modalUploadTrigger.addEventListener("click", () => modalUploadInput.click());
   }
   if (uploadCsvQuick && uploadInput) {
     uploadCsvQuick.addEventListener("click", () => uploadInput.click());
   }
-  if (modalCsvQuick && uploadInput) {
-    modalCsvQuick.addEventListener("click", () => uploadInput.click());
+  if (modalCsvQuick && modalUploadInput) {
+    modalCsvQuick.addEventListener("click", () => modalUploadInput.click());
   }
   if (uploadPdfQuick && pdfInput) {
     uploadPdfQuick.addEventListener("click", () => pdfInput.click());
@@ -294,6 +295,9 @@ function init() {
     if (!input) return;
     input.addEventListener("change", (event) => handleFileSelection(event.target.files[0]));
   });
+  if (modalUploadInput) {
+    modalUploadInput.addEventListener("change", (event) => handleFileSelection(event.target.files[0]));
+  }
 
   [loadSample, loadSampleInline].forEach((button) => {
     if (!button) return;
