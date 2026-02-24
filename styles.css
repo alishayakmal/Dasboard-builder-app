@@ -423,6 +423,29 @@ button:disabled {
   min-width: 0;
 }
 
+.detail-grid > * {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (min-width: 1200px) {
+  .detail-grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+
+  .detail-grid > #sampleInsightsRoot {
+    grid-column: span 7;
+  }
+
+  .detail-grid > .detail-chart {
+    grid-column: span 5;
+  }
+
+  .detail-grid > #sampleEvidencePanel {
+    grid-column: 1 / -1;
+  }
+}
+
 .highlight-insight {
   display: grid;
   gap: 6px;
@@ -476,7 +499,7 @@ button:disabled {
 }
 
 .evidence-panel {
-  margin-top: 12px;
+  margin-top: 0;
   padding: 12px;
   border-radius: 12px;
   border: 1px solid var(--border-color);
@@ -485,6 +508,70 @@ button:disabled {
   display: grid;
   gap: 8px;
   font-size: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.evidence-section {
+  display: grid;
+  gap: 8px;
+}
+
+.evidence-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.evidence-table {
+  width: 100%;
+  min-width: 360px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.evidence-table th,
+.evidence-table td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+}
+
+.evidence-table th {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.evidence-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.evidence-stat {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.evidence-stat span {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.evidence-stat strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.evidence-reasons {
+  margin: 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 4px;
 }
 
 .bar-chart {
@@ -529,6 +616,10 @@ button:disabled {
   display: grid;
   gap: 12px;
   margin-top: 12px;
+}
+
+.detail-grid > #sampleInsightsRoot {
+  margin-top: 0;
 }
 
 .insight-card {
