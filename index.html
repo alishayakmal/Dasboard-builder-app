@@ -175,7 +175,7 @@
       <section id="error" class="error hidden"></section>
       <section id="warnings" class="warnings hidden"></section>
 
-      <section id="state" class="state tab-panel" data-tab-panel="upload">
+      <section id="state" class="state tab-panel hidden" data-tab-panel="upload" aria-hidden="true">
         <div class="upload-panel">
           <div id="upload-data" class="upload-card" tabindex="-1">
             <div class="upload-card-heading">
@@ -489,6 +489,39 @@
       </form>
       <div id="signup-status" style="margin-top:8px;font-size:12px;opacity:.8"></div>
       <p id="formError" class="helper-text"></p>
+    </div>
+  </div>
+
+  <div id="uploaderModal" class="modal hidden" aria-hidden="true">
+    <div class="modal-card">
+      <div class="modal-brand">
+        <img class="logo-img" src="Brand/logo.png" alt="Shay Analytics AI" />
+        <span>Shay Analytics AI</span>
+      </div>
+      <button id="closeUploaderModal" class="modal-close">×</button>
+      <h3>Upload data</h3>
+      <p class="helper-text">Choose a source to generate KPIs, trends and insights.</p>
+      <div class="upload-card">
+        <div class="upload-card-grid">
+          <div class="drop-zone" id="modalDropZone">
+            <p>Drag and drop a CSV here</p>
+            <div class="upload-card-actions">
+              <button id="modalUploadTrigger" class="ghost">Choose file</button>
+            </div>
+          </div>
+          <div class="upload-help-panel">
+            <h3>Supported formats</h3>
+            <p>CSV, PDF, Google Sheets, and API sources.</p>
+            <p class="helper-text">Your data is processed in-browser for local analysis and exports.</p>
+            <div class="upload-source-buttons">
+              <button id="modalCsvQuick" class="ghost">Upload CSV</button>
+              <button id="modalPdfQuick" class="ghost">Upload PDF</button>
+              <button id="modalSheetsQuick" class="ghost">Google Sheets</button>
+              <button id="modalApiQuick" class="ghost">Connect API</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
