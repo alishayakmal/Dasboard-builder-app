@@ -73,6 +73,7 @@ const tabPanels = document.querySelectorAll("[data-tab-panel]");
 const dropZone = document.getElementById("dropZone");
 const uploadTrigger = document.getElementById("uploadTrigger");
 const uploadInput = document.getElementById("uploadInput");
+const loadFixtureButton = document.getElementById("loadFixture");
 const apiBaseUrl = document.getElementById("apiBaseUrl");
 const apiAuthType = document.getElementById("apiAuthType");
 const apiKey = document.getElementById("apiKey");
@@ -105,6 +106,7 @@ let currentSort = { key: null, direction: "asc" };
 let googleAccessToken = null;
 let googleTokenClient = null;
 let logoWarningShown = false;
+let renderKpiCallCount = 0;
 
 const samplePath = "data-sample.csv";
 // Use the deployed Apps Script Web App URL ending in /exec (not the editor URL).
@@ -194,6 +196,12 @@ function init() {
   applyBrandAssets();
 
   window.addEventListener("hashchange", handleRoute);
+
+  const isDev = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+  if (loadFixtureButton) {
+    loadFixtureButton.classList.toggle("hidden", !isDev);
+    loadFixtureButton.addEventListener("click", () => loadFixtureCsv());
+  }
 
   tabButtons.forEach((button) => {
     button.addEventListener("click", () => switchTab(button.dataset.tab));
@@ -315,6 +323,21 @@ function init() {
   disableUnavailableButtons();
   auditActionHandlers();
   console.log("handlers wired");
+}
+
+function loadFixtureCsv() {
+  const fixturePath = "./samples/fixture-stack.csv";
+  clearMessages();
+  setStatus("Loading fixture");
+  fetch(fixturePath)
+    .then((response) => {
+      if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+      return response.text();
+    })
+    .then((text) => parseCsvText(text))
+    .catch((error) => {
+      showError("Fixture CSV could not be loaded.", `Details: ${error.message}`);
+    });
 }
 
 function applyBrandAssets() {
@@ -1338,7 +1361,7 @@ function profileDataset(rows, columns) {
 
     const lower = col.toLowerCase();
     let type = "categorical";
-    if (dateRate >= 0.9) type = "date";
+    if (dateRate >= 0.9 || (dateRate >= 0.8 && numericRate < 0.5)) type = "date";
     else if (numericRate >= 0.9) type = "numeric";
 
     if (/activeusers|sessions/.test(lower)) type = "numeric";
@@ -1788,6 +1811,9 @@ function applyFiltersAndRender() {
   if (filterBadge) {
     filterBadge.textContent = `Filtered to: ${state.filters.industry || "All"}`;
   }
+  if (!state.schema.dates.length) {
+    showWarningMessage("No date field detected. Showing categorical view.");
+  }
 
   if (!runStep("buildKPIs", () => renderKPIs(scopedRows))) return;
   if (!runStep("buildCharts", () => renderCharts(scopedRows))) return;
@@ -1803,14 +1829,30 @@ function applyFiltersAndRender() {
 
 function runStep(step, fn) {
   try {
-    console.log(`STEP: ${step}`);
+    const summary = buildSchemaSummary();
+    console.log(`STEP: ${step}`, summary);
     fn();
+    console.log(`STEP DONE: ${step}`);
     return true;
   } catch (error) {
     console.error(`STEP FAILED: ${step}`, error);
     showError(`Dashboard step failed: ${step}.`, `Details: ${error?.message || error}`);
+    if (step === "buildKPIs") {
+      showError("KPI generation failed. Open Debug panel for details.", buildNumericFailureDetail(state.schema.profiles));
+    }
     return false;
   }
+}
+
+function buildSchemaSummary() {
+  return {
+    rowCount: state.filteredRows?.length || 0,
+    selectedMetric: state.selections.primaryMetric,
+    selectedDateField: state.dateColumn,
+    selectedBreakdown: state.selectedDimension,
+    numericCandidates: state.debug.numericCandidates,
+    dateCandidates: state.debug.dateCandidates,
+  };
 }
 
 function updateIngestionStatus(rows) {
@@ -1850,6 +1892,13 @@ function getFilteredRows() {
 }
 
 function renderKPIs(rows) {
+  if (renderKPIs.running) {
+    console.warn("renderKPIs re-entry detected");
+    return;
+  }
+  renderKPIs.running = true;
+  renderKpiCallCount += 1;
+  console.log(`renderKPIs call #${renderKpiCallCount}`, { rows: rows.length, metric: state.selections.primaryMetric });
   kpiGrid.innerHTML = "";
   const chosenMetrics = chooseKpiMetrics(state.schema.profiles, state.schema.numeric);
   const metrics = (chosenMetrics && chosenMetrics.length ? chosenMetrics : (state.schema.numeric || []).slice(0, 6)) || [];
@@ -1883,7 +1932,9 @@ function renderKPIs(rows) {
     `;
     kpiGrid.appendChild(card);
   });
+  renderKPIs.running = false;
 }
+renderKPIs.running = false;
 
 function renderCharts(rows) {
   if (trendChartInstance) trendChartInstance.destroy();
