@@ -395,24 +395,34 @@
       <form id="signupForm" class="modal-form">
         <label>Full name
           <input type="text" id="signupName" required />
+          <span class="field-error" id="nameError"></span>
         </label>
         <label>Email
           <input type="email" id="signupEmail" required />
+          <span class="field-error" id="emailError"></span>
         </label>
-        <label>Company (optional)
-          <input type="text" id="signupCompany" />
+        <label>Company
+          <input type="text" id="signupCompany" required />
+          <span class="field-error" id="companyError"></span>
         </label>
-        <label>Use case (optional)
-          <select id="signupUseCase">
+        <label>Use case
+          <select id="signupUseCase" required>
             <option value="">Select one</option>
-            <option value="Executive dashboards">Executive dashboards</option>
             <option value="Marketing reporting">Marketing reporting</option>
+            <option value="Sales performance">Sales performance</option>
+            <option value="Finance and budgeting">Finance and budgeting</option>
+            <option value="HR analytics">HR analytics</option>
             <option value="Product analytics">Product analytics</option>
             <option value="Operations">Operations</option>
             <option value="Other">Other</option>
           </select>
+          <span class="field-error" id="useCaseError"></span>
         </label>
-        <button id="signupSubmit" type="submit" class="primary">Create account</button>
+        <label id="useCaseDetailField" class="hidden">Describe your use case
+          <input type="text" id="signupUseCaseDetail" placeholder="Example: Weekly campaign performance dashboards for client teams" />
+          <span class="field-error" id="useCaseDetailError"></span>
+        </label>
+        <button id="signupSubmit" type="submit" class="primary" disabled>Create account</button>
       </form>
       <div id="signup-status" style="margin-top:8px;font-size:12px;opacity:.8"></div>
       <p id="formError" class="helper-text"></p>
