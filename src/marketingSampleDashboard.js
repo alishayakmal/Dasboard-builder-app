@@ -81,12 +81,13 @@ function renderKpis(container) {
     const deltaLabel = formatKpiDelta(kpi);
     const deltaArrow = kpi.direction === "up" ? "▲" : kpi.direction === "down" ? "▼" : "•";
     const metricConfig = getMetricConfig().find((m) => m.key === kpi.key);
-    const miniTrend = computeKpiMiniTrend(state.rows, kpi.key);
+    const miniTrend = computeKpiMiniTrend(state.rows, kpi.key, 30, { smoothSparkline: true });
     card.innerHTML = `
       <span>${kpi.label}</span>
       <strong title="${kpi.definition}">${formatValue(kpi.value, metricConfig.unit)}</strong>
       <em class="kpi-delta ${kpi.direction}">${deltaArrow} ${deltaLabel}</em>
       <div class="kpi-mini-trend">${buildKpiMiniTrendSvg(miniTrend, metricConfig.unit, kpi.label)}</div>
+      <div class="kpi-sparkline-caption">Daily trend last 30 days compared to prior 30 days</div>
       <small class="kpi-caption">${kpi.window}</small>
     `;
     container.appendChild(card);
@@ -103,8 +104,13 @@ function formatKpiDelta(kpi) {
 }
 
 function buildKpiMiniTrendSvg(series, unit, label) {
+  if (!series?.hasDateField) {
+    return `<div class="helper-text kpi-sparkline-empty">No time based trend available for this metric.</div>`;
+  }
   const currentSeries = Array.isArray(series?.currentSeries) ? series.currentSeries : [];
   const priorSeries = Array.isArray(series?.priorSeries) ? series.priorSeries : [];
+  const currentLabels = Array.isArray(series?.currentLabels) ? series.currentLabels : [];
+  const priorLabels = Array.isArray(series?.priorLabels) ? series.priorLabels : [];
   const length = Math.max(currentSeries.length, priorSeries.length, 30);
   const width = 240;
   const height = 50;
@@ -118,17 +124,31 @@ function buildKpiMiniTrendSvg(series, unit, label) {
   const linePath = (points) => points.map((value, index) => `${index === 0 ? "M" : "L"}${scaleX(index)},${scaleY(value)}`).join(" ");
   const currentPath = linePath(currentSeries);
   const priorPath = linePath(priorSeries);
-  const lastCurrent = currentSeries[currentSeries.length - 1] ?? 0;
-  const lastPrior = priorSeries[priorSeries.length - 1] ?? 0;
+  const hoverTargets = Array.from({ length }).map((_, index) => {
+    const currentValue = currentSeries[index] ?? 0;
+    const priorValue = priorSeries[index] ?? 0;
+    const currentDate = currentLabels[index];
+    const priorDate = priorLabels[index];
+    const displayDate = currentDate
+      ? new Date(currentDate).toLocaleString("en-US", { month: "short", day: "numeric" })
+      : `Day ${index + 1}`;
+    const priorDisplayDate = priorDate
+      ? new Date(priorDate).toLocaleString("en-US", { month: "short", day: "numeric" })
+      : `Day ${index + 1}`;
+    const x = scaleX(index);
+    const tooltip = `${displayDate}\nCurrent: ${formatValue(currentValue, unit)}\nPrior (${priorDisplayDate}): ${formatValue(priorValue, unit)}`;
+    return `
+      <rect x="${Math.max(0, x - 4)}" y="0" width="8" height="${height}" fill="transparent">
+        <title>${tooltip}</title>
+      </rect>
+    `;
+  }).join("");
 
   return `
     <svg class="kpi-sparkline" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-label="${label} 30 day comparison sparkline">
-      <path d="${priorPath}" fill="none" stroke="rgba(161,161,170,0.65)" stroke-width="1.5">
-        <title>Prior 30 days (day 30): ${formatValue(lastPrior, unit)}</title>
-      </path>
-      <path d="${currentPath}" fill="none" stroke="rgba(52,211,153,0.9)" stroke-width="1.8">
-        <title>Current 30 days (day 30): ${formatValue(lastCurrent, unit)}</title>
-      </path>
+      <path d="${priorPath}" fill="none" stroke="rgba(161,161,170,0.55)" stroke-width="1.4" stroke-dasharray="3 2" />
+      <path d="${currentPath}" fill="none" stroke="rgba(96,165,250,0.95)" stroke-width="1.9" />
+      ${hoverTargets}
     </svg>
   `;
 }
