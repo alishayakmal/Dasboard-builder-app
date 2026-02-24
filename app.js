@@ -522,6 +522,7 @@ function ensureDashboardChangeDataSourceButton() {
     button.addEventListener("click", () => {
       resetStateForNewDataset();
       switchTab("upload");
+      focusSourceSection("upload");
     });
     button.dataset.bound = "true";
   }
@@ -568,6 +569,11 @@ function syncUploadAnalysisState() {
 
   if (dashboard) {
     dashboard.classList.toggle("hidden", !hasDataset);
+  }
+
+  const uploadTabButton = Array.from(tabButtons || []).find((button) => button.dataset.tab === "upload");
+  if (uploadTabButton) {
+    uploadTabButton.classList.toggle("hidden", hasDataset);
   }
 
   if (hasDataset) {
