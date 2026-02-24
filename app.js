@@ -172,6 +172,8 @@ const percentFormatter = new Intl.NumberFormat("en-US", {
 });
 
 const state = {
+  normalizedDataset: null,
+  mode: "demo",
   rawRows: [],
   filteredRows: [],
   schema: {
@@ -402,7 +404,7 @@ function loadFixtureCsv() {
       if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
       return response.text();
     })
-    .then((text) => parseCsvText(text))
+    .then((text) => parseCsvText(text, { sourceType: "csv", name: "fixture-stack.csv" }))
     .catch((error) => {
       showError("Fixture CSV could not be loaded.", `Details: ${error.message}`);
     });
@@ -447,7 +449,10 @@ function handleFileSelection(file) {
   const reader = new FileReader();
   reader.onload = () => {
     const text = reader.result;
-    parseCsvText(text);
+    parseCsvText(text, {
+      sourceType: "csv",
+      name: file.name,
+    });
   };
   reader.onerror = () => {
     showError("Unable to read the file.", "Details: FileReader failed");
@@ -455,7 +460,7 @@ function handleFileSelection(file) {
   reader.readAsText(file);
 }
 
-function parseCsvText(text) {
+function parseCsvText(text, sourceMeta = {}) {
   setStatus("Parsing CSV");
   Papa.parse(text, {
     header: false,
@@ -467,7 +472,7 @@ function parseCsvText(text) {
         return;
       }
       console.log("parse complete");
-      ingestRows(results.data);
+      ingestRows(results.data, sourceMeta);
     },
   });
 }
@@ -1017,7 +1022,7 @@ async function handleApiFetch() {
       return;
     }
     apiStatus.textContent = "API data loaded";
-    ingestJsonRows(json);
+    ingestJsonRows(json, { sourceType: "api", name: `${base}${endpoint}` });
     switchTab("upload");
   } catch (error) {
     apiStatus.textContent = "Network error while fetching API data.";
@@ -1025,7 +1030,7 @@ async function handleApiFetch() {
   }
 }
 
-function ingestJsonRows(rows) {
+function ingestJsonRows(rows, sourceMeta = {}) {
   const columns = Array.from(
     rows.reduce((set, row) => {
       Object.keys(row || {}).forEach((key) => set.add(key));
@@ -1033,7 +1038,7 @@ function ingestJsonRows(rows) {
     }, new Set())
   );
   const rawRows = [columns, ...rows.map((row) => columns.map((col) => row[col]))];
-  ingestRows(rawRows);
+  ingestRows(rawRows, sourceMeta);
 }
 
 function handleExportToSheets() {
@@ -1096,7 +1101,7 @@ async function loadSampleFile(sample) {
       throw new Error(`Fetch failed: ${response.status}`);
     }
     const text = await response.text();
-    parseCsvText(text);
+    parseCsvText(text, { sourceType: "csv", name: sample?.name || sample?.file || "sample.csv" });
   } catch (error) {
     showError("Sample CSV could not be loaded. Check your connection or file path.", `Details: ${error.message}`);
   }
@@ -1167,7 +1172,7 @@ async function loadSheetData() {
       }
       updateGoogleStatus(true);
       const csvText = valuesToCsv(payload.values || []);
-      parseCsvText(csvText);
+      parseCsvText(csvText, { sourceType: "sheet", name: spreadsheetId || "Google Sheet" });
       switchTab("upload");
       return;
     }
@@ -1178,14 +1183,14 @@ async function loadSheetData() {
       return;
     }
     const text = await fetchSheetText(normalizedUrl);
-    parseCsvText(text);
+    parseCsvText(text, { sourceType: "sheet", name: normalizedUrl });
     switchTab("upload");
   } catch (error) {
     const fallback = buildSheetsFallback(normalizeSheetsUrl(input) || input);
     if (fallback) {
       try {
         const text = await fetchSheetText(fallback);
-        parseCsvText(text);
+        parseCsvText(text, { sourceType: "sheet", name: fallback });
         switchTab("upload");
         return;
       } catch (fallbackError) {
@@ -1271,7 +1276,7 @@ async function handlePdfUpload(file) {
     }
 
     const csvText = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
-    parseCsvText(csvText);
+    parseCsvText(csvText, { sourceType: "pdf", name: file?.name || "PDF upload", pdfMode: "table" });
     if (pdfStatus) pdfStatus.textContent = "PDF parsed. Generating dashboard...";
     switchTab("upload");
   } catch (error) {
@@ -1382,7 +1387,62 @@ function setStatus(message) {
   statusSection.classList.remove("hidden");
 }
 
-function ingestRows(rawRows) {
+/**
+ * @typedef {{
+ * rows: Record<string, any>[],
+ * columns: { name: string, type: "number" | "currency" | "percent" | "date" | "string" }[],
+ * meta: { sourceType: "csv" | "pdf" | "sheet" | "api" | "demo", name?: string, dateField?: string, pdfMode?: "table" | "text" }
+ * }} NormalizedDataset
+ */
+
+function inferNormalizedColumnType(columnName, profile) {
+  if (!profile) return "string";
+  if (profile.type === "date") return "date";
+  if (profile.type === "numeric") {
+    const lower = String(columnName || "").toLowerCase();
+    if (lower.includes("rate") || lower.includes("percent") || lower.includes("%") || lower.includes("ctr")) return "percent";
+    if (lower.includes("revenue") || lower.includes("spend") || lower.includes("amount") || lower.includes("price") || lower.includes("cost")) {
+      return "currency";
+    }
+    return "number";
+  }
+  return "string";
+}
+
+function buildNormalizedDataset({ rows, columns, profiles, sourceMeta = {} }) {
+  /** @type {NormalizedDataset} */
+  const dataset = {
+    rows: Array.isArray(rows) ? rows : [],
+    columns: (columns || []).map((name) => ({
+      name,
+      type: inferNormalizedColumnType(name, profiles?.[name]),
+    })),
+    meta: {
+      sourceType: sourceMeta.sourceType || "csv",
+      name: sourceMeta.name || undefined,
+      dateField: sourceMeta.dateField || state.dateColumn || undefined,
+      pdfMode: sourceMeta.pdfMode || undefined,
+    },
+  };
+  return dataset;
+}
+
+function getDashboardModeForDataset(dataset) {
+  if (!dataset) return "demo";
+  if (dataset.meta?.sourceType === "pdf" && dataset.meta?.pdfMode === "text") return "pdf-text";
+  return dataset.meta?.sourceType === "demo" ? "demo" : "user";
+}
+
+function renderDashboardRenderer({ dataset, mode }) {
+  // Shared renderer entry point. For now it delegates to the existing dashboard layout/render pipeline.
+  // All sources should call into this function after normalization.
+  if (!dataset) return;
+  state.normalizedDataset = dataset;
+  state.mode = mode;
+  applyFiltersAndRender();
+}
+
+function ingestRows(rawRows, sourceMeta = {}) {
   setStatus("Profiling columns");
   if (!rawRows || rawRows.length === 0) {
     showError("No rows found in this CSV.");
@@ -1454,12 +1514,26 @@ function ingestRows(rawRows) {
   state.selections.primaryMetric = recommendedMetrics[0] || state.schema.numeric[0] || null;
   state.selectedMetric = state.selections.primaryMetric;
   state.selectedDimension = chooseBestDimension(state.schema.profiles, state.schema.categoricals) || state.schema.dates[0] || null;
+  state.normalizedDataset = buildNormalizedDataset({
+    rows: state.rawRows,
+    columns: state.schema.columns,
+    profiles: state.schema.profiles,
+    sourceMeta: {
+      ...sourceMeta,
+      dateField: state.dateColumn,
+    },
+  });
+  state.mode = getDashboardModeForDataset(state.normalizedDataset);
 
   initControls(recommendedMetrics);
   setStatus("Rendering dashboard");
-  applyFiltersAndRender();
+  renderDashboardRenderer({
+    dataset: state.normalizedDataset,
+    mode: state.mode,
+  });
 
-  datasetSummary.textContent = `${rows.length} rows · ${state.schema.columns.length} columns`;
+  const sourceBadge = state.normalizedDataset?.meta?.sourceType ? ` · ${String(state.normalizedDataset.meta.sourceType).toUpperCase()}` : "";
+  datasetSummary.textContent = `${rows.length} rows · ${state.schema.columns.length} columns${sourceBadge}`;
   stateSection.classList.add("hidden");
   dashboard.classList.remove("hidden");
   if (statusSection) {
