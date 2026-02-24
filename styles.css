@@ -1958,13 +1958,6 @@ button:disabled {
   min-width: 0;
 }
 
-.dashboard-change-source-wrap {
-  position: relative;
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-
 .dashboard-upload-toggle {
   height: 40px;
   padding: 0 14px;
@@ -1976,14 +1969,14 @@ button:disabled {
   justify-self: start;
 }
 
-.dashboard.dashboard-unified-active .dashboard-change-source-wrap .dashboard-upload-toggle {
+.dashboard.dashboard-unified-active #dashboardChangeDataSourceBtn {
   background: var(--accent-primary);
   color: #fff;
   border-color: rgba(124, 58, 237, 0.55);
   box-shadow: 0 10px 22px rgba(124, 58, 237, 0.2);
 }
 
-.dashboard.dashboard-unified-active .dashboard-change-source-wrap .dashboard-upload-toggle:hover {
+.dashboard.dashboard-unified-active #dashboardChangeDataSourceBtn:hover {
   filter: brightness(1.03);
 }
 
@@ -2186,7 +2179,7 @@ button:disabled {
 
 @media (min-width: 1200px) {
   .dashboard.dashboard-unified-active > .section-header {
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
     column-gap: 14px;
   }
@@ -2209,19 +2202,8 @@ button:disabled {
     margin-top: 2px;
   }
 
-  .dashboard.dashboard-unified-active > .section-header .dashboard-change-source-wrap {
-    grid-column: 2;
-    grid-row: 1 / span 3;
-    align-self: start;
-    justify-items: end;
-  }
-
-  .dashboard.dashboard-unified-active > .section-header .dashboard-upload-toggle {
-    justify-self: end;
-  }
-
   .dashboard.dashboard-unified-active > .section-header .dashboard-actions-toolbar {
-    grid-column: 3;
+    grid-column: 2;
     grid-row: 1 / span 3;
     align-self: start;
     justify-items: end;
