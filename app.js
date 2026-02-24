@@ -10,6 +10,8 @@ const startFreeButton = document.getElementById("startFreeBtn");
 const heroStartButton = document.getElementById("heroStartBtn");
 const viewSamplesButton = document.getElementById("viewSamplesBtn");
 const signupModal = document.getElementById("signupModal");
+const uploaderModal = document.getElementById("uploaderModal");
+const closeUploaderModalButton = document.getElementById("closeUploaderModal");
 const closeModalButton = document.getElementById("closeModal");
 const signupForm = document.getElementById("signupForm");
 const formError = document.getElementById("formError");
@@ -88,6 +90,12 @@ const uploadCsvQuick = document.getElementById("uploadCsvQuick");
 const uploadPdfQuick = document.getElementById("uploadPdfQuick");
 const uploadSheetsQuick = document.getElementById("uploadSheetsQuick");
 const uploadApiQuick = document.getElementById("uploadApiQuick");
+const modalDropZone = document.getElementById("modalDropZone");
+const modalUploadTrigger = document.getElementById("modalUploadTrigger");
+const modalCsvQuick = document.getElementById("modalCsvQuick");
+const modalPdfQuick = document.getElementById("modalPdfQuick");
+const modalSheetsQuick = document.getElementById("modalSheetsQuick");
+const modalApiQuick = document.getElementById("modalApiQuick");
 const apiBaseUrl = document.getElementById("apiBaseUrl");
 const apiAuthType = document.getElementById("apiAuthType");
 const apiKey = document.getElementById("apiKey");
@@ -248,17 +256,38 @@ function init() {
   if (uploadTrigger && uploadInput) {
     uploadTrigger.addEventListener("click", () => uploadInput.click());
   }
+  if (modalUploadTrigger && uploadInput) {
+    modalUploadTrigger.addEventListener("click", () => uploadInput.click());
+  }
   if (uploadCsvQuick && uploadInput) {
     uploadCsvQuick.addEventListener("click", () => uploadInput.click());
+  }
+  if (modalCsvQuick && uploadInput) {
+    modalCsvQuick.addEventListener("click", () => uploadInput.click());
   }
   if (uploadPdfQuick && pdfInput) {
     uploadPdfQuick.addEventListener("click", () => pdfInput.click());
   }
+  if (modalPdfQuick && pdfInput) {
+    modalPdfQuick.addEventListener("click", () => pdfInput.click());
+  }
   if (uploadSheetsQuick) {
     uploadSheetsQuick.addEventListener("click", () => switchTab("sheets"));
   }
+  if (modalSheetsQuick) {
+    modalSheetsQuick.addEventListener("click", () => {
+      closeUploaderModal();
+      switchTab("sheets");
+    });
+  }
   if (uploadApiQuick) {
     uploadApiQuick.addEventListener("click", () => switchTab("api"));
+  }
+  if (modalApiQuick) {
+    modalApiQuick.addEventListener("click", () => {
+      closeUploaderModal();
+      switchTab("api");
+    });
   }
 
   [fileInput, fileInputInline, uploadInput].forEach((input) => {
@@ -282,6 +311,25 @@ function init() {
       dropZone.classList.remove("dragover");
       const file = event.dataTransfer?.files?.[0];
       handleFileSelection(file);
+    });
+  }
+  if (modalDropZone) {
+    modalDropZone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      modalDropZone.classList.add("dragover");
+    });
+    modalDropZone.addEventListener("dragleave", () => modalDropZone.classList.remove("dragover"));
+    modalDropZone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      modalDropZone.classList.remove("dragover");
+      const file = event.dataTransfer?.files?.[0];
+      handleFileSelection(file);
+    });
+  }
+  if (closeUploaderModalButton) closeUploaderModalButton.addEventListener("click", closeUploaderModal);
+  if (uploaderModal) {
+    uploaderModal.addEventListener("click", (event) => {
+      if (event.target === uploaderModal) closeUploaderModal();
     });
   }
 
@@ -501,9 +549,7 @@ function ensureDashboardActionsToolbar() {
 
   if (changeDataButton && !changeDataButton.dataset.bound) {
     changeDataButton.addEventListener("click", () => {
-      resetStateForNewDataset();
-      switchTab("upload");
-      focusSourceSection("upload");
+      openUploaderModal();
     });
     changeDataButton.dataset.bound = "true";
   }
@@ -527,23 +573,35 @@ function updateAnalysisHeaderState(hasDataset) {
     dashboardSectionTitle.textContent = hasDataset ? "Analysis" : "Upload";
   }
   const toolbar = document.getElementById("dashboardActionsToolbar");
-  if (toolbar) toolbar.classList.toggle("hidden", !hasDataset);
+  if (toolbar) toolbar.classList.remove("hidden");
   const uploadToggle = document.getElementById("dashboardChangeDataSourceBtn");
   if (uploadToggle) {
     uploadToggle.textContent = hasDataset ? "Change data source" : "Upload data";
-    uploadToggle.classList.toggle("hidden", !hasDataset);
+    uploadToggle.classList.remove("hidden");
   }
   [downloadPdfButton, exportCsvButton, downloadInsightsButton, exportSheetsButton].forEach((button) => {
     if (!button) return;
     button.classList.toggle("hidden", !hasDataset);
   });
   if (!hasDataset) {
-    if (datasetSummary) datasetSummary.textContent = "Choose a source to begin.";
+    if (datasetSummary) datasetSummary.textContent = "";
     if (datasetInlineNotice) {
       datasetInlineNotice.classList.add("hidden");
       datasetInlineNotice.textContent = "";
     }
   }
+}
+
+function openUploaderModal() {
+  if (!uploaderModal) return;
+  uploaderModal.classList.remove("hidden");
+  uploaderModal.setAttribute("aria-hidden", "false");
+}
+
+function closeUploaderModal() {
+  if (!uploaderModal) return;
+  uploaderModal.classList.add("hidden");
+  uploaderModal.setAttribute("aria-hidden", "true");
 }
 
 function hasLoadedDataset() {
@@ -558,6 +616,7 @@ function hasUserDataLoaded() {
 
 function setUiMode(mode) {
   state.uiMode = mode;
+  if (mode === "ready") closeUploaderModal();
   syncUploadAnalysisState();
 }
 
@@ -566,7 +625,8 @@ function syncUploadAnalysisState() {
   updateAnalysisHeaderState(hasDataset);
 
   if (dashboard) {
-    dashboard.classList.toggle("hidden", !hasDataset);
+    dashboard.classList.remove("hidden");
+    dashboard.classList.toggle("dashboard-empty-mode", !hasDataset);
   }
 
   const uploadTabButton = Array.from(tabButtons || []).find((button) => button.dataset.tab === "upload");
@@ -579,11 +639,9 @@ function syncUploadAnalysisState() {
   }
 
   const uploadTabActive = Array.from(tabButtons || []).some((button) => button.dataset.tab === "upload" && button.classList.contains("active"));
-  if (stateSection && !hasDataset && uploadTabActive) {
-    stateSection.classList.toggle("hidden", hasDataset);
-    stateSection.classList.toggle("is-loading", state.uiMode === "loading");
-  } else if (stateSection && hasDataset) {
+  if (stateSection) {
     stateSection.classList.add("hidden");
+    stateSection.classList.toggle("is-loading", state.uiMode === "loading" && uploadTabActive);
   }
 
   [uploadTrigger, loadFixtureButton].forEach((btn) => {
