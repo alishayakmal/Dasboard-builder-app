@@ -25,6 +25,8 @@ export async function renderSampleDashboard() {
   const insightsRoot = document.getElementById("sampleInsightsRoot");
 
   if (!kpiRoot || !trendMetric || !trendBreakdown || !trendChart || !dimensionSelect || !breakdownChart || !insightsRoot) {
+    console.warn("Sample dashboard elements missing. Retrying...");
+    setTimeout(() => renderSampleDashboard(), 150);
     return;
   }
 
