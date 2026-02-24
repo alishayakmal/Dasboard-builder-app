@@ -210,6 +210,7 @@ const state = {
   chosenXAxisType: "category",
   industryColumn: null,
   topN: 8,
+  sampleTabAutoloaded: false,
 };
 
 document.addEventListener("DOMContentLoaded", init);
@@ -498,7 +499,7 @@ function loadFixtureCsv() {
       if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
       return response.text();
     })
-    .then((text) => parseCsvText(text, { sourceType: "csv", name: "fixture-stack.csv" }))
+    .then((text) => parseCsvText(text, { sourceType: "csv", name: "fixture-stack.csv", isSample: true }))
     .catch((error) => {
       showError("Fixture CSV could not be loaded.", `Details: ${error.message}`);
     });
@@ -583,6 +584,10 @@ function switchTab(tabName) {
   tabPanels.forEach((panel) => {
     panel.classList.toggle("hidden", panel.dataset.tabPanel !== tabName);
   });
+  if (tabName === "samples" && !state.rawRows.length && !state.sampleTabAutoloaded) {
+    state.sampleTabAutoloaded = true;
+    loadFixtureCsv();
+  }
 }
 
 function getSignedIn() {
@@ -1195,10 +1200,31 @@ async function loadSampleFile(sample) {
       throw new Error(`Fetch failed: ${response.status}`);
     }
     const text = await response.text();
-    parseCsvText(text, { sourceType: "csv", name: sample?.name || sample?.file || "sample.csv" });
+    parseCsvText(text, { sourceType: "csv", name: sample?.name || sample?.file || "sample.csv", isSample: true });
   } catch (error) {
     showError("Sample CSV could not be loaded. Check your connection or file path.", `Details: ${error.message}`);
   }
+}
+
+function activateSourceTab(sourceMeta = {}) {
+  const sourceType = String(sourceMeta?.sourceType || "").toLowerCase();
+  if (sourceMeta?.isSample) {
+    switchTab("samples");
+    return;
+  }
+  if (sourceType === "sheet") {
+    switchTab("sheets");
+    return;
+  }
+  if (sourceType === "api") {
+    switchTab("api");
+    return;
+  }
+  if (sourceType === "pdf") {
+    switchTab("pdf");
+    return;
+  }
+  switchTab("upload");
 }
 
 function normalizeSheetsUrl(input) {
@@ -1620,11 +1646,15 @@ function renderDashboardRenderer({ dataset, mode }) {
     hasCategoricalDimensions: Boolean(dataset.meta?.hasCategoricalDimensions),
   };
   state.mode = mode;
+  dashboard?.setAttribute("data-dashboard-mode", mode || "user");
+  dashboard?.setAttribute("data-source-type", dataset.meta?.sourceType || "csv");
   if (dataset.meta && dataset.meta.hasDateField === false) {
     state.dateColumn = null;
   } else if (dataset.meta?.dateField) {
     state.dateColumn = dataset.meta.dateField;
   }
+  ensureUnifiedUserDashboardLayout();
+  dashboard?.classList.add("dashboard-unified-active");
   applyFiltersAndRender();
 }
 
@@ -1722,6 +1752,7 @@ function ingestRows(rawRows, sourceMeta = {}) {
   datasetSummary.textContent = `${rows.length} rows · ${state.schema.columns.length} columns${sourceBadge}`;
   stateSection.classList.add("hidden");
   dashboard.classList.remove("hidden");
+  activateSourceTab(sourceMeta);
   if (statusSection) {
     statusSection.classList.add("hidden");
     statusSection.textContent = "";
@@ -2578,23 +2609,23 @@ function renderCharts(rows) {
     state.chosenXAxisType = "date";
     const bucket = rows.length > 200 ? "week" : "day";
     const series = aggregateByDate(rows, state.dateColumn, metric, bucket, state.dateRange, metricType);
-    trendTitle.textContent = `${metricLabel} trend`;
+    trendTitle.textContent = "Month over month trend";
     const periodLabel = series.labels.length < 3 ? `${series.labels.length} periods (limited)` : `${series.labels.length} periods`;
-    trendSubtitle.textContent = `Grouped by ${bucket} · ${periodLabel}`;
+    trendSubtitle.textContent = `Metric: ${metricLabel} · ${periodLabel}`;
     trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType, series.counts);
   } else {
     const category = chooseCategoryColumn(rows, state.schema.profiles);
     if (category) {
       state.chosenXAxisType = "category";
       const series = aggregateByCategory(rows, category, metric, state.topN, metricType);
-      trendTitle.textContent = `${metricLabel} by ${category}`;
+      trendTitle.textContent = "Month over month trend";
       trendSubtitle.textContent = "No date field detected in this dataset. Time based trends are unavailable.";
       trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType, series.counts);
     } else {
       state.chosenXAxisType = "index";
       const labels = rows.map((_, index) => index + 1);
       const values = rows.map((row) => parseNumber(row[metric])).map((value) => value ?? 0);
-      trendTitle.textContent = `${metricLabel} by row`;
+      trendTitle.textContent = "Month over month trend";
       trendSubtitle.textContent = "No date field detected in this dataset. Time based trends are unavailable.";
       trendChartInstance = createLineChart("trendChart", labels, values, metricType);
     }
@@ -2606,15 +2637,15 @@ function renderCharts(rows) {
     state.selectedDimension = dimension;
     if (dimensionSelect.value !== dimension) dimensionSelect.value = dimension;
     breakdown = aggregateByCategory(rows, dimension, metric, state.topN, metricType);
-    barTitle.textContent = `${metricLabel} by ${dimension}`;
-    barSubtitle.textContent = `Top ${state.topN}`;
+    barTitle.textContent = "Performance details";
+    barSubtitle.textContent = `Dimension: ${dimension}`;
     barChartInstance = createBarChart("barChart", breakdown.labels, breakdown.values, metricType, breakdown.counts);
   } else {
     state.selectedDimension = null;
     if (dimensionSelect) dimensionSelect.value = "";
     const labels = rows.map((_, index) => index + 1);
     const values = rows.map((row) => parseNumber(row[metric]) ?? 0);
-    barTitle.textContent = `${metric} by row`;
+    barTitle.textContent = "Performance details";
     barSubtitle.textContent = "No category column detected";
     barChartInstance = createBarChart("barChart", labels, values, metricType);
   }
