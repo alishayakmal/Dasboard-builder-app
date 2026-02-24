@@ -2239,6 +2239,7 @@ function ingestRows(rawRows, sourceMeta = {}) {
 
   const sourceBadge = state.normalizedDataset?.meta?.sourceType ? ` · ${String(state.normalizedDataset.meta.sourceType).toUpperCase()}` : "";
   datasetSummary.textContent = `${rows.length} rows · ${state.schema.columns.length} columns${sourceBadge}`;
+  closeUploaderModal();
   stateSection.classList.add("hidden");
   dashboard.classList.remove("hidden");
   activateSourceTab(sourceMeta);
