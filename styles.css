@@ -1943,7 +1943,7 @@ button:disabled {
   min-width: 0;
 }
 
-.dashboard-upload-popover {
+.dashboard-change-source-wrap {
   position: relative;
   display: grid;
   gap: 6px;
@@ -1959,48 +1959,6 @@ button:disabled {
   align-items: center;
   justify-content: center;
   justify-self: start;
-}
-
-.dashboard-upload-panel {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  z-index: 30;
-  width: min(380px, calc(100vw - 48px));
-  background: rgba(15, 23, 42, 0.95);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 14px;
-  box-shadow: 0 16px 34px rgba(2, 6, 23, 0.35);
-  padding: 12px;
-  display: grid;
-  gap: 10px;
-}
-
-.dashboard-upload-dropzone {
-  border: 1px dashed rgba(148, 163, 184, 0.3);
-  border-radius: 12px;
-  padding: 12px;
-  background: rgba(2, 6, 23, 0.35);
-  display: grid;
-  gap: 4px;
-  cursor: pointer;
-}
-
-.dashboard-upload-dropzone.dragover {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px var(--focus-ring);
-}
-
-.dashboard-upload-panel-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.dashboard-upload-panel-actions > button {
-  height: 36px;
-  padding: 0 12px;
-  border-radius: 999px;
 }
 
 .dashboard-actions-row {
@@ -2225,7 +2183,7 @@ button:disabled {
     margin-top: 2px;
   }
 
-  .dashboard.dashboard-unified-active > .section-header .dashboard-upload-popover {
+  .dashboard.dashboard-unified-active > .section-header .dashboard-change-source-wrap {
     grid-column: 2;
     grid-row: 1 / span 3;
     align-self: start;
@@ -2234,11 +2192,6 @@ button:disabled {
 
   .dashboard.dashboard-unified-active > .section-header .dashboard-upload-toggle {
     justify-self: end;
-  }
-
-  .dashboard.dashboard-unified-active > .section-header .dashboard-upload-panel {
-    left: auto;
-    right: 0;
   }
 
   .dashboard.dashboard-unified-active > .section-header .dashboard-actions-toolbar {
