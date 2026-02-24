@@ -242,6 +242,35 @@ function showEvidence(panel, insight) {
     `
     : "<div class=\"helper-text\">No comparison evidence available.</div>";
   const trendSummary = evidence.trendSummary || {};
+  const driverRows = Array.isArray(evidence.driverBreakdownTable) ? evidence.driverBreakdownTable : [];
+  const driverTable = driverRows.length
+    ? `
+      <div class="evidence-table-wrap">
+        <table class="evidence-table">
+          <thead>
+            <tr>
+              <th>Combination</th>
+              <th>Current</th>
+              <th>Prior</th>
+              <th>Delta</th>
+              <th>Lift share</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${driverRows.map((row) => `
+              <tr>
+                <td>${row.combination}</td>
+                <td>${row.currentLabel}</td>
+                <td>${row.priorLabel}</td>
+                <td>${row.deltaLabel}</td>
+                <td>${row.liftShareLabel}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `
+    : "<div class=\"helper-text\">No dominant driver breakdown identified.</div>";
   const periodsAnalysed = Number.isFinite(confidence.metrics?.periods) ? confidence.metrics.periods : (trendSummary.periodsAnalysed ?? 0);
   const periodsExplanation = periodsAnalysed === 1
     ? "Only one time period available. Trend reliability is limited."
@@ -259,6 +288,9 @@ function showEvidence(panel, insight) {
     <div class="evidence-section">
       <strong>What drives this insight</strong>
       <div>${evidence.contributionSummary || "No contribution summary available."}</div>
+      <div>${evidence.driverDominant ? `Most of the lift comes from ${evidence.driverNarrative}.` : (evidence.driverNarrative || "")}</div>
+      ${driverTable}
+      ${evidence.driverFiltersUsed ? `<div class="helper-text">Filters used: ${evidence.driverFiltersUsed}</div>` : ""}
     </div>
     <div class="evidence-section">
       <strong>Trend consistency</strong>
