@@ -5,9 +5,30 @@
  */
 
 export const miniKpis = [
-  { label: "Revenue", value: "$1.4M", delta: "+12%" },
-  { label: "Retention", value: "52%", delta: "+3 pp" },
-  { label: "Active users", value: "84k", delta: "+9%" },
+  {
+    label: "Revenue",
+    value: "$1.4M",
+    delta: "+12%",
+    deltaType: "percent",
+    window: "Last 7 days vs prior 7 days",
+    definition: "Sum of Revenue over the selected period.",
+  },
+  {
+    label: "Retention",
+    value: "52%",
+    delta: "+3 pp",
+    deltaType: "percentagePoints",
+    window: "Last 7 days vs prior 7 days",
+    definition: "Retained users / eligible users.",
+  },
+  {
+    label: "Active users",
+    value: "84k",
+    delta: "+9%",
+    deltaType: "percent",
+    window: "Last 7 days vs prior 7 days",
+    definition: "Unique users with at least one session.",
+  },
 ];
 
 /** @type {MiniPoint[]} */
