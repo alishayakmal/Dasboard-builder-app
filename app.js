@@ -531,6 +531,16 @@ function handleSignInClick() {
     routeTo("app");
     return;
   }
+  logEvent({
+    source: "auth",
+    action: "sign_in",
+    fullName: signupFormState.fullName || leadNameInput?.value?.trim() || "",
+    email: localStorage.getItem("currentUser") || leadEmailInput?.value?.trim() || "",
+    company: signupFormState.company || leadCompanyInput?.value?.trim() || "",
+    useCase: signupFormState.useCase || leadUseCaseInput?.value?.trim() || "",
+    useCaseDetail: signupFormState.useCaseDetail || leadUseCaseDetailInput?.value?.trim() || "",
+    timestamp: new Date().toISOString(),
+  }).catch(() => {});
   openModal();
 }
 
@@ -595,8 +605,9 @@ function handleSignupSubmit(event) {
     company,
     useCase,
     useCaseDetail: useCaseDetail || "",
-    createdAt: new Date().toISOString(),
     source: "signup",
+    action: "sign_up",
+    timestamp: new Date().toISOString(),
   };
 
   postSignupToAppsScript(payload).then((result) => {
