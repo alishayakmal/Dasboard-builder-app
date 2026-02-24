@@ -2076,24 +2076,15 @@ function buildDebugInfo() {
   return `Debug: numericCandidates [${numericCandidates}], usableNumericMetrics [${usableNumeric}], dateCandidates [${dateCandidates}], chosenXAxisType ${chosenXAxisType}`;
 }
 function chooseKpiMetrics(profile, numericColumns) {
-  const domainKeywords = {
-    finance: ["revenue", "sales", "profit", "margin", "cost", "expense", "spend", "cash", "income"],
-    marketing: ["impression", "click", "ctr", "cvr", "roas", "conversion", "campaign", "ad"],
-    product: ["user", "session", "active", "retention", "engagement", "signup", "conversion"],
-    operations: ["order", "shipment", "delivery", "inventory", "return", "units", "fulfillment"],
-    general: ["revenue", "sales", "cost", "profit", "orders", "users", "sessions", "rate", "return"],
-  };
-
-  const keywords = Array.from(new Set([...(domainKeywords[state.domain] || []), ...domainKeywords.general]));
-
   return numericColumns
-    .filter((col) => !/\b(id|guid|uuid|hash|zip|postal|code)\b/i.test(col))
+    .map((col) => ({ col, quality: classifyNumericMetricColumn(col, profile[col], state.rawRows?.length || 0) }))
+    .filter((item) => !item.quality.isIdentifierLike)
     .map((col) => {
-      const missingScore = 1 - (profile[col].missingRate || 0);
-      const nameScore = keywords.some((keyword) => col.toLowerCase().includes(keyword)) ? 1 : 0;
-      const varianceScore = profile[col].std ? Math.min(profile[col].std / (Math.abs(profile[col].mean) + 1), 1) : 0.2;
-      const score = missingScore * 0.5 + nameScore * 0.35 + varianceScore * 0.15;
-      return { col, score };
+      const missingScore = 1 - (profile[col.col].missingRate || 0);
+      const varianceScore = profile[col.col].std ? Math.min(profile[col.col].std / (Math.abs(profile[col.col].mean) + 1), 1) : 0.2;
+      const typePriority = col.quality.kindPriority;
+      const score = (typePriority * 0.55) + (missingScore * 0.3) + (varianceScore * 0.15);
+      return { col: col.col, score };
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, 6)
@@ -3267,44 +3258,81 @@ function renderInsights(rows) {
     evidencePanel.innerHTML = `<div class="helper-text">Select an insight to view evidence details.</div>`;
   }
   const insights = buildUnifiedInsights(rows);
-  insights.forEach((insight) => {
-    const card = document.createElement("li");
-    card.className = "insight-card user-insight-card";
-    const confidenceLevel = insight?.confidence?.level || inferUserInsightConfidence(insight);
-    const confidenceLabel = confidenceLevel.charAt(0).toUpperCase() + confidenceLevel.slice(1);
-    const whyLine = confidenceLevel !== "high"
-      ? `<p class="insight-meta confidence-why"><strong>Why this confidence:</strong> ${escapeHtml((insight?.confidence?.reasons || [buildUserInsightConfidenceReason(insight)]).slice(0, 2).join(" "))}</p>`
-      : "";
-    const evidenceSummary = insight?.deltaSummary || extractInsightBullet(insight, "Evidence:") || insight.summary || "";
-    const driverLine = insight?.driverNarrative
-      || extractInsightBullet(insight, "Why:")?.replace(/^Why:\s*/i, "")
-      || insight.summary;
-    const actionLine = insight?.action
-      || extractInsightBullet(insight, "Next step:")?.replace(/^Next step:\s*/i, "")
-      || "Investigate top drivers and validate with a controlled slice.";
-    const headline = insight?.headline || insight?.title || "Insight";
-    card.innerHTML = `
-      <h4>${escapeHtml(headline)}</h4>
-      <p class="insight-meta">${escapeHtml(evidenceSummary)}</p>
-      <p class="insight-meta">Driver: ${escapeHtml(driverLine)}</p>
-      <p class="insight-meta">Action: ${escapeHtml(actionLine)}</p>
+  const insight = insights[0];
+  if (!insight) return;
+  const card = document.createElement("li");
+  card.className = "insight-card user-insight-card user-insight-summary-card";
+  const confidenceLevel = insight?.confidence?.level || inferUserInsightConfidence(insight);
+  const confidenceLabel = confidenceLevel.charAt(0).toUpperCase() + confidenceLevel.slice(1);
+  const whyLine = confidenceLevel !== "high"
+    ? `<p class="insight-meta confidence-why"><strong>Why this confidence:</strong> ${escapeHtml((insight?.confidence?.reasons || [buildUserInsightConfidenceReason(insight)]).slice(0, 2).join(" "))}</p>`
+    : "";
+  const metricQuality = classifyNumericMetricColumn(
+    state.selections.primaryMetric,
+    state.schema.profiles[state.selections.primaryMetric],
+    rows.length
+  );
+  const warningTag = metricQuality.isIdentifierLike
+    ? `<span class="metric-warning-tag">Identifier-like metric, insights may be low quality</span>`
+    : "";
+  const diagnostics = insight?.diagnostics || {};
+  const diagnosticsMarkup = `
+    <details class="insight-diagnostics">
+      <summary>More diagnostics</summary>
+      <div class="diagnostics-grid">
+        <div>
+          <strong>Anomalies</strong>
+          <ul>${(diagnostics.anomalies || ["No notable anomalies detected."]).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        </div>
+        <div>
+          <strong>Concentration risk</strong>
+          <ul>${(diagnostics.concentrationRisk || ["Concentration risk appears moderate."]).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        </div>
+        <div>
+          <strong>Drivers and relationships</strong>
+          <ul>${(diagnostics.relationships || ["No additional relationships identified."]).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        </div>
+      </div>
+    </details>
+  `;
+  card.innerHTML = `
+    <div class="insight-summary-header">
+      <h4>${escapeHtml(insight.headline || insight.title || "Executive summary")}</h4>
+      ${warningTag}
+    </div>
+    <section class="insight-section">
+      <h5>Executive summary</h5>
+      <p class="insight-meta">${escapeHtml(insight.executiveSummary || insight.deltaSummary || insight.summary || "")}</p>
+      <ul class="insight-mini-list">
+        ${(insight.executiveBullets || []).slice(0, 2).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+      </ul>
+    </section>
+    <section class="insight-section">
+      <h5>Top driver</h5>
+      <p class="insight-meta">${escapeHtml(insight.driverNarrative || "No dominant driver identified.")}</p>
+      <p class="insight-meta subtle">${escapeHtml(insight.deltaSummary || "")}</p>
+    </section>
+    <section class="insight-section">
+      <h5>Recommended action</h5>
+      <p class="insight-meta">${escapeHtml(insight.action || "Investigate top drivers and validate with a controlled test.")}</p>
       <span class="severity ${confidenceLevel} confidence-pill" tabindex="0" aria-label="Confidence info: Confidence reflects data coverage, consistency and evidence quality for this insight.">
         Confidence: ${confidenceLabel}
-        <span class="confidence-tooltip" role="tooltip">Confidence reflects data coverage, consistency and evidence quality for this insight.</span>
+        <span class="confidence-tooltip" role="tooltip">Confidence reflects data coverage, sample size, and consistency over time.</span>
       </span>
       ${whyLine}
-      <button type="button" class="ghost view-evidence">View evidence</button>
-    `;
-    const button = card.querySelector(".view-evidence");
-    if (button) {
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        renderUserInsightEvidence(evidencePanel, insight);
-      });
-    }
-    insightsList.appendChild(card);
-  });
+    </section>
+    ${diagnosticsMarkup}
+    <button type="button" class="ghost view-evidence">View evidence</button>
+  `;
+  const button = card.querySelector(".view-evidence");
+  if (button) {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      renderUserInsightEvidence(evidencePanel, insight);
+    });
+  }
+  insightsList.appendChild(card);
 }
 
 function extractInsightBullet(insight, prefix) {
@@ -3518,8 +3546,27 @@ function buildUnifiedInsights(rows) {
         periodSplit.hasDateField ? "Window: Last 30 days vs prior 30 days" : "Window: Snapshot (no date field)",
       ],
     },
+    executiveSummary: `${formatMetricLabel(metric)} shows a clear gap between ${top.segment} and ${runnerUp.segment}${metricQualitySuffix(metric, rows.length)}`,
+    executiveBullets: [
+      `${top.segment} ranks #1 with ${top.value}; ${runnerUp.segment} ranks #2 with ${runnerUp.value}.`,
+      `Top driver: ${driverInfo.driverCombinationText || top.segment} (${percentFormatter.format((driverInfo.topLiftShare || 0))} of measured lift).`,
+    ],
+    diagnostics: buildInsightDiagnostics({
+      rows,
+      metric,
+      metricType,
+      comparisonTable,
+      driverInfo,
+      deltaPercent,
+      dimension,
+    }),
   };
   return [insight];
+}
+
+function metricQualitySuffix(metric, rowCount) {
+  const quality = classifyNumericMetricColumn(metric, state.schema.profiles[metric], rowCount);
+  return quality.isIdentifierLike ? ", but the selected metric behaves like an identifier." : ".";
 }
 
 function splitRowsIntoCurrentPrior(rows) {
@@ -3667,9 +3714,50 @@ function computeUserTopDriver({ rows, metric, metricType, primaryDimension, topS
     contributionSummary,
     driverCombinationText: comboLabel,
     breakdownTable,
+    topLiftShare: topDriver?.liftShare || 0,
     sampleSize: topDriver?.sampleSize || 0,
     varianceScore,
   };
+}
+
+function buildInsightDiagnostics({ rows, metric, metricType, comparisonTable, driverInfo, deltaPercent, dimension }) {
+  const anomalies = [];
+  const concentrationRisk = [];
+  const relationships = [];
+  const topShare = comparisonTable?.[0]?.rawValue && comparisonTable.length
+    ? (comparisonTable[0].rawValue / Math.max(1, comparisonTable.reduce((s, r) => s + (r.rawValue || 0), 0)))
+    : 0;
+  if (topShare > 0.6) concentrationRisk.push(`${comparisonTable[0].segment} accounts for ${percentFormatter.format(topShare)} of ${formatMetricLabel(metric)} in ${dimension}.`);
+  if (Math.abs(deltaPercent || 0) < 10) anomalies.push("Performance gap is small; treat the insight as directional.");
+  if (driverInfo?.varianceScore != null && driverInfo.varianceScore > 0.4) anomalies.push("Driver trend is volatile across observed periods.");
+  const corrCandidates = (state.schema.numeric || []).filter((m) => m !== metric);
+  let best = null;
+  corrCandidates.forEach((candidate) => {
+    const corr = computeCorrelation(rows, metric, candidate);
+    if (corr === null) return;
+    if (!best || Math.abs(corr) > Math.abs(best.corr)) best = { candidate, corr };
+  });
+  if (best) relationships.push(`${formatMetricLabel(best.candidate)} has the strongest relationship to ${formatMetricLabel(metric)} (r=${best.corr.toFixed(2)}).`);
+  if (!relationships.length) relationships.push("No strong secondary metric relationships were detected.");
+  if (!concentrationRisk.length) concentrationRisk.push("No severe concentration risk detected in the current breakdown.");
+  if (!anomalies.length) anomalies.push("No major anomalies detected in the current slice.");
+  return { anomalies, concentrationRisk, relationships };
+}
+
+function classifyNumericMetricColumn(colName, profile, rowCount) {
+  const lower = String(colName || "").toLowerCase();
+  const nonBlank = profile?.nonBlankCount || rowCount || 0;
+  const uniqueRate = profile?.uniqueRate ?? 0;
+  const isIdentifierLike = isIdLikeColumn(colName, profile, rowCount)
+    || /\b(employee|account|member|user[_\s-]?id|number)\b/i.test(lower)
+    || (nonBlank >= 10 && uniqueRate > 0.9);
+  const isCurrency = /(revenue|sales|cost|spend|profit|price|amount|gmv|mrr|arr|pipeline)/i.test(lower);
+  const isPercent = /(rate|percent|ctr|cvr|roas|ratio|retention|churn)/i.test(lower)
+    || ((profile?.min ?? 0) >= 0 && (profile?.max ?? 2) <= 1.2 && !isIdentifierLike);
+  const isDuration = /(time|duration|seconds|secs|minutes|mins|hours)/i.test(lower);
+  const kind = isCurrency ? "currency" : isPercent ? "percent" : isDuration ? "duration" : "count";
+  const kindPriority = isCurrency ? 1 : isPercent ? 0.85 : kind === "count" ? 0.7 : isDuration ? 0.55 : 0.4;
+  return { isIdentifierLike, kind, kindPriority };
 }
 
 function formatDriverCombinationLabel(parts) {
