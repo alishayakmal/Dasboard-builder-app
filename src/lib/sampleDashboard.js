@@ -202,24 +202,41 @@ export function computeTrend(rows, metricKey, breakdown) {
   const groupKey = breakdown === "overall" ? null : breakdown;
   const groups = {};
   rows.forEach((row) => {
-    const month = `${row.date.getFullYear()}-${String(row.date.getMonth() + 1).padStart(2, "0")}`;
+    const monthKey = `${row.date.getFullYear()}-${String(row.date.getMonth() + 1).padStart(2, "0")}-01`;
     const group = groupKey ? row[groupKey] : "Overall";
     if (!groups[group]) groups[group] = {};
-    if (!groups[group][month]) groups[group][month] = [];
-    groups[group][month].push(row);
+    if (!groups[group][monthKey]) groups[group][monthKey] = [];
+    groups[group][monthKey].push(row);
   });
 
-  const series = Object.entries(groups).map(([group, months]) => {
-    const points = Object.entries(months)
-      .map(([month, items]) => {
-        const value = computeMetricValue(items, metricKey);
-        return { month, value };
-      })
-      .sort((a, b) => a.month.localeCompare(b.month));
+  const allMonthKeys = new Set();
+  Object.values(groups).forEach((months) => {
+    Object.keys(months).forEach((key) => allMonthKeys.add(key));
+  });
+  const sortedMonths = fillMissingMonths(Array.from(allMonthKeys).sort());
+
+  return Object.entries(groups).map(([group, months]) => {
+    const points = sortedMonths.map((month) => {
+      const items = months[month] || [];
+      const value = items.length ? computeMetricValue(items, metricKey) : 0;
+      return { month, monthTs: new Date(month).getTime(), value };
+    });
     return { group, points };
   });
+}
 
-  return series;
+function fillMissingMonths(sortedMonthKeys) {
+  if (!sortedMonthKeys.length) return [];
+  const start = new Date(sortedMonthKeys[0]);
+  const end = new Date(sortedMonthKeys[sortedMonthKeys.length - 1]);
+  const keys = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}-01`;
+    keys.push(key);
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return keys;
 }
 
 function computeMetricValue(items, metricKey) {
