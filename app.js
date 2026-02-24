@@ -213,6 +213,7 @@ const state = {
   industryColumn: null,
   topN: 8,
   sampleTabAutoloaded: false,
+  uiMode: "empty", // empty | loading | ready | error
 };
 
 document.addEventListener("DOMContentLoaded", init);
@@ -362,6 +363,7 @@ function init() {
   }
   disableUnavailableButtons();
   auditActionHandlers();
+  setUiMode("empty");
   updateAnalysisHeaderState(false);
   syncUploadAnalysisState();
   console.log("handlers wired");
@@ -537,7 +539,7 @@ function ensureDashboardUploadPopover() {
   const goPdf = document.getElementById("dashboardGoPdfBtn");
   if (!toggle || !panel) return;
 
-  if (!popover.dataset.bound) {
+    if (!popover.dataset.bound) {
     const setOpen = (open) => {
       panel.classList.toggle("hidden", !open);
       popover.classList.toggle("open", open);
@@ -592,6 +594,15 @@ function ensureDashboardUploadPopover() {
   updateAnalysisHeaderState(Boolean(state.rawRows?.length));
 }
 
+function closeDashboardUploadPopover() {
+  const popover = document.getElementById("dashboardUploadPopover");
+  const panel = document.getElementById("dashboardUploadPopoverPanel");
+  const toggle = document.getElementById("dashboardUploadPopoverToggle");
+  if (panel) panel.classList.add("hidden");
+  if (popover) popover.classList.remove("open");
+  if (toggle) toggle.setAttribute("aria-expanded", "false");
+}
+
 function updateAnalysisHeaderState(hasDataset) {
   if (dashboardSectionTitle) {
     dashboardSectionTitle.textContent = hasDataset ? "Analysis" : "Upload";
@@ -621,23 +632,54 @@ function hasLoadedDataset() {
   return Boolean(state.rawRows && state.rawRows.length > 0);
 }
 
+function setUiMode(mode) {
+  state.uiMode = mode;
+  syncUploadAnalysisState();
+}
+
 function syncUploadAnalysisState() {
-  const hasDataset = hasLoadedDataset();
+  const hasDataset = hasLoadedDataset() && state.uiMode === "ready";
   updateAnalysisHeaderState(hasDataset);
 
   if (dashboard) {
     dashboard.classList.toggle("hidden", !hasDataset);
   }
 
-  const uploadTabActive = Array.from(tabButtons || []).some((button) => button.dataset.tab === "upload" && button.classList.contains("active"));
-  if (stateSection && uploadTabActive) {
-    stateSection.classList.toggle("hidden", hasDataset);
+  if (hasDataset) {
+    tabPanels.forEach((panel) => panel.classList.add("hidden"));
   }
+
+  const uploadTabActive = Array.from(tabButtons || []).some((button) => button.dataset.tab === "upload" && button.classList.contains("active"));
+  if (stateSection && !hasDataset && uploadTabActive) {
+    stateSection.classList.toggle("hidden", hasDataset);
+    stateSection.classList.toggle("is-loading", state.uiMode === "loading");
+  } else if (stateSection && hasDataset) {
+    stateSection.classList.add("hidden");
+  }
+
+  [uploadTrigger, loadFixtureButton].forEach((btn) => {
+    if (!btn) return;
+    btn.disabled = state.uiMode === "loading";
+  });
+  const popoverButtons = [
+    document.getElementById("dashboardChooseFileBtn"),
+    document.getElementById("dashboardGoSheetsBtn"),
+    document.getElementById("dashboardGoApiBtn"),
+    document.getElementById("dashboardGoPdfBtn"),
+  ];
+  popoverButtons.forEach((btn) => {
+    if (!btn) return;
+    btn.disabled = state.uiMode === "loading";
+  });
 
   if (!hasDataset) {
     if (metricNotice) metricNotice.classList.add("hidden");
     if (warningsSection) warningsSection.classList.add("hidden");
-    if (statusSection) statusSection.classList.add("hidden");
+    if (statusSection && state.uiMode !== "loading") statusSection.classList.add("hidden");
+  }
+
+  if (state.uiMode === "ready") {
+    closeDashboardUploadPopover();
   }
 }
 
@@ -683,6 +725,7 @@ function hydrateSession() {
 function loadFixtureCsv() {
   const fixturePath = "./samples/fixture-stack.csv";
   clearMessages();
+  setUiMode("loading");
   setStatus("Loading fixture");
   fetch(fixturePath)
     .then((response) => {
@@ -730,6 +773,7 @@ function handleFileSelection(file) {
   if (!file) return;
   console.log("file selected", file.name);
   clearMessages();
+  setUiMode("loading");
   setStatus("Reading file");
   const reader = new FileReader();
   reader.onload = () => {
@@ -746,6 +790,7 @@ function handleFileSelection(file) {
 }
 
 function parseCsvText(text, sourceMeta = {}) {
+  setUiMode("loading");
   setStatus("Parsing CSV");
   Papa.parse(text, {
     header: false,
@@ -1384,6 +1429,7 @@ function renderSampleGallery() {
 
 async function loadSampleFile(sample) {
   clearMessages();
+  setUiMode("loading");
   setStatus("Loading sample");
   try {
     const response = await fetch(sample.file);
@@ -1457,6 +1503,7 @@ async function loadSheetData() {
   const input = sheetsUrlInput?.value || "";
   const range = sheetsRangeInput?.value?.trim() || "A1:Z1000";
   clearMessages();
+  setUiMode("loading");
   setStatus("Loading Google Sheet");
   try {
     const spreadsheetId = extractSheetId(input);
@@ -1524,6 +1571,7 @@ function valuesToCsv(values) {
 
 async function handlePdfUpload(file) {
   if (!file) return;
+  setUiMode("loading");
   if (pdfStatus) pdfStatus.textContent = "Extracting table data from PDF...";
   try {
     if (!window.pdfjsLib) {
@@ -1866,6 +1914,8 @@ function resetStateForNewDataset() {
   state.industryColumn = null;
   state.dateRange = { start: null, end: null };
   state.chosenXAxisType = "category";
+  state.normalizedDataset = null;
+  state.uiMode = "empty";
   updateAnalysisHeaderState(false);
   syncUploadAnalysisState();
   if (kpiGrid) kpiGrid.innerHTML = "";
@@ -1903,6 +1953,10 @@ function showError(message, detail) {
     errorSection.innerHTML = `<strong>${message}</strong><div class="error-detail">${debug}</div>`;
   }
   errorSection.classList.remove("hidden");
+  if (!hasLoadedDataset()) {
+    state.uiMode = "error";
+    syncUploadAnalysisState();
+  }
   console.error(message, detail || "");
 }
 
@@ -2068,6 +2122,7 @@ function renderDashboardRenderer({ dataset, mode }) {
     hasCategoricalDimensions: Boolean(dataset.meta?.hasCategoricalDimensions),
   };
   state.mode = mode;
+  state.uiMode = dataset?.rows?.length ? "ready" : "empty";
   dashboard?.setAttribute("data-dashboard-mode", mode || "user");
   dashboard?.setAttribute("data-source-type", dataset.meta?.sourceType || "csv");
   if (dataset.meta && dataset.meta.hasDateField === false) {
