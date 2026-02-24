@@ -2,6 +2,14 @@
 
 A static, client-side web app that turns CSVs into an analysis-ready dashboard with KPIs, trends, and insights. Runs entirely in the browser and supports a lightweight signup gate with localStorage.
 
+## Mock marketing feeds
+The marketing page uses lightweight mock feeds located in `src/data/` and fetched via `src/lib/sampleFeed.js`. The data is rendered by DOM-based components in `src/components/marketing/`.
+
+Upgrade path to React:
+1. Keep the data contracts in `src/data/` (or replace with real API calls inside `getSampleInsights` and `getMiniDashboard`).
+2. Replace `src/marketing.js` with a React entry point that imports the same feed helpers.
+3. Port `renderSampleInsightsSection` and `renderMiniDashboardPreview` to React components without changing the data shapes.
+
 ## What it does
 - Landing page with signup modal and localStorage gating
 - Upload CSV and generate KPIs, charts, and tables
