@@ -116,6 +116,7 @@ let googleTokenClient = null;
 let logoWarningShown = false;
 let renderKpiCallCount = 0;
 let signupSubmitting = false;
+let signupMode = "signup";
 const signupFormState = {
   fullName: "",
   email: "",
@@ -296,8 +297,8 @@ function init() {
     testApiButton.addEventListener("click", handleApiFetch);
   }
 
-  if (startFreeButton) startFreeButton.addEventListener("click", openModal);
-  if (heroStartButton) heroStartButton.addEventListener("click", openModal);
+  if (startFreeButton) startFreeButton.addEventListener("click", handleStartFreeClick);
+  if (heroStartButton) heroStartButton.addEventListener("click", handleStartFreeClick);
   if (viewSamplesButton) viewSamplesButton.addEventListener("click", () => {
     const target = document.getElementById("samples");
     if (target) target.scrollIntoView({ behavior: "smooth" });
@@ -531,22 +532,19 @@ function handleSignInClick() {
     routeTo("app");
     return;
   }
-  logEvent({
-    source: "auth",
-    action: "sign_in",
-    fullName: signupFormState.fullName || leadNameInput?.value?.trim() || "",
-    email: localStorage.getItem("currentUser") || leadEmailInput?.value?.trim() || "",
-    company: signupFormState.company || leadCompanyInput?.value?.trim() || "",
-    useCase: signupFormState.useCase || leadUseCaseInput?.value?.trim() || "",
-    useCaseDetail: signupFormState.useCaseDetail || leadUseCaseDetailInput?.value?.trim() || "",
-    timestamp: new Date().toISOString(),
-  }).catch(() => {});
+  signupMode = "signin";
+  openModal();
+}
+
+function handleStartFreeClick() {
+  signupMode = "signup";
   openModal();
 }
 
 function handleSignOutClick() {
   setSignedIn(false);
   localStorage.removeItem("currentUser");
+  signupMode = "signup";
   updateSignInButton();
   routeTo("landing");
 }
@@ -565,6 +563,7 @@ function openModal() {
   if (useCaseError) useCaseError.textContent = "";
   if (useCaseDetailError) useCaseDetailError.textContent = "";
   hydrateSignupForm();
+  toggleSignupFields();
   handleUseCaseToggle();
   updateSignupButtonState();
 }
@@ -585,6 +584,37 @@ function handleSignupSubmit(event) {
 
   signupSubmitting = true;
   updateSignupButtonState();
+
+  if (signupMode === "signin") {
+    const profile = findStoredProfile(validation.cleaned.email);
+    if (!profile) {
+      if (formError) formError.textContent = "No profile found. Please sign up first.";
+      signupSubmitting = false;
+      updateSignupButtonState();
+      return;
+    }
+    signupFormState.fullName = profile.name || "";
+    signupFormState.company = profile.company || "";
+    signupFormState.useCase = profile.useCase || "";
+    signupFormState.useCaseDetail = profile.useCaseDetail || "";
+    localStorage.setItem("currentUser", validation.cleaned.email);
+    setSignedIn(true);
+    logEvent({
+      source: "auth",
+      action: "sign_in",
+      fullName: profile.name || "",
+      email: validation.cleaned.email,
+      company: profile.company || "",
+      useCase: profile.useCase || "",
+      useCaseDetail: profile.useCaseDetail || "",
+      timestamp: new Date().toISOString(),
+    }).catch(() => {});
+    signupSubmitting = false;
+    closeModal();
+    showToast("Signed in");
+    routeTo("app");
+    return;
+  }
 
   const { name, email, company, useCase, useCaseDetail } = validation.cleaned;
 
@@ -648,6 +678,10 @@ function handleSignupInputChange() {
 }
 
 function handleUseCaseToggle() {
+  if (signupMode !== "signup") {
+    if (useCaseDetailField) useCaseDetailField.classList.add("hidden");
+    return;
+  }
   const useCase = (leadUseCaseInput?.value || "").trim();
   if (useCaseDetailField) {
     const show = useCase === "Other";
@@ -664,12 +698,14 @@ function validateSignupForm() {
   const useCaseDetail = (leadUseCaseDetailInput?.value || "").trim();
 
   const errors = {};
-  if (name.length < 2) errors.name = "Full name is required.";
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = "Enter a valid email.";
-  if (company.length < 2) errors.company = "Company is required.";
-  if (!useCase) errors.useCase = "Select a use case.";
-  if (useCase === "Other" && useCaseDetail.length < 10) {
-    errors.useCaseDetail = "Please describe your use case (min 10 characters).";
+  if (signupMode === "signup") {
+    if (name.length < 2) errors.name = "Full name is required.";
+    if (company.length < 2) errors.company = "Company is required.";
+    if (!useCase) errors.useCase = "Select a use case.";
+    if (useCase === "Other" && useCaseDetail.length < 10) {
+      errors.useCaseDetail = "Please describe your use case (min 10 characters).";
+    }
   }
 
   if (nameError) nameError.textContent = errors.name || "";
@@ -695,6 +731,28 @@ function updateSignupButtonState() {
       signupDebug.textContent = `isValid=${validation.isValid} isSubmitting=${signupSubmitting} | name=${validation.cleaned.name.length} email=${validation.cleaned.email.length} company=${validation.cleaned.company.length} useCase="${validation.cleaned.useCase}" detail=${validation.cleaned.useCaseDetail.length}`;
     }
   }
+}
+
+function toggleSignupFields() {
+  document.querySelectorAll(".signup-only").forEach((el) => {
+    el.classList.toggle("hidden-field", signupMode !== "signup");
+  });
+  const title = signupModal?.querySelector("h3");
+  const helper = signupModal?.querySelector(".helper-text");
+  if (title) title.textContent = signupMode === "signup" ? "Start for Free" : "Sign in";
+  if (helper) {
+    helper.textContent = signupMode === "signup"
+      ? "Create your account to unlock the dashboard."
+      : "Enter your email to access the dashboard.";
+  }
+  if (signupSubmitButton) {
+    signupSubmitButton.textContent = signupMode === "signup" ? "Create account" : "Sign in";
+  }
+}
+
+function findStoredProfile(email) {
+  const leads = JSON.parse(localStorage.getItem("leads") || "[]");
+  return leads.find((lead) => (lead.email || "").toLowerCase() === email.toLowerCase());
 }
 
 function showFormError(message) {
@@ -757,8 +815,8 @@ function disableUnavailableButtons() {
 
 function auditActionHandlers() {
   const handlerMap = new Map([
-    ["start-free", openModal],
-    ["signin", openModal],
+    ["start-free", handleStartFreeClick],
+    ["signin", handleSignInClick],
     ["view-samples", () => {}],
     ["tab-upload", () => {}],
     ["tab-sheets", () => {}],
