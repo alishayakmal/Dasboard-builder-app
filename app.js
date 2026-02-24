@@ -45,7 +45,9 @@ const warningsSection = document.getElementById("warnings");
 const statusSection = document.getElementById("status");
 const metricNotice = document.getElementById("metricNotice");
 const dashboard = document.getElementById("dashboard");
+const dashboardSectionTitle = document.getElementById("dashboardSectionTitle");
 const datasetSummary = document.getElementById("datasetSummary");
+const datasetInlineNotice = document.getElementById("datasetInlineNotice");
 const kpiGrid = document.getElementById("kpiGrid");
 const table = document.getElementById("dataTable");
 const metricSelect = document.getElementById("metricSelect");
@@ -360,6 +362,7 @@ function init() {
   }
   disableUnavailableButtons();
   auditActionHandlers();
+  updateAnalysisHeaderState(false);
   console.log("handlers wired");
 }
 
@@ -484,6 +487,26 @@ function ensureDashboardActionsToolbar() {
     status.replaceWith(exportStatus);
     exportStatus.id = "dashboardActionsStatus";
     exportStatus.classList.remove("hidden");
+  }
+  updateAnalysisHeaderState(Boolean(state.rawRows?.length));
+}
+
+function updateAnalysisHeaderState(hasDataset) {
+  if (dashboardSectionTitle) {
+    dashboardSectionTitle.textContent = hasDataset ? "Analysis" : "Upload";
+  }
+  const toolbar = document.getElementById("dashboardActionsToolbar");
+  if (toolbar) toolbar.classList.toggle("hidden", !hasDataset);
+  [downloadPdfButton, exportCsvButton, downloadInsightsButton, exportSheetsButton].forEach((button) => {
+    if (!button) return;
+    button.classList.toggle("hidden", !hasDataset);
+  });
+  if (!hasDataset) {
+    if (datasetSummary) datasetSummary.textContent = "Choose a source to begin.";
+    if (datasetInlineNotice) {
+      datasetInlineNotice.classList.add("hidden");
+      datasetInlineNotice.textContent = "";
+    }
   }
 }
 
@@ -1711,6 +1734,7 @@ function resetStateForNewDataset() {
   state.industryColumn = null;
   state.dateRange = { start: null, end: null };
   state.chosenXAxisType = "category";
+  updateAnalysisHeaderState(false);
   if (kpiGrid) kpiGrid.innerHTML = "";
   if (driversList) driversList.innerHTML = "";
   if (insightsList) insightsList.innerHTML = "";
@@ -1921,6 +1945,7 @@ function renderDashboardRenderer({ dataset, mode }) {
   ensureUnifiedUserDashboardLayout();
   ensureDashboardActionsToolbar();
   dashboard?.classList.add("dashboard-unified-active");
+  updateAnalysisHeaderState(Boolean(dataset?.rows?.length));
   applyFiltersAndRender();
 }
 
@@ -2639,8 +2664,14 @@ function applyFiltersAndRender() {
   if (filterBadge) {
     filterBadge.textContent = `Filtered to: ${state.filters.industry || "All"}`;
   }
-  if (!state.schema.dates.length) {
-    showWarningMessage("No date field detected. Showing categorical view.");
+  if (datasetInlineNotice) {
+    if (!state.schema.dates.length) {
+      datasetInlineNotice.textContent = "Time trend unavailable, no date field detected";
+      datasetInlineNotice.classList.remove("hidden");
+    } else {
+      datasetInlineNotice.classList.add("hidden");
+      datasetInlineNotice.textContent = "";
+    }
   }
 
   if (!runStep("buildKPIs", () => renderKPIs(scopedRows))) return;
@@ -3480,8 +3511,6 @@ function collectWarnings() {
     if (gaps > 0) {
       warnings.push(`Detected ${gaps} missing date buckets in the trend.`);
     }
-  } else {
-    warnings.push("No date column detected. Charts use categories or row order.");
   }
 
   return warnings;
