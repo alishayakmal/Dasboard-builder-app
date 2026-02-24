@@ -586,6 +586,10 @@ button:disabled {
   gap: 10px;
 }
 
+.hidden-field {
+  display: none;
+}
+
 .field-error {
   display: block;
   font-size: 12px;
