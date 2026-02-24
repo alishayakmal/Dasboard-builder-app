@@ -410,15 +410,31 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-function buildAction({ metricKey, dimensionKey, deltaPercent }) {
-  const normalizedDimension = String(dimensionKey || "").toLowerCase();
-  if (metricKey === "pipeline" && normalizedDimension === "plan") {
-    return "Shift budget toward Enterprise acquisition channels where pipeline growth is strongest.";
+function buildAction({ metricKey, topSegment, driverCombination, confidence, deltaStrength }) {
+  const metricKeyLower = String(metricKey || "").toLowerCase();
+  const comboText = driverCombination || topSegment || "the top driver";
+
+  if (confidence?.level === "low") {
+    return `Validate whether ${comboText} remains the primary driver with additional time periods before reallocating budget.`;
   }
-  if (deltaPercent < 0.1) {
-    return "Monitor performance before reallocating budget due to a small performance gap.";
+
+  if (metricKeyLower === "retention") {
+    return `Identify what is unique about ${comboText} and apply the same lifecycle tactics to lift retention outside ${topSegment}.`;
   }
-  return `Investigate top ${normalizedDimension || "segment"} drivers to replicate performance.`;
+
+  if (metricKeyLower === "revenue") {
+    return `Rebalance investment toward ${comboText} while protecting efficiency, then test expansion into the next best segment.`;
+  }
+
+  if (metricKeyLower === "pipeline") {
+    return `Inspect funnel stage conversion for ${comboText} and replicate the strongest stage improvements in lower performing segments.`;
+  }
+
+  if ((deltaStrength || 0) < 0.1) {
+    return `Monitor ${comboText} and run a controlled test before scaling changes due to a relatively small performance gap.`;
+  }
+
+  return `Investigate drivers behind ${comboText} and run a controlled test to validate impact.`;
 }
 
 function formatComboNarrative(dimensions, valuesByDimension) {
@@ -722,8 +738,10 @@ export function computeInsights(rows, metricKey, dimension) {
   });
   const actionSummary = buildAction({
     metricKey,
-    dimensionKey: dimension,
-    deltaPercent: confidenceEvidence.confidenceDetails.deltaPercent,
+    topSegment: top.key,
+    driverCombination: driverInfo.driverNarrative,
+    confidence: confidenceEvidence.confidence,
+    deltaStrength: confidenceEvidence.confidenceDetails.deltaPercent,
   });
 
   return [
@@ -732,10 +750,13 @@ export function computeInsights(rows, metricKey, dimension) {
       headline: `${metricLabel} is higher in ${top.key} than ${bottom.key}.`,
       claim: `${metricLabel} is higher in ${top.key} than ${bottom.key}.`,
       delta,
+      metricKey,
+      dimensionKey: dimension,
       deltaSummary: `Delta ${deltaLabel} (${top.key} vs ${bottom.key}) · n=${top.sampleSize}/${bottom.sampleSize}`,
       topSegment: top.key,
+      driverCombination: driverInfo.driverNarrative,
+      driverNarrative: driverInfo.narrative,
       driver: driverInfo.narrative,
-      actionSummary,
       action: actionSummary,
       confidence: confidenceEvidence.confidence,
       confidenceLevel: confidenceEvidence.confidence.level,
