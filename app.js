@@ -214,6 +214,7 @@ const state = {
   topN: 8,
   sampleTabAutoloaded: false,
   uiMode: "empty", // empty | loading | ready | error
+  uploaderOpen: false,
 };
 
 document.addEventListener("DOMContentLoaded", init);
@@ -539,28 +540,29 @@ function ensureDashboardUploadPopover() {
   const goPdf = document.getElementById("dashboardGoPdfBtn");
   if (!toggle || !panel) return;
 
-    if (!popover.dataset.bound) {
-    const setOpen = (open) => {
-      panel.classList.toggle("hidden", !open);
-      popover.classList.toggle("open", open);
-      toggle.setAttribute("aria-expanded", open ? "true" : "false");
-    };
+  const applyPopoverOpenState = () => {
+    const open = Boolean(state.uploaderOpen);
+    panel.classList.toggle("hidden", !open);
+    popover.classList.toggle("open", open);
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  };
+
+  if (!popover.dataset.bound) {
     let hoverCloseTimer = null;
     toggle.addEventListener("click", (event) => {
       event.preventDefault();
-      const nextOpen = panel.classList.contains("hidden");
-      setOpen(nextOpen);
+      setUploaderOpen(!state.uploaderOpen);
     });
     popover.addEventListener("mouseenter", () => {
       if (hoverCloseTimer) clearTimeout(hoverCloseTimer);
-      setOpen(true);
+      setUploaderOpen(true);
     });
     popover.addEventListener("mouseleave", () => {
       if (hoverCloseTimer) clearTimeout(hoverCloseTimer);
-      hoverCloseTimer = setTimeout(() => setOpen(false), 120);
+      hoverCloseTimer = setTimeout(() => setUploaderOpen(false), 120);
     });
     document.addEventListener("click", (event) => {
-      if (!popover.contains(event.target)) setOpen(false);
+      if (!popover.contains(event.target)) setUploaderOpen(false);
     });
 
     if (chooseBtn) chooseBtn.addEventListener("click", () => uploadInput?.click());
@@ -591,16 +593,22 @@ function ensureDashboardUploadPopover() {
     popover.dataset.bound = "true";
   }
 
+  applyPopoverOpenState();
   updateAnalysisHeaderState(Boolean(state.rawRows?.length));
 }
 
 function closeDashboardUploadPopover() {
+  setUploaderOpen(false);
+}
+
+function setUploaderOpen(open) {
+  state.uploaderOpen = Boolean(open);
   const popover = document.getElementById("dashboardUploadPopover");
   const panel = document.getElementById("dashboardUploadPopoverPanel");
   const toggle = document.getElementById("dashboardUploadPopoverToggle");
-  if (panel) panel.classList.add("hidden");
-  if (popover) popover.classList.remove("open");
-  if (toggle) toggle.setAttribute("aria-expanded", "false");
+  if (panel) panel.classList.toggle("hidden", !state.uploaderOpen);
+  if (popover) popover.classList.toggle("open", state.uploaderOpen);
+  if (toggle) toggle.setAttribute("aria-expanded", state.uploaderOpen ? "true" : "false");
 }
 
 function updateAnalysisHeaderState(hasDataset) {
@@ -634,6 +642,9 @@ function hasLoadedDataset() {
 
 function setUiMode(mode) {
   state.uiMode = mode;
+  if (mode === "ready") {
+    state.uploaderOpen = false;
+  }
   syncUploadAnalysisState();
 }
 
