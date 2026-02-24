@@ -75,23 +75,10 @@
       <div class="sample-copy">
         <h3>Sample insights</h3>
         <p>Preview how Shay Analytics AI surfaces lift, risk, and growth opportunities.</p>
-        <div class="sample-cards">
-          <div class="insight-card">
-            <h4>Revenue acceleration</h4>
-            <p>Top segment grew 18% WoW.</p>
-          </div>
-          <div class="insight-card">
-            <h4>Channel mix shift</h4>
-            <p>Paid search now drives 42% of pipeline.</p>
-          </div>
-          <div class="insight-card">
-            <h4>Risk signal</h4>
-            <p>Retention dip detected in EU region.</p>
-          </div>
-        </div>
+        <div id="sampleInsightsRoot" class="sample-cards"></div>
       </div>
       <div class="sample-visual">
-        <div class="mock-dashboard">Mini dashboard preview</div>
+        <div id="miniDashboardRoot" class="mock-dashboard"></div>
       </div>
     </section>
 
@@ -440,6 +427,7 @@
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script type="module" src="./src/marketing.js"></script>
   <script src="./app.js" defer></script>
 </body>
 </html>
