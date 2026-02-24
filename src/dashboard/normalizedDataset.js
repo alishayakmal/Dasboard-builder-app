@@ -2,7 +2,7 @@
  * @typedef {{
  * rows: Record<string, any>[],
  * columns: { name: string, type: "number" | "currency" | "percent" | "date" | "string" }[],
- * meta: { sourceType: "csv" | "pdf" | "sheet" | "api" | "demo", name?: string, dateField?: string, pdfMode?: "table" | "text" }
+ * meta: { sourceType: "csv" | "pdf" | "sheet" | "api" | "demo", name?: string, dateField?: string, hasDateField: boolean, pdfMode?: "table" | "text" }
  * }} NormalizedDataset
  */
 
@@ -18,6 +18,10 @@ export function createNormalizedDataset(input) {
       sourceType: input?.meta?.sourceType || "csv",
       name: input?.meta?.name,
       dateField: input?.meta?.dateField,
+      hasDateField: Boolean(
+        input?.meta?.hasDateField
+        || (Array.isArray(input?.columns) && input.columns.some((column) => column?.type === "date"))
+      ),
       pdfMode: input?.meta?.pdfMode,
     },
   };
