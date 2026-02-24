@@ -311,6 +311,13 @@ button:disabled {
   min-width: 0;
 }
 
+.sample-copy {
+  display: grid;
+  align-content: start;
+  height: 100%;
+  min-width: 0;
+}
+
 .sample-visual {
   display: grid;
   gap: 16px;
@@ -320,13 +327,14 @@ button:disabled {
   display: grid;
   grid-template-columns: 1fr;
   gap: 16px;
-  align-items: start;
+  align-items: stretch;
   min-width: 0;
 }
 
 .sample-row > * {
   width: 100%;
   min-width: 0;
+  height: 100%;
 }
 
 @media (min-width: 1200px) {
@@ -372,15 +380,28 @@ button:disabled {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 12px;
   margin-top: 16px;
+  align-content: stretch;
+  height: 100%;
+  min-width: 0;
+}
+
+@media (min-width: 1200px) {
+  .sample-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-auto-rows: 1fr;
+  }
 }
 
 .sample-trend {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
   background: rgba(16, 16, 20, 0.75);
   border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 16px;
+  height: 100%;
+  min-width: 0;
 }
 
 .trend-header {
@@ -412,6 +433,8 @@ button:disabled {
 
 .trend-chart {
   min-height: 220px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .trend-line {
@@ -498,10 +521,13 @@ button:disabled {
   border-radius: 16px;
   padding: 16px;
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
   width: 100%;
   min-width: 0;
   overflow: hidden;
+  height: 100%;
+  min-height: 340px;
 }
 
 .detail-header {
@@ -533,6 +559,7 @@ button:disabled {
   min-height: 220px;
   min-width: 0;
   width: 100%;
+  flex: 1 1 auto;
 }
 
 .evidence-panel {
@@ -653,11 +680,17 @@ button:disabled {
   display: grid;
   gap: 12px;
   margin-top: 12px;
+  height: 100%;
+  align-content: stretch;
 }
 
 .detail-grid > #sampleInsightsRoot,
 .sample-row-middle > #sampleInsightsRoot {
   margin-top: 0;
+}
+
+.sample-row-middle > #sampleInsightsRoot {
+  display: grid;
 }
 
 .insight-card {
@@ -667,6 +700,10 @@ button:disabled {
   padding: 14px;
   position: relative;
   z-index: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 340px;
 }
 
 .insight-header {
@@ -795,6 +832,9 @@ button:disabled {
   gap: 4px;
   font-size: 12px;
   color: var(--text-secondary);
+  height: 100%;
+  align-content: start;
+  min-width: 0;
 }
 
 .kpi-pill strong {
@@ -878,6 +918,10 @@ button:disabled {
   position: relative;
   z-index: 1;
   pointer-events: auto;
+}
+
+.sample-cards .insight-card .view-evidence {
+  margin-top: auto;
 }
 
 .insight-drilldown {
