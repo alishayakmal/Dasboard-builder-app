@@ -112,10 +112,13 @@ function renderInsights(container, evidencePanel, breakdownChart) {
   const insights = computeInsights(state.rows, state.metric, state.dimension);
   container.innerHTML = "";
   insights.forEach((insight) => {
-    const confidenceLevel = insight.confidenceLevel || insight.confidence || "low";
+    const confidence = insight.confidence && typeof insight.confidence === "object"
+      ? insight.confidence
+      : { level: (insight.confidenceLevel || insight.confidence || "low"), reasons: insight.confidenceReasons || [], metrics: insight.confidenceDetails || {} };
+    const confidenceLevel = confidence.level || "low";
     const confidenceLabel = `${confidenceLevel.charAt(0).toUpperCase()}${confidenceLevel.slice(1)}`;
-    const whyLine = confidenceLevel !== "high" && Array.isArray(insight.confidenceReasons) && insight.confidenceReasons.length
-      ? `<p class="insight-meta confidence-why"><strong>Why this confidence:</strong> ${insight.confidenceReasons.join(" ")}</p>`
+    const whyLine = confidenceLevel !== "high" && Array.isArray(confidence.reasons) && confidence.reasons.length
+      ? `<p class="insight-meta confidence-why"><strong>Why this confidence:</strong> ${confidence.reasons.join(" ")}</p>`
       : "";
     const card = document.createElement("div");
     card.className = "insight-card";
@@ -166,6 +169,9 @@ function showEvidence(panel, insight) {
   if (!panel) return;
   panel.classList.remove("hidden");
   const evidence = insight.evidence || {};
+  const confidence = insight.confidence && typeof insight.confidence === "object"
+    ? insight.confidence
+    : { level: (insight.confidenceLevel || insight.confidence || "low"), reasons: insight.confidenceReasons || [], metrics: insight.confidenceDetails || {} };
   const comparisonRows = Array.isArray(evidence.comparisonTable) ? evidence.comparisonTable : [];
   const comparisonTable = comparisonRows.length
     ? `
@@ -194,8 +200,14 @@ function showEvidence(panel, insight) {
     `
     : "<div class=\"helper-text\">No comparison evidence available.</div>";
   const trendSummary = evidence.trendSummary || {};
-  const confidenceReasons = Array.isArray(insight.confidenceReasons) && insight.confidenceReasons.length
-    ? insight.confidenceReasons.map((reason) => `<li>${reason}</li>`).join("")
+  const periodsAnalysed = Number.isFinite(confidence.metrics?.periods) ? confidence.metrics.periods : (trendSummary.periodsAnalysed ?? 0);
+  const periodsExplanation = periodsAnalysed === 1
+    ? "Only one time period available. Trend reliability is limited."
+    : periodsAnalysed > 1 && periodsAnalysed < 3
+      ? `Limited history: this insight is based on only ${periodsAnalysed} time period(s).`
+      : `Based on ${periodsAnalysed} time periods.`;
+  const confidenceReasons = Array.isArray(confidence.reasons) && confidence.reasons.length
+    ? confidence.reasons.map((reason) => `<li>${reason}</li>`).join("")
     : "<li>No major reliability issues detected.</li>";
   panel.innerHTML = `
     <div class="evidence-section">
@@ -209,10 +221,24 @@ function showEvidence(panel, insight) {
     <div class="evidence-section">
       <strong>Trend consistency</strong>
       <div class="evidence-stats">
-        <div class="evidence-stat"><span>Periods analysed</span><strong>${trendSummary.periodsAnalysed ?? 0}</strong></div>
+        <div class="evidence-stat">
+          <span class="inline-info">
+            Periods analysed
+            <span
+              class="info-dot"
+              tabindex="0"
+              aria-label="Periods analysed tooltip: Periods analysed represents how many time buckets, such as months or days, were used to validate this insight over time."
+            >
+              i
+              <span class="info-tooltip" role="tooltip">Periods analysed represents how many time buckets, such as months or days, were used to validate this insight over time.</span>
+            </span>
+          </span>
+          <strong>${periodsAnalysed}</strong>
+        </div>
         <div class="evidence-stat"><span>Stability score</span><strong>${evidence.consistencyScore ?? 0}</strong></div>
         <div class="evidence-stat"><span>Variance</span><strong>${Number.isFinite(trendSummary.variance) ? trendSummary.variance.toFixed(2) : "0.00"}</strong></div>
       </div>
+      <div class="helper-text">${periodsExplanation}</div>
       <div class="helper-text">${(trendSummary.leadPeriods ?? 0)} of ${(trendSummary.comparedPeriods ?? 0)} overlapping periods favor the top segment.</div>
     </div>
     <div class="evidence-section">
