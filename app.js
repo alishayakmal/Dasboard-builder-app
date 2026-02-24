@@ -1380,7 +1380,7 @@ async function handlePdfUpload(file) {
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
     const maxPages = Math.min(6, pdf.numPages || 0);
-    const rows = [];
+    const pageAnalyses = [];
 
     for (let pageNum = 1; pageNum <= maxPages; pageNum += 1) {
       const page = await pdf.getPage(pageNum);
@@ -1391,54 +1391,283 @@ async function handlePdfUpload(file) {
           text: String(item.str || "").trim(),
           x: item.transform[4],
           y: item.transform[5],
+          width: item.width || 0,
+          height: item.height || 0,
         }));
-
-      const rowMap = new Map();
-      items.forEach((item) => {
-        const yKey = Math.round(item.y / 3) * 3;
-        if (!rowMap.has(yKey)) rowMap.set(yKey, []);
-        rowMap.get(yKey).push(item);
-      });
-
-      const pageRows = Array.from(rowMap.entries())
-        .sort((a, b) => b[0] - a[0])
-        .map(([, rowItems]) => {
-          const sorted = rowItems.sort((a, b) => a.x - b.x);
-          const cells = [];
-          let current = sorted[0]?.text || "";
-          let lastX = sorted[0]?.x ?? 0;
-          for (let i = 1; i < sorted.length; i += 1) {
-            const gap = sorted[i].x - lastX;
-            if (gap > 20) {
-              cells.push(current);
-              current = sorted[i].text;
-            } else {
-              current = `${current} ${sorted[i].text}`.trim();
-            }
-            lastX = sorted[i].x;
-          }
-          if (current) cells.push(current);
-          return cells;
-        })
-        .filter((cells) => cells.length >= 2);
-
-      rows.push(...pageRows);
+      const pageRows = reconstructPdfPageRows(items);
+      const pageTables = detectPdfTablesFromRows(pageRows);
+      pageAnalyses.push({ pageNum, items, rows: pageRows, tables: pageTables });
     }
 
-    if (rows.length < 2) {
+    const selectedTable = selectBestPdfFactTable(pageAnalyses);
+    const fallbackRows = pageAnalyses.flatMap((page) => page.rows.map((row) => row.cells || []));
+    const finalRows = selectedTable?.rows?.length ? selectedTable.rows : fallbackRows;
+
+    if (finalRows.length < 2) {
       showError("No table like content detected. Export a CSV or use a PDF with a clear table.");
       if (pdfStatus) pdfStatus.textContent = "PDF ingestion failed";
       return;
     }
 
-    const csvText = rows.map((row) => row.map(csvEscape).join(",")).join("\n");
-    parseCsvText(csvText, { sourceType: "pdf", name: file?.name || "PDF upload", pdfMode: "table" });
+    const csvText = finalRows.map((row) => row.map(csvEscape).join(",")).join("\n");
+    parseCsvText(csvText, {
+      sourceType: "pdf",
+      name: file?.name || "PDF upload",
+      pdfMode: "table",
+      extractedTableKind: selectedTable?.kind || "generic",
+    });
     if (pdfStatus) pdfStatus.textContent = "PDF parsed. Generating dashboard...";
     switchTab("upload");
   } catch (error) {
     showError("No table like content detected. Export a CSV or use a PDF with a clear table.", `Details: ${error.message}`);
     if (pdfStatus) pdfStatus.textContent = "PDF ingestion failed";
   }
+}
+
+function reconstructPdfPageRows(items) {
+  const yTolerance = 3;
+  const rows = [];
+  const sortedItems = [...(items || [])].sort((a, b) => {
+    const yDiff = b.y - a.y;
+    if (Math.abs(yDiff) > yTolerance) return yDiff;
+    return a.x - b.x;
+  });
+
+  sortedItems.forEach((item) => {
+    let target = rows.find((row) => Math.abs(row.y - item.y) <= yTolerance);
+    if (!target) {
+      target = { y: item.y, items: [] };
+      rows.push(target);
+    }
+    target.items.push(item);
+  });
+
+  rows.sort((a, b) => b.y - a.y);
+  const xAnchors = buildPdfColumnAnchors(rows);
+
+  return rows.map((row) => {
+    const cells = Array.from({ length: xAnchors.length }, () => "");
+    row.items
+      .sort((a, b) => a.x - b.x)
+      .forEach((item) => {
+        const idx = nearestAnchorIndex(item.x, xAnchors);
+        if (idx < 0) return;
+        cells[idx] = cells[idx] ? `${cells[idx]} ${item.text}`.trim() : item.text;
+      });
+    const compact = cells.map((cell) => String(cell || "").trim());
+    return { y: row.y, cells: compact };
+  }).filter((row) => row.cells.filter(Boolean).length >= 2);
+}
+
+function buildPdfColumnAnchors(rows) {
+  const xs = [];
+  (rows || []).forEach((row) => {
+    (row.items || []).forEach((item) => {
+      if (item.x != null) xs.push(item.x);
+    });
+  });
+  xs.sort((a, b) => a - b);
+  const anchors = [];
+  const tolerance = 14;
+  xs.forEach((x) => {
+    const last = anchors[anchors.length - 1];
+    if (!last || Math.abs(last - x) > tolerance) anchors.push(x);
+  });
+  return anchors.slice(0, 18);
+}
+
+function nearestAnchorIndex(x, anchors) {
+  if (!anchors?.length) return -1;
+  let bestIdx = 0;
+  let best = Infinity;
+  anchors.forEach((anchor, idx) => {
+    const diff = Math.abs(anchor - x);
+    if (diff < best) {
+      best = diff;
+      bestIdx = idx;
+    }
+  });
+  return bestIdx;
+}
+
+function detectPdfTablesFromRows(pageRows) {
+  const blocks = [];
+  let current = [];
+  (pageRows || []).forEach((row) => {
+    const nonEmpty = row.cells.filter(Boolean).length;
+    if (nonEmpty >= 3) {
+      current.push(row);
+    } else if (current.length) {
+      blocks.push(current);
+      current = [];
+    }
+  });
+  if (current.length) blocks.push(current);
+
+  return blocks
+    .map((block) => buildPdfTableCandidate(block))
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score);
+}
+
+function buildPdfTableCandidate(block) {
+  if (!Array.isArray(block) || block.length < 2) return null;
+  const rows = block.map((row) => row.cells);
+  const headerIndex = findPdfHeaderRowIndex(rows);
+  if (headerIndex < 0 || headerIndex >= rows.length - 1) return null;
+  let header = normalizePdfHeaderRow(rows[headerIndex]);
+  let dataRows = rows.slice(headerIndex + 1).filter((row) => row.some((cell) => String(cell || "").trim() !== ""));
+  if (!header.length || dataRows.length < 1) return null;
+
+  // Trim columns that are entirely empty in data.
+  const keepIdx = header.map((_, idx) => {
+    if (String(header[idx] || "").trim()) return true;
+    return dataRows.some((row) => String(row[idx] || "").trim());
+  });
+  header = header.filter((_, idx) => keepIdx[idx]);
+  dataRows = dataRows.map((row) => row.filter((_, idx) => keepIdx[idx]));
+
+  const normalized = normalizePdfTableRows(header, dataRows);
+  const score = scorePdfTableCandidate(normalized.header, normalized.rows);
+  if (score <= 0) return null;
+  return {
+    header: normalized.header,
+    dataRows: normalized.rows,
+    rows: [normalized.header, ...normalized.rows],
+    score,
+    kind: scorePdfTableKind(normalized.header),
+  };
+}
+
+function findPdfHeaderRowIndex(rows) {
+  let bestIdx = -1;
+  let bestScore = -Infinity;
+  (rows || []).slice(0, 8).forEach((row, idx) => {
+    const cells = (row || []).map((cell) => String(cell || "").trim()).filter(Boolean);
+    if (cells.length < 2) return;
+    const marketingHits = cells.reduce((sum, cell) => sum + (isMarketingMetricToken(cell) ? 1 : 0), 0);
+    const dateHits = cells.reduce((sum, cell) => sum + (isLikelyTemporalColumnName(cell) || isMonthToken(cell) ? 1 : 0), 0);
+    const numericLike = cells.reduce((sum, cell) => sum + (parseNumber(cell) !== null ? 1 : 0), 0);
+    const textDensity = cells.length - numericLike;
+    const score = marketingHits * 5 + dateHits * 3 + textDensity * 1 - numericLike * 0.75;
+    if (score > bestScore) {
+      bestScore = score;
+      bestIdx = idx;
+    }
+  });
+  return bestScore >= 2 ? bestIdx : 0;
+}
+
+function normalizePdfHeaderRow(headerRow) {
+  const header = (headerRow || []).map((cell, idx) => {
+    const raw = String(cell || "").trim();
+    if (!raw) return `Column_${idx + 1}`;
+    const cleaned = raw.replace(/\s+/g, " ").replace(/[^\w\s%/-]/g, "").trim();
+    return cleaned || `Column_${idx + 1}`;
+  });
+  const seen = new Map();
+  return header.map((name) => {
+    const key = name.toLowerCase();
+    const count = seen.get(key) || 0;
+    seen.set(key, count + 1);
+    return count ? `${name}_${count + 1}` : name;
+  });
+}
+
+function normalizePdfTableRows(header, rows) {
+  let outHeader = [...header];
+  let outRows = rows.map((row) => [...row]);
+
+  // If months appear as headers, unpivot to long format: Metric | Month | Value
+  const monthHeaderIndices = outHeader
+    .map((name, idx) => ({ name, idx }))
+    .filter((item) => isMonthToken(item.name));
+  if (monthHeaderIndices.length >= 3 && outHeader.length >= 4) {
+    const metricColIndex = outHeader.findIndex((name, idx) => idx !== monthHeaderIndices[0].idx && !monthHeaderIndices.some((m) => m.idx === idx));
+    if (metricColIndex >= 0) {
+      const longRows = [];
+      outRows.forEach((row) => {
+        const metricName = String(row[metricColIndex] || "").trim();
+        if (!metricName) return;
+        monthHeaderIndices.forEach((month) => {
+          const value = row[month.idx];
+          if (String(value || "").trim() === "") return;
+          longRows.push([metricName, outHeader[month.idx], value]);
+        });
+      });
+      if (longRows.length >= 6) {
+        outHeader = ["Metric", "Month", "Value"];
+        outRows = longRows;
+      }
+    }
+  }
+  return { header: outHeader, rows: outRows };
+}
+
+function scorePdfTableCandidate(header, rows) {
+  const headerCells = (header || []).map((h) => String(h).toLowerCase());
+  const marketingHits = headerCells.filter((cell) => isMarketingMetricToken(cell)).length;
+  const dateHits = headerCells.filter((cell) => isLikelyTemporalColumnName(cell) || isMonthToken(cell)).length;
+  const numericDensity = estimatePdfTableNumericDensity(rows);
+  const rowCountScore = Math.min((rows?.length || 0) / 5, 3);
+  return (marketingHits * 6) + (dateHits * 3) + (numericDensity * 4) + rowCountScore;
+}
+
+function scorePdfTableKind(header) {
+  const headerCells = (header || []).map((h) => String(h).toLowerCase());
+  const marketingHits = headerCells.filter((cell) => isMarketingMetricToken(cell)).length;
+  return marketingHits >= 3 ? "campaign_fact" : "generic_table";
+}
+
+function estimatePdfTableNumericDensity(rows) {
+  let total = 0;
+  let numeric = 0;
+  (rows || []).slice(0, 20).forEach((row) => {
+    (row || []).forEach((cell) => {
+      const text = String(cell || "").trim();
+      if (!text) return;
+      total += 1;
+      if (parseNumber(text) !== null) numeric += 1;
+    });
+  });
+  return total ? numeric / total : 0;
+}
+
+function isMarketingMetricToken(text) {
+  const key = String(text || "").toLowerCase();
+  return [
+    "spend",
+    "media cost",
+    "mediacost",
+    "impressions",
+    "clicks",
+    "ctr",
+    "cpc",
+    "conversions",
+    "secondary conversions",
+    "ecpm",
+    "cpa",
+    "attributed sales",
+    "revenue",
+  ].some((token) => key.includes(token));
+}
+
+function isMonthToken(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return false;
+  if (/^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)$/i.test(raw)) return true;
+  if (/^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\s+\d{2,4}$/i.test(raw)) return true;
+  return false;
+}
+
+function selectBestPdfFactTable(pageAnalyses) {
+  const candidates = (pageAnalyses || []).flatMap((page) => (page.tables || []).map((table) => ({
+    ...table,
+    pageNum: page.pageNum,
+  })));
+  if (!candidates.length) return null;
+  const primaryFact = candidates.find((candidate) => candidate.kind === "campaign_fact");
+  return primaryFact || candidates[0];
 }
 
 function csvEscape(value) {
@@ -3503,6 +3732,9 @@ function renderUserInsightEvidence(panel, insight) {
 function buildUnifiedInsights(rows) {
   const metric = state.selections.primaryMetric;
   if (!metric) return buildDecisionInsights(rows);
+  if (metric === "__row_count__" || classifyNumericMetricColumn(metric, state.schema.profiles[metric], rows.length).isIdentifierLike) {
+    return [buildSafeDescriptiveInsight(rows, metric)];
+  }
   const dimension = state.selectedDimension || chooseBestDimension(state.schema.profiles, state.schema.categoricals || []);
   const metricValues = (rows || []).map((row) => parseNumber(row[metric])).filter((value) => value !== null);
   const metricType = inferMetricType(metric, metricValues);
@@ -3599,6 +3831,52 @@ function buildUnifiedInsights(rows) {
     }),
   };
   return [insight];
+}
+
+function buildSafeDescriptiveInsight(rows, metric) {
+  const dimension = state.selectedDimension || chooseBestDimension(state.schema.profiles, state.schema.categoricals || []) || "segment";
+  const hasDate = Boolean(state.dateColumn && state.datasetCapabilities?.hasDateField);
+  const confidence = {
+    level: hasDate ? "low" : "medium",
+    reasons: [
+      metric === "__row_count__"
+        ? "Limited structured metrics detected. Insights are descriptive only."
+        : "Selected metric behaves like an identifier and is not suitable for causal insights.",
+      hasDate ? "Not enough reliable metric semantics for trend-based claims." : "No historical time buckets available.",
+    ],
+    metrics: { periods: hasDate ? 1 : 0, sampleSize: rows.length, deltaPercent: 0, variance: 0 },
+  };
+  return {
+    id: `safe:${metric}:${dimension}`,
+    headline: "Structured tables detected, but insight quality is limited.",
+    title: "Structured tables detected, but insight quality is limited.",
+    executiveSummary: "This file contains structured tables but time trends or metric semantics are limited. Review top segments by spend and conversions where available.",
+    executiveBullets: [
+      `Use ${dimension} to review top segments by core marketing metrics.`,
+      "Prefer Spend, Clicks, Impressions, Conversions, CTR, CPC, CPA, or eCPM as the primary metric.",
+    ],
+    deltaSummary: "Descriptive mode only; trend claims are suppressed.",
+    driverNarrative: "No dominant driver is shown because the selected metric is not reliable for decisioning.",
+    action: "Select a marketing metric such as Spend, Conversions, Clicks, or Impressions to generate higher-confidence insights.",
+    confidence,
+    diagnostics: {
+      anomalies: ["Trend-based insights are blocked until a meaningful metric is selected."],
+      concentrationRisk: ["Review top segments manually in Performance details."],
+      relationships: ["Correlation analysis is less reliable on identifier-like or row count metrics."],
+    },
+    evidence: {
+      comparisonTable: [],
+      contributionSummary: "Evidence is withheld because the selected metric is not suitable for analytical claims.",
+      trendSummary: hasDate ? { periodsAnalysed: 1, variance: "—" } : null,
+      consistencyScore: null,
+      driverBreakdownTable: [],
+      filtersUsed: [
+        `Metric: ${formatMetricLabel(metric)}`,
+        `Dimension: ${dimension}`,
+        hasDate ? "Time context detected but not used for claims" : "No time buckets detected",
+      ],
+    },
+  };
 }
 
 function metricQualitySuffix(metric, rowCount) {
