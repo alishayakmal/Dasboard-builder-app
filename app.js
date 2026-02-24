@@ -117,6 +117,7 @@ let logoWarningShown = false;
 let renderKpiCallCount = 0;
 let signupSubmitting = false;
 let signupMode = "signup";
+let currentUserProfile = null;
 const signupFormState = {
   fullName: "",
   email: "",
@@ -124,6 +125,8 @@ const signupFormState = {
   useCase: "",
   useCaseDetail: "",
 };
+const USERS_KEY = "shay_users";
+const SESSION_KEY = "shay_session";
 
 const samplePath = "data-sample.csv";
 // Use the deployed Apps Script Web App URL ending in /exec (not the editor URL).
@@ -213,6 +216,8 @@ function init() {
   applyBrandAssets();
 
   window.addEventListener("hashchange", handleRoute);
+
+  hydrateSession();
 
   const isDev = location.hostname === "localhost" || location.hostname === "127.0.0.1";
   if (loadFixtureButton) {
@@ -349,6 +354,45 @@ function init() {
   console.log("handlers wired");
 }
 
+function loadUsers() {
+  return JSON.parse(localStorage.getItem(USERS_KEY) || "{}");
+}
+
+function saveUsers(users) {
+  localStorage.setItem(USERS_KEY, JSON.stringify(users));
+}
+
+function setSession(email) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ email, signedInAt: new Date().toISOString() }));
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+function getSession() {
+  try {
+    return JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+  } catch (error) {
+    return null;
+  }
+}
+
+function hydrateSession() {
+  const session = getSession();
+  if (!session?.email) return;
+  const users = loadUsers();
+  const user = users[session.email.toLowerCase()];
+  if (user) {
+    currentUserProfile = user;
+    signupFormState.fullName = user.fullName || "";
+    signupFormState.email = user.email || session.email;
+    signupFormState.company = user.company || "";
+    signupFormState.useCase = user.useCase || "";
+    signupFormState.useCaseDetail = user.useCaseDetail || "";
+  }
+}
+
 function loadFixtureCsv() {
   const fixturePath = "./samples/fixture-stack.csv";
   clearMessages();
@@ -443,11 +487,20 @@ function switchTab(tabName) {
 }
 
 function getSignedIn() {
-  return localStorage.getItem("signedIn") === "true";
+  const session = getSession();
+  if (!session?.email) return false;
+  const users = loadUsers();
+  if (!users[session.email.toLowerCase()]) {
+    clearSession();
+    return false;
+  }
+  return true;
 }
 
 function setSignedIn(value) {
-  localStorage.setItem("signedIn", value ? "true" : "false");
+  if (!value) {
+    clearSession();
+  }
 }
 
 function routeTo(viewName) {
@@ -543,7 +596,7 @@ function handleStartFreeClick() {
 
 function handleSignOutClick() {
   setSignedIn(false);
-  localStorage.removeItem("currentUser");
+  currentUserProfile = null;
   signupMode = "signup";
   updateSignInButton();
   routeTo("landing");
@@ -588,21 +641,23 @@ function handleSignupSubmit(event) {
   if (signupMode === "signin") {
     const profile = findStoredProfile(validation.cleaned.email);
     if (!profile) {
-      if (formError) formError.textContent = "No profile found. Please sign up first.";
+      if (formError) formError.textContent = "No account found. Create an account.";
       signupSubmitting = false;
       updateSignupButtonState();
       return;
     }
-    signupFormState.fullName = profile.name || "";
+    signupFormState.fullName = profile.fullName || "";
     signupFormState.company = profile.company || "";
     signupFormState.useCase = profile.useCase || "";
     signupFormState.useCaseDetail = profile.useCaseDetail || "";
-    localStorage.setItem("currentUser", validation.cleaned.email);
+    signupFormState.email = profile.email || validation.cleaned.email;
+    currentUserProfile = profile;
+    setSession(validation.cleaned.email.toLowerCase());
     setSignedIn(true);
     logEvent({
       source: "auth",
       action: "sign_in",
-      fullName: profile.name || "",
+      fullName: profile.fullName || "",
       email: validation.cleaned.email,
       company: profile.company || "",
       useCase: profile.useCase || "",
@@ -617,6 +672,7 @@ function handleSignupSubmit(event) {
   }
 
   const { name, email, company, useCase, useCaseDetail } = validation.cleaned;
+  const normalizedEmail = email.trim().toLowerCase();
 
   const lead = {
     name,
@@ -631,7 +687,7 @@ function handleSignupSubmit(event) {
 
   const payload = {
     fullName: name,
-    email,
+    email: normalizedEmail,
     company,
     useCase,
     useCaseDetail: useCaseDetail || "",
@@ -651,8 +707,19 @@ function handleSignupSubmit(event) {
   });
 
   saveLead(lead);
+  const users = loadUsers();
+  users[normalizedEmail] = {
+    fullName: name,
+    email: normalizedEmail,
+    company,
+    useCase,
+    useCaseDetail: useCaseDetail || "",
+    createdAt: new Date().toISOString(),
+  };
+  saveUsers(users);
+  setSession(normalizedEmail);
+  currentUserProfile = users[normalizedEmail];
   setSignedIn(true);
-  localStorage.setItem("currentUser", email);
   updateSignInButton();
   closeModal();
   showToast("Account created. You can now access the dashboard.");
@@ -751,8 +818,8 @@ function toggleSignupFields() {
 }
 
 function findStoredProfile(email) {
-  const leads = JSON.parse(localStorage.getItem("leads") || "[]");
-  return leads.find((lead) => (lead.email || "").toLowerCase() === email.toLowerCase());
+  const users = loadUsers();
+  return users[email.toLowerCase()];
 }
 
 function showFormError(message) {
@@ -970,7 +1037,7 @@ function ingestJsonRows(rows) {
 }
 
 function handleExportToSheets() {
-  const user = localStorage.getItem("currentUser") || "anonymous";
+  const user = currentUserProfile?.email || "anonymous";
   const filters = {};
   if (state.filters?.industry && state.filters.industry !== "All") {
     filters.industry = state.filters.industry;
