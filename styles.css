@@ -1961,6 +1961,17 @@ button:disabled {
   justify-self: start;
 }
 
+.dashboard.dashboard-unified-active .dashboard-change-source-wrap .dashboard-upload-toggle {
+  background: var(--accent-primary);
+  color: #fff;
+  border-color: rgba(124, 58, 237, 0.55);
+  box-shadow: 0 10px 22px rgba(124, 58, 237, 0.2);
+}
+
+.dashboard.dashboard-unified-active .dashboard-change-source-wrap .dashboard-upload-toggle:hover {
+  filter: brightness(1.03);
+}
+
 .dashboard-actions-row {
   display: flex;
   align-items: center;
