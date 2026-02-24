@@ -2029,6 +2029,18 @@ button:disabled {
   filter: brightness(1.03);
 }
 
+.dashboard.dashboard-unified-active #dashboardActionsToolbar .primary:not(#dashboardChangeDataSourceBtn) {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.18);
+}
+
+.dashboard.dashboard-unified-active #dashboardActionsToolbar .primary:not(#dashboardChangeDataSourceBtn):hover {
+  background: var(--accent-hover);
+  box-shadow: 0 12px 26px rgba(124, 58, 237, 0.28);
+}
+
 .dashboard-actions-row {
   display: flex;
   align-items: center;
