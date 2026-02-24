@@ -575,6 +575,14 @@ button:disabled {
   gap: 10px;
 }
 
+.field-error {
+  display: block;
+  font-size: 12px;
+  color: #fda4af;
+  min-height: 16px;
+  margin-top: 4px;
+}
+
 .modal-form input,
 .modal-form select {
   padding: 8px 10px;
