@@ -369,8 +369,29 @@ button:disabled {
 
 .sample-details {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 16px;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (min-width: 1024px) {
+  .detail-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.highlight-insight {
+  display: grid;
+  gap: 6px;
+}
+
+.highlight-insight .view-evidence {
+  justify-self: start;
 }
 
 .detail-chart {
@@ -406,6 +427,18 @@ button:disabled {
 
 .breakdown-chart {
   min-height: 220px;
+}
+
+.evidence-panel {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: rgba(16, 16, 20, 0.85);
+  color: var(--text-secondary);
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
 }
 
 .bar-chart {
