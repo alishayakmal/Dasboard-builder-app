@@ -2457,17 +2457,28 @@ function renderKPIs(rows) {
     const metricType = inferMetricType(metric, values);
     const primary = metricType.kind === "rate" ? avg : total;
     const change = computePeriodChange(rows, metric, metricType);
+    const supportsTrend = Boolean(state.datasetCapabilities?.hasDateField && state.dateColumn);
+    const miniTrend = supportsTrend ? buildUserKpiSparklineData(rows, metric, metricType) : null;
+    const deltaTone = supportsTrend && change ? inferUserKpiDeltaTone(change.value) : "flat";
+    const deltaBadge = supportsTrend && change
+      ? `<em class="kpi-delta ${deltaTone}">${formatUserDeltaArrow(deltaTone)} ${escapeHtml(change.value)}</em>`
+      : "";
+    const sparkline = supportsTrend && miniTrend
+      ? `<div class="kpi-mini-trend">${buildUserKpiSparklineSvg(miniTrend, metricType, metricLabel)}</div>
+         <div class="kpi-sparkline-caption">Daily trend last 30 days compared to prior 30 days</div>`
+      : `<div class="kpi-sparkline-caption">Snapshot metric, no time trend available.</div>`;
 
     const card = document.createElement("div");
-    card.className = "kpi-card";
+    card.className = "kpi-card user-kpi-card";
     card.innerHTML = `
       <h4>${metricLabel}</h4>
       <div class="kpi-value">${formatMetricValue(primary, metricType)}</div>
-      <div class="kpi-sub">Avg: ${formatMetricValue(avg, metricType, true)}</div>
+      ${deltaBadge}
+      ${sparkline}
+      <div class="kpi-caption">${supportsTrend ? "Last 30 days vs prior 30 days" : "Snapshot metric, no time trend available."}</div>
       <div class="kpi-meta">
-        <div>Median: ${formatMetricValue(median, metricType, true)}</div>
+        <div>Avg: ${formatMetricValue(avg, metricType, true)}</div>
         <div>Min/Max: ${formatMetricValue(min, metricType, true)} · ${formatMetricValue(max, metricType, true)}</div>
-        ${change ? `<div>${change.label}: ${change.value}</div>` : ""}
       </div>
     `;
     kpiGrid.appendChild(card);
@@ -2475,6 +2486,81 @@ function renderKPIs(rows) {
   renderKPIs.running = false;
 }
 renderKPIs.running = false;
+
+function inferUserKpiDeltaTone(changeValue) {
+  const text = String(changeValue || "").trim();
+  if (!text) return "flat";
+  if (text.startsWith("-")) return "down";
+  if (text === "0%" || text === "0.0 pp" || text === "0.0%") return "flat";
+  return "up";
+}
+
+function formatUserDeltaArrow(tone) {
+  if (tone === "up") return "▲";
+  if (tone === "down") return "▼";
+  return "•";
+}
+
+function buildUserKpiSparklineData(rows, metric, metricType) {
+  if (!state.dateColumn) return null;
+  const fullSeries = aggregateByDate(rows, state.dateColumn, metric, "day", state.dateRange, metricType);
+  const labels = fullSeries.labels || [];
+  const values = fullSeries.values || [];
+  if (!labels.length || !values.length) return null;
+  const window = 30;
+  const currentValues = values.slice(-window);
+  const priorValues = values.slice(-window * 2, -window);
+  const currentLabels = labels.slice(-window);
+  const priorLabels = labels.slice(-window * 2, -window);
+  const padSeries = (arr, size) => (arr.length >= size ? arr : [...Array(size - arr.length).fill(0), ...arr]);
+  const padLabels = (arr, size) => (arr.length >= size ? arr : [...Array(size - arr.length).fill(""), ...arr]);
+  return {
+    currentSeries: padSeries(currentValues, window),
+    priorSeries: padSeries(priorValues, window),
+    currentLabels: padLabels(currentLabels, window),
+    priorLabels: padLabels(priorLabels, window),
+  };
+}
+
+function buildUserKpiSparklineSvg(series, metricType, label) {
+  const currentSeries = series?.currentSeries || [];
+  const priorSeries = series?.priorSeries || [];
+  const currentLabels = series?.currentLabels || [];
+  const priorLabels = series?.priorLabels || [];
+  const length = Math.max(currentSeries.length, priorSeries.length, 30);
+  const width = 240;
+  const height = 52;
+  const padX = 4;
+  const padY = 4;
+  const values = [...currentSeries, ...priorSeries];
+  const minY = Math.min(...values, 0);
+  const maxY = Math.max(...values, 0);
+  const scaleX = (index) => padX + (index / Math.max(length - 1, 1)) * (width - padX * 2);
+  const scaleY = (value) => (height - padY) - ((value - minY) / Math.max(maxY - minY, 1)) * (height - padY * 2);
+  const pathFor = (arr) => arr.map((v, i) => `${i === 0 ? "M" : "L"}${scaleX(i)},${scaleY(v)}`).join(" ");
+  const hoverRects = Array.from({ length }).map((_, i) => {
+    const x = scaleX(i);
+    const currentValue = currentSeries[i] ?? 0;
+    const priorValue = priorSeries[i] ?? 0;
+    const dateText = currentLabels[i] ? formatDateFriendly(currentLabels[i]) : `Day ${i + 1}`;
+    const priorDateText = priorLabels[i] ? formatDateFriendly(priorLabels[i]) : `Day ${i + 1}`;
+    const tooltip = `${dateText}\nCurrent: ${formatMetricValue(currentValue, metricType)}\nPrior (${priorDateText}): ${formatMetricValue(priorValue, metricType)}`;
+    return `<rect x="${Math.max(0, x - 4)}" y="0" width="8" height="${height}" fill="transparent"><title>${tooltip}</title></rect>`;
+  }).join("");
+  return `
+    <svg class="kpi-sparkline" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-label="${escapeHtml(label)} daily comparison sparkline">
+      <path d="${pathFor(priorSeries)}" fill="none" stroke="rgba(161,161,170,0.55)" stroke-width="1.4" stroke-dasharray="3 2" />
+      <path d="${pathFor(currentSeries)}" fill="none" stroke="rgba(96,165,250,0.95)" stroke-width="1.9" />
+      ${hoverRects}
+    </svg>
+  `;
+}
+
+function formatDateFriendly(value) {
+  const parsed = parseDate(value);
+  if (!parsed) return String(value || "");
+  return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
 function renderCharts(rows) {
   if (trendChartInstance) trendChartInstance.destroy();
@@ -3144,19 +3230,101 @@ function countDateGaps(rows, dateColumn) {
 }
 function renderInsights(rows) {
   insightsList.innerHTML = "";
+  const evidencePanel = document.getElementById("userEvidencePanel");
+  if (evidencePanel) {
+    evidencePanel.classList.add("hidden");
+    evidencePanel.innerHTML = `<div class="helper-text">Select an insight to view evidence details.</div>`;
+  }
   const insights = buildDecisionInsights(rows);
   insights.forEach((insight) => {
-    const card = document.createElement("div");
-    card.className = "comparison-card";
+    const card = document.createElement("li");
+    card.className = "insight-card user-insight-card";
+    const confidenceLevel = inferUserInsightConfidence(insight);
+    const confidenceLabel = confidenceLevel.charAt(0).toUpperCase() + confidenceLevel.slice(1);
+    const whyLine = confidenceLevel !== "high"
+      ? `<p class="insight-meta confidence-why"><strong>Why this confidence:</strong> ${buildUserInsightConfidenceReason(insight)}</p>`
+      : "";
+    const evidenceSummary = extractInsightBullet(insight, "Evidence:") || insight.summary || "";
+    const driverLine = extractInsightBullet(insight, "Why:")
+      ?.replace(/^Why:\s*/i, "")
+      || insight.summary;
+    const actionLine = extractInsightBullet(insight, "Next step:")
+      ?.replace(/^Next step:\s*/i, "")
+      || "Investigate top drivers and validate with a controlled slice.";
     card.innerHTML = `
-      <strong>${insight.title}</strong>
-      <p class="helper-text">${insight.summary}</p>
-      <ul>
-        ${insight.bullets.map((bullet) => `<li>${bullet}</li>`).join("")}
-      </ul>
+      <h4>${escapeHtml(insight.title)}</h4>
+      <p class="insight-meta">${escapeHtml(evidenceSummary)}</p>
+      <p class="insight-meta">Driver: ${escapeHtml(driverLine)}</p>
+      <p class="insight-meta">Action: ${escapeHtml(actionLine)}</p>
+      <span class="severity ${confidenceLevel} confidence-pill" tabindex="0" aria-label="Confidence info: Confidence reflects data coverage, consistency and evidence quality for this insight.">
+        Confidence: ${confidenceLabel}
+        <span class="confidence-tooltip" role="tooltip">Confidence reflects data coverage, consistency and evidence quality for this insight.</span>
+      </span>
+      ${whyLine}
+      <button type="button" class="ghost view-evidence">View evidence</button>
     `;
+    const button = card.querySelector(".view-evidence");
+    if (button) {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        renderUserInsightEvidence(evidencePanel, insight);
+      });
+    }
     insightsList.appendChild(card);
   });
+}
+
+function extractInsightBullet(insight, prefix) {
+  return (insight?.bullets || []).find((bullet) => String(bullet).startsWith(prefix)) || "";
+}
+
+function inferUserInsightConfidence(insight) {
+  const bullets = (insight?.bullets || []).join(" ").toLowerCase();
+  if (bullets.includes("insufficient") || bullets.includes("skipped") || bullets.includes("fewer than")) return "low";
+  if (bullets.includes("limited") || bullets.includes("no date column") || bullets.includes("validate")) return "medium";
+  return "high";
+}
+
+function buildUserInsightConfidenceReason(insight) {
+  const bullets = (insight?.bullets || []).join(" ");
+  if (/insufficient|skipped|fewer than/i.test(bullets)) {
+    return "Limited supporting data or validation coverage for this insight.";
+  }
+  if (/no date column|limited|validate/i.test(bullets)) {
+    return "Evidence is directionally useful, but trend or segment validation is limited.";
+  }
+  return "Evidence quality is moderate and should be validated with additional slices.";
+}
+
+function renderUserInsightEvidence(panel, insight) {
+  if (!panel) return;
+  panel.classList.remove("hidden");
+  const bullets = insight?.bullets || [];
+  panel.innerHTML = `
+    <div class="evidence-section">
+      <strong>Evidence detail</strong>
+      <div class="helper-text">${escapeHtml(insight.summary || "")}</div>
+    </div>
+    <div class="evidence-section">
+      <strong>Analytical proof</strong>
+      <div class="evidence-table-wrap">
+        <table class="evidence-table">
+          <thead>
+            <tr><th>Type</th><th>Detail</th></tr>
+          </thead>
+          <tbody>
+            ${bullets.map((bullet) => {
+              const parts = String(bullet).split(":");
+              const type = parts.length > 1 ? parts.shift() : "Note";
+              const detail = parts.length > 0 ? parts.join(":").trim() : String(bullet);
+              return `<tr><td>${escapeHtml(String(type))}</td><td>${escapeHtml(detail)}</td></tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 function buildDecisionInsights(rows) {
