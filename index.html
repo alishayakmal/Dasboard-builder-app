@@ -73,13 +73,53 @@
 
     <section class="sample-preview" id="samples">
       <div class="sample-copy">
-        <h3>Sample insights</h3>
-        <p>Preview how Shay Analytics AI surfaces lift, risk, and growth opportunities.</p>
-        <div id="sampleInsightsRoot" class="sample-cards"></div>
+        <div class="sample-header">
+          <div>
+            <h3>Sample insights</h3>
+            <p>Preview how Shay Analytics AI surfaces lift, risk, and growth opportunities.</p>
+          </div>
+          <span class="demo-badge">Demo data</span>
+        </div>
+        <div id="sampleKpiGrid" class="sample-kpis"></div>
       </div>
       <div class="sample-visual">
-        <div id="miniDashboardRoot" class="mock-dashboard"></div>
-        <div id="insightDrilldown" class="insight-drilldown hidden"></div>
+        <div class="sample-trend">
+          <div class="trend-header">
+            <div>
+              <h4>Month over month trend</h4>
+              <p class="helper-text">Last 30 days vs prior 30 days</p>
+            </div>
+            <div class="trend-controls">
+              <label>Metric
+                <select id="sampleTrendMetric"></select>
+              </label>
+              <label>Breakdown
+                <select id="sampleTrendBreakdown">
+                  <option value="overall">Overall</option>
+                  <option value="plan">By plan</option>
+                  <option value="channel">By channel</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div id="sampleTrendChart" class="trend-chart"></div>
+        </div>
+        <div class="sample-details">
+          <div class="detail-chart">
+            <div class="detail-header">
+              <h4>Performance details</h4>
+              <label>Dimension
+                <select id="sampleDimensionSelect">
+                  <option value="plan">Plan</option>
+                  <option value="channel">Channel</option>
+                  <option value="region">Region</option>
+                </select>
+              </label>
+            </div>
+            <div id="sampleBreakdownChart" class="breakdown-chart"></div>
+          </div>
+          <div id="sampleInsightsRoot" class="sample-cards"></div>
+        </div>
       </div>
     </section>
 
