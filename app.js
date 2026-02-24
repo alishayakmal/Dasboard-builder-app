@@ -24,6 +24,7 @@ const emailError = document.getElementById("emailError");
 const companyError = document.getElementById("companyError");
 const useCaseError = document.getElementById("useCaseError");
 const useCaseDetailError = document.getElementById("useCaseDetailError");
+const signupDebug = document.getElementById("signupDebug");
 const signupSubmitButton = document.getElementById("signupSubmit");
 const sheetsUrlInput = document.getElementById("sheetsUrl");
 const sheetsRangeInput = document.getElementById("sheetsRange");
@@ -114,6 +115,14 @@ let googleAccessToken = null;
 let googleTokenClient = null;
 let logoWarningShown = false;
 let renderKpiCallCount = 0;
+let signupSubmitting = false;
+const signupFormState = {
+  fullName: "",
+  email: "",
+  company: "",
+  useCase: "",
+  useCaseDetail: "",
+};
 
 const samplePath = "data-sample.csv";
 // Use the deployed Apps Script Web App URL ending in /exec (not the editor URL).
@@ -303,7 +312,7 @@ function init() {
   }
   [leadNameInput, leadEmailInput, leadCompanyInput, leadUseCaseInput, leadUseCaseDetailInput].forEach((input) => {
     if (!input) return;
-    input.addEventListener("input", updateSignupButtonState);
+    input.addEventListener("input", handleSignupInputChange);
   });
   if (signInButton) signInButton.addEventListener("click", handleSignInClick);
   if (signOutButton) signOutButton.addEventListener("click", handleSignOutClick);
@@ -545,6 +554,7 @@ function openModal() {
   if (companyError) companyError.textContent = "";
   if (useCaseError) useCaseError.textContent = "";
   if (useCaseDetailError) useCaseDetailError.textContent = "";
+  hydrateSignupForm();
   handleUseCaseToggle();
   updateSignupButtonState();
 }
@@ -562,6 +572,9 @@ function handleSignupSubmit(event) {
     updateSignupButtonState();
     return;
   }
+
+  signupSubmitting = true;
+  updateSignupButtonState();
 
   const { name, email, company, useCase, useCaseDetail } = validation.cleaned;
 
@@ -592,6 +605,8 @@ function handleSignupSubmit(event) {
         ? "Account created. You can now access the dashboard."
         : "Account created, but logging failed. Please try again.";
     }
+    signupSubmitting = false;
+    updateSignupButtonState();
   });
 
   saveLead(lead);
@@ -603,8 +618,26 @@ function handleSignupSubmit(event) {
   routeTo("app");
 }
 
+function hydrateSignupForm() {
+  if (leadNameInput) leadNameInput.value = signupFormState.fullName;
+  if (leadEmailInput) leadEmailInput.value = signupFormState.email;
+  if (leadCompanyInput) leadCompanyInput.value = signupFormState.company;
+  if (leadUseCaseInput) leadUseCaseInput.value = signupFormState.useCase;
+  if (leadUseCaseDetailInput) leadUseCaseDetailInput.value = signupFormState.useCaseDetail;
+}
+
+function handleSignupInputChange() {
+  signupFormState.fullName = leadNameInput?.value || "";
+  signupFormState.email = leadEmailInput?.value || "";
+  signupFormState.company = leadCompanyInput?.value || "";
+  signupFormState.useCase = leadUseCaseInput?.value || "";
+  signupFormState.useCaseDetail = leadUseCaseDetailInput?.value || "";
+  handleUseCaseToggle();
+  updateSignupButtonState();
+}
+
 function handleUseCaseToggle() {
-  const useCase = leadUseCaseInput?.value?.trim() || "";
+  const useCase = (leadUseCaseInput?.value || "").trim();
   if (useCaseDetailField) {
     const show = useCase === "Other";
     useCaseDetailField.classList.toggle("hidden", !show);
@@ -613,11 +646,11 @@ function handleUseCaseToggle() {
 }
 
 function validateSignupForm() {
-  const name = leadNameInput?.value?.trim() || "";
-  const email = leadEmailInput?.value?.trim() || "";
-  const company = leadCompanyInput?.value?.trim() || "";
-  const useCase = leadUseCaseInput?.value?.trim() || "";
-  const useCaseDetail = leadUseCaseDetailInput?.value?.trim() || "";
+  const name = (leadNameInput?.value || "").trim();
+  const email = (leadEmailInput?.value || "").trim();
+  const company = (leadCompanyInput?.value || "").trim();
+  const useCase = (leadUseCaseInput?.value || "").trim();
+  const useCaseDetail = (leadUseCaseDetailInput?.value || "").trim();
 
   const errors = {};
   if (name.length < 2) errors.name = "Full name is required.";
@@ -643,7 +676,14 @@ function validateSignupForm() {
 function updateSignupButtonState() {
   if (!signupSubmitButton) return;
   const validation = validateSignupForm();
-  signupSubmitButton.disabled = !validation.isValid;
+  signupSubmitButton.disabled = !validation.isValid || signupSubmitting;
+  if (signupDebug) {
+    const isDev = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    signupDebug.classList.toggle("hidden", !isDev);
+    if (isDev) {
+      signupDebug.textContent = `isValid=${validation.isValid} isSubmitting=${signupSubmitting} | name=${validation.cleaned.name.length} email=${validation.cleaned.email.length} company=${validation.cleaned.company.length} useCase="${validation.cleaned.useCase}" detail=${validation.cleaned.useCaseDetail.length}`;
+    }
+  }
 }
 
 function showFormError(message) {
