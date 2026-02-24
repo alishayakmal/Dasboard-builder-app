@@ -1641,6 +1641,118 @@ button:disabled {
   width: fit-content;
 }
 
+.unified-dashboard-shell {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.unified-dashboard-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.unified-dashboard-row > .unified-col {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+}
+
+.unified-panel {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+}
+
+.unified-kpi-panel {
+  background: rgba(16, 16, 20, 0.75);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.unified-kpi-panel > .kpi-grid {
+  height: 100%;
+}
+
+.unified-kpi-panel > .kpi-grid .kpi-card {
+  height: 100%;
+}
+
+.unified-trend-panel {
+  background: rgba(16, 16, 20, 0.75);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.unified-trend-panel > .filter-badge {
+  margin-bottom: 6px;
+}
+
+.unified-trend-panel > .chart-card {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  height: 100%;
+}
+
+.unified-insights-col > .insights-card,
+.unified-performance-col > .chart-card {
+  min-height: 340px;
+  height: 100%;
+}
+
+.unified-performance-col > .chart-card canvas {
+  min-height: 220px;
+}
+
+.unified-evidence-panel {
+  background: rgba(16, 16, 20, 0.85);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.unified-dashboard-extras {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+@media (min-width: 1200px) {
+  .unified-dashboard-row {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+
+  .unified-dashboard-row-top > .unified-kpi-col {
+    grid-column: span 5;
+  }
+
+  .unified-dashboard-row-top > .unified-trend-col {
+    grid-column: span 7;
+  }
+
+  .unified-dashboard-row-middle > .unified-insights-col {
+    grid-column: span 7;
+  }
+
+  .unified-dashboard-row-middle > .unified-performance-col {
+    grid-column: span 5;
+  }
+}
+
 .sheets-actions {
   display: flex;
   align-items: center;
