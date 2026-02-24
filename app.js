@@ -449,6 +449,42 @@ function ensureUnifiedUserDashboardLayout() {
   } else {
     dashboard.appendChild(shell);
   }
+
+  ensureDashboardActionsToolbar();
+}
+
+function ensureDashboardActionsToolbar() {
+  if (!dashboard) return;
+  const sectionHeader = dashboard.querySelector(".section-header");
+  if (!sectionHeader) return;
+
+  let toolbar = document.getElementById("dashboardActionsToolbar");
+  if (!toolbar) {
+    toolbar = document.createElement("div");
+    toolbar.id = "dashboardActionsToolbar";
+    toolbar.className = "dashboard-actions-toolbar";
+    toolbar.innerHTML = `
+      <div class="dashboard-actions-row" role="toolbar" aria-label="Dashboard actions"></div>
+      <div id="dashboardActionsStatus" class="helper-text hidden"></div>
+    `;
+    sectionHeader.appendChild(toolbar);
+  }
+
+  const row = toolbar.querySelector(".dashboard-actions-row");
+  const status = document.getElementById("dashboardActionsStatus");
+  if (!row) return;
+
+  [downloadPdfButton, exportCsvButton, downloadInsightsButton, exportSheetsButton].forEach((button) => {
+    if (!button) return;
+    button.classList.add("dashboard-action-btn");
+    row.appendChild(button);
+  });
+
+  if (status && exportStatus && status !== exportStatus) {
+    status.replaceWith(exportStatus);
+    exportStatus.id = "dashboardActionsStatus";
+    exportStatus.classList.remove("hidden");
+  }
 }
 
 function loadUsers() {
@@ -1654,6 +1690,7 @@ function renderDashboardRenderer({ dataset, mode }) {
     state.dateColumn = dataset.meta.dateField;
   }
   ensureUnifiedUserDashboardLayout();
+  ensureDashboardActionsToolbar();
   dashboard?.classList.add("dashboard-unified-active");
   applyFiltersAndRender();
 }
@@ -3997,6 +4034,7 @@ function buildDecisionInsights(rows) {
 
 function renderMetricComparison(rows) {
   if (!rows.length) return;
+  prepareMetricComparisonNarrativeLayout();
   const numericMetrics = Array.isArray(state.schema.numeric) ? state.schema.numeric : [];
   if (!numericMetrics.length) return;
 
@@ -4020,9 +4058,7 @@ function renderMetricComparison(rows) {
 
   const availableCompare = numericMetrics.filter((metric) => metric !== primary);
   if (compareMetricSelect) {
-    const selected = (state.selections.compareMetrics || []).length
-      ? state.selections.compareMetrics
-      : chooseTopNumericByVariance(state.schema.profiles, availableCompare, 3);
+    const selected = chooseTopMetricDriversByCorrelation(rows, primary, availableCompare, 3);
     state.selections.compareMetrics = Array.isArray(selected) ? selected : [];
     compareMetricSelect.innerHTML = "";
     (availableCompare || []).forEach((metric) => {
@@ -4032,16 +4068,14 @@ function renderMetricComparison(rows) {
       option.selected = selected.includes(metric);
       compareMetricSelect.appendChild(option);
     });
-    compareMetricSelect.onchange = () => {
-      const chosen = Array.from(compareMetricSelect.selectedOptions).map((opt) => opt.value).slice(0, 5);
-      state.selections.compareMetrics = Array.isArray(chosen) ? chosen : [];
-      applyFiltersAndRender();
-    };
+    compareMetricSelect.onchange = null;
   }
 
+  const narrative = buildMetricComparisonNarrative(rows, primary, state.selections.compareMetrics);
+  renderMetricComparisonNarrativeHeader(primary, narrative);
   renderComparisonTrend(rows, primary);
-  renderDriversList(rows, primary, state.selections.compareMetrics);
-  renderSegmentView(rows, primary);
+  renderDriversList(rows, primary, state.selections.compareMetrics, narrative);
+  hideMetricComparisonSegmentView();
 }
 
 function renderComparisonTrend(rows, primary) {
@@ -4069,12 +4103,12 @@ function renderComparisonTrend(rows, primary) {
   }
 }
 
-function renderDriversList(rows, primary, compareMetrics) {
+function renderDriversList(rows, primary, compareMetrics, narrative = null) {
   if (!driversList) return;
   driversList.innerHTML = "";
   const metrics = Array.isArray(compareMetrics) ? compareMetrics : [];
   if (!metrics.length) {
-    driversList.innerHTML = "<li>Select metrics to compare.</li>";
+    driversList.innerHTML = "<li>No strong numeric drivers were detected.</li>";
     return;
   }
 
@@ -4083,20 +4117,24 @@ function renderDriversList(rows, primary, compareMetrics) {
     if (corr === null) {
       return { metric, corr: null, label: "Insufficient data" };
     }
-    const strength = Math.abs(corr) >= 0.6 ? "Strong" : Math.abs(corr) >= 0.3 ? "Moderate" : "Weak";
-    const direction = corr >= 0 ? "positive" : "negative";
-    return { metric, corr, label: `${strength} ${direction}` };
-  }).sort((a, b) => (b.corr ?? 0) - (a.corr ?? 0));
+    return { metric, corr };
+  }).sort((a, b) => Math.abs(b.corr ?? 0) - Math.abs(a.corr ?? 0));
 
-  items.forEach((item) => {
-    const li = document.createElement("li");
-    if (item.corr === null) {
-      li.textContent = `${item.metric}: insufficient data`;
-    } else {
-      li.textContent = `${item.metric}: ${item.label} (r = ${item.corr.toFixed(2)})`;
-    }
-    driversList.appendChild(li);
-  });
+  const actionLine = narrative?.action
+    ? `<li><strong>Action:</strong> ${escapeHtml(narrative.action)}</li>`
+    : "";
+  const explanationLines = items.slice(0, 3).map((item) => {
+    if (item.corr === null) return `<li>${escapeHtml(formatMetricLabel(item.metric))}: insufficient data for interpretation.</li>`;
+    const percent = Math.round(Math.abs(item.corr) * 100);
+    const directionText = item.corr >= 0 ? "increases" : "decreases";
+    return `<li>${escapeHtml(formatMetricLabel(item.metric))} explains ${percent}% of ${escapeHtml(formatMetricLabel(primary))} variation and typically ${directionText} with it.</li>`;
+  }).join("");
+
+  driversList.innerHTML = `
+    ${narrative?.driverExplanation ? `<li>${escapeHtml(narrative.driverExplanation)}</li>` : ""}
+    ${explanationLines}
+    ${actionLine}
+  `;
 }
 
 function renderSegmentView(rows, primary) {
@@ -4116,6 +4154,96 @@ function renderSegmentView(rows, primary) {
 
   const breakdown = aggregateByCategory(rows, dimension, primary, 8);
   segmentChartInstance = createBarChart("segmentChart", breakdown.labels, breakdown.values, metricType);
+}
+
+function prepareMetricComparisonNarrativeLayout() {
+  const comparisonSectionEl = document.getElementById("comparisonSection");
+  if (!comparisonSectionEl) return;
+  const title = comparisonSectionEl.querySelector(".chart-header h3");
+  const subtitle = comparisonSectionEl.querySelector(".chart-header p");
+  if (title) {
+    const metricLabel = formatMetricLabel(state.selections.primaryMetric || "");
+    title.textContent = metricLabel ? `What drives ${metricLabel}` : "What drives this metric";
+  }
+  if (subtitle) {
+    subtitle.textContent = "One interpreted view of the strongest drivers and what to do next.";
+  }
+
+  const compareGroup = compareMetricSelect?.closest(".control-group");
+  if (compareGroup) compareGroup.classList.add("hidden");
+
+  const segmentPanel = segmentChartCanvas?.closest(".comparison-card");
+  if (segmentPanel) segmentPanel.classList.add("hidden");
+
+  const driverPanel = driversList?.closest(".comparison-card");
+  if (driverPanel) {
+    const h4 = driverPanel.querySelector("h4");
+    if (h4) h4.textContent = "Driver explanation";
+  }
+}
+
+function renderMetricComparisonNarrativeHeader(primary, narrative) {
+  const wrapper = document.querySelector("#comparisonSection .heatmap-wrapper");
+  if (!wrapper) return;
+  let narrativeBlock = document.getElementById("comparisonNarrativeHeader");
+  if (!narrativeBlock) {
+    narrativeBlock = document.createElement("div");
+    narrativeBlock.id = "comparisonNarrativeHeader";
+    narrativeBlock.className = "comparison-narrative";
+    wrapper.parentNode.insertBefore(narrativeBlock, wrapper);
+  }
+  const primaryLabel = formatMetricLabel(primary);
+  const headline = narrative?.headline || `This view highlights the strongest measurable drivers of ${primaryLabel}.`;
+  const action = narrative?.action || `Validate the top driver for ${primaryLabel} before making changes.`;
+  narrativeBlock.innerHTML = `
+    <p class="comparison-narrative-headline">${escapeHtml(headline)}</p>
+    <p class="comparison-narrative-action"><strong>Action:</strong> ${escapeHtml(action)}</p>
+  `;
+}
+
+function chooseTopMetricDriversByCorrelation(rows, primary, candidates, limit = 3) {
+  return [...(candidates || [])]
+    .map((metric) => ({ metric, corr: computeCorrelation(rows, primary, metric) }))
+    .filter((item) => item.corr !== null)
+    .sort((a, b) => Math.abs(b.corr) - Math.abs(a.corr))
+    .slice(0, limit)
+    .map((item) => item.metric);
+}
+
+function buildMetricComparisonNarrative(rows, primary, compareMetrics) {
+  const primaryLabel = formatMetricLabel(primary);
+  const topDriver = (compareMetrics || [])[0];
+  const topCorr = topDriver ? computeCorrelation(rows, primary, topDriver) : null;
+  const topCorrPct = topCorr === null ? null : Math.round(Math.abs(topCorr) * 100);
+  const directionWord = (topCorr ?? 0) >= 0 ? "rises" : "falls";
+  const segmentDim = state.selectedDimension || chooseCategoryColumn(rows, state.schema.profiles);
+  let topSegments = [];
+  if (segmentDim) {
+    const metricValues = rows.map((row) => parseNumber(row[primary])).filter((value) => value !== null);
+    const metricType = inferMetricType(primary, metricValues);
+    const breakdown = aggregateByCategory(rows, segmentDim, primary, 2, metricType);
+    topSegments = (breakdown.labels || []).slice(0, 2);
+  }
+  const regionHint = topSegments.length ? `, especially in ${topSegments.join(" and ")}` : "";
+  const headline = topDriver && topCorr !== null
+    ? `${formatMetricLabel(topDriver)} ${directionWord} with ${primaryLabel}${regionHint}.`
+    : `${primaryLabel} is shown in a single trend view${regionHint}.`;
+  const driverExplanation = topDriver && topCorr !== null
+    ? `${formatMetricLabel(topDriver)} explains ${topCorrPct}% of ${primaryLabel} variation${topCorr >= 0 ? "" : " (inverse relationship)"} based on correlation strength.`
+    : `No strong numeric driver was detected for ${primaryLabel} in the current slice.`;
+  const action = topDriver && topCorr !== null && Math.abs(topCorr) >= 0.6
+    ? `Review cases where ${formatMetricLabel(topDriver)} changes faster than ${primaryLabel} to confirm whether the driver is causal.`
+    : `Validate the top driver relationship with a filtered segment before acting on ${primaryLabel}.`;
+  return { headline, driverExplanation, action };
+}
+
+function hideMetricComparisonSegmentView() {
+  const segmentPanel = segmentChartCanvas?.closest(".comparison-card");
+  if (segmentPanel) segmentPanel.classList.add("hidden");
+  if (segmentChartInstance) {
+    segmentChartInstance.destroy();
+    segmentChartInstance = null;
+  }
 }
 
 function findAlternateCategory(categories, industryColumn) {
