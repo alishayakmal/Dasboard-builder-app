@@ -363,6 +363,7 @@ function init() {
   disableUnavailableButtons();
   auditActionHandlers();
   updateAnalysisHeaderState(false);
+  syncUploadAnalysisState();
   console.log("handlers wired");
 }
 
@@ -616,6 +617,30 @@ function updateAnalysisHeaderState(hasDataset) {
   }
 }
 
+function hasLoadedDataset() {
+  return Boolean(state.rawRows && state.rawRows.length > 0);
+}
+
+function syncUploadAnalysisState() {
+  const hasDataset = hasLoadedDataset();
+  updateAnalysisHeaderState(hasDataset);
+
+  if (dashboard) {
+    dashboard.classList.toggle("hidden", !hasDataset);
+  }
+
+  const uploadTabActive = Array.from(tabButtons || []).some((button) => button.dataset.tab === "upload" && button.classList.contains("active"));
+  if (stateSection && uploadTabActive) {
+    stateSection.classList.toggle("hidden", hasDataset);
+  }
+
+  if (!hasDataset) {
+    if (metricNotice) metricNotice.classList.add("hidden");
+    if (warningsSection) warningsSection.classList.add("hidden");
+    if (statusSection) statusSection.classList.add("hidden");
+  }
+}
+
 function loadUsers() {
   return JSON.parse(localStorage.getItem(USERS_KEY) || "{}");
 }
@@ -749,6 +774,7 @@ function switchTab(tabName) {
   tabPanels.forEach((panel) => {
     panel.classList.toggle("hidden", panel.dataset.tabPanel !== tabName);
   });
+  syncUploadAnalysisState();
   if (tabName === "samples" && !state.rawRows.length && !state.sampleTabAutoloaded) {
     state.sampleTabAutoloaded = true;
     loadFixtureCsv();
@@ -1841,6 +1867,7 @@ function resetStateForNewDataset() {
   state.dateRange = { start: null, end: null };
   state.chosenXAxisType = "category";
   updateAnalysisHeaderState(false);
+  syncUploadAnalysisState();
   if (kpiGrid) kpiGrid.innerHTML = "";
   if (driversList) driversList.innerHTML = "";
   if (insightsList) insightsList.innerHTML = "";
@@ -2053,6 +2080,7 @@ function renderDashboardRenderer({ dataset, mode }) {
   ensureDashboardActionsToolbar();
   dashboard?.classList.add("dashboard-unified-active");
   updateAnalysisHeaderState(Boolean(dataset?.rows?.length));
+  syncUploadAnalysisState();
   applyFiltersAndRender();
 }
 
@@ -2151,6 +2179,7 @@ function ingestRows(rawRows, sourceMeta = {}) {
   stateSection.classList.add("hidden");
   dashboard.classList.remove("hidden");
   activateSourceTab(sourceMeta);
+  syncUploadAnalysisState();
   if (statusSection) {
     statusSection.classList.add("hidden");
     statusSection.textContent = "";
