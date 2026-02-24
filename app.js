@@ -44,6 +44,7 @@ const webhookStatus = document.getElementById("webhookStatus");
 const stateSection = document.getElementById("state");
 const errorSection = document.getElementById("error");
 const warningsSection = document.getElementById("warnings");
+const debugUploadStatus = document.getElementById("debugUploadStatus");
 const statusSection = document.getElementById("status");
 const metricNotice = document.getElementById("metricNotice");
 const dashboard = document.getElementById("dashboard");
@@ -187,6 +188,7 @@ const percentFormatter = new Intl.NumberFormat("en-US", {
 });
 
 const state = {
+  dataset: null,
   normalizedDataset: null,
   datasetCapabilities: {
     hasDateField: false,
@@ -227,9 +229,23 @@ const state = {
   topN: 8,
   sampleTabAutoloaded: false,
   uiMode: "empty", // empty | loading | ready | error
+  parseStatus: "idle",
+  error: null,
 };
 
 document.addEventListener("DOMContentLoaded", init);
+
+function renderDebugUploadStatus() {
+  if (!debugUploadStatus) return;
+  const dataset = state.dataset || state.normalizedDataset;
+  debugUploadStatus.textContent = `Status: ${state.parseStatus} · Rows: ${dataset?.rows?.length || 0} · Columns: ${dataset?.columns?.length || 0}`;
+}
+
+function setParseStatus(nextStatus, error = null) {
+  state.parseStatus = nextStatus;
+  state.error = error || null;
+  renderDebugUploadStatus();
+}
 
 function init() {
   console.log("init started");
@@ -432,6 +448,7 @@ function init() {
   disableUnavailableButtons();
   auditActionHandlers();
   setUiMode("empty");
+  setParseStatus("idle");
   updateAnalysisHeaderState(false);
   syncUploadAnalysisState();
   console.log("handlers wired");
@@ -615,11 +632,12 @@ function closeUploaderModal() {
 }
 
 function hasLoadedDataset() {
-  return Boolean(state.rawRows && state.rawRows.length > 0);
+  const dataset = state.dataset || state.normalizedDataset;
+  return Boolean((dataset?.rows && dataset.rows.length > 0) || (state.rawRows && state.rawRows.length > 0));
 }
 
 function hasUserDataLoaded() {
-  const sourceType = state.normalizedDataset?.meta?.sourceType || null;
+  const sourceType = state.dataset?.meta?.sourceType || state.normalizedDataset?.meta?.sourceType || null;
   if (!hasLoadedDataset()) return false;
   return sourceType !== "demo";
 }
@@ -628,6 +646,7 @@ function setUiMode(mode) {
   state.uiMode = mode;
   if (mode === "ready") closeUploaderModal();
   syncUploadAnalysisState();
+  renderDebugUploadStatus();
 }
 
 function syncUploadAnalysisState() {
@@ -754,9 +773,11 @@ function applyBrandAssets() {
 
 function handleFileSelection(file) {
   if (!file) return;
+  console.log("UPLOAD file selected", file.name, file.size);
   console.log("file selected", file.name);
   clearMessages();
   setUiMode("loading");
+  setParseStatus("parsing");
   setStatus("Reading file");
   const reader = new FileReader();
   reader.onload = () => {
@@ -773,7 +794,9 @@ function handleFileSelection(file) {
 }
 
 function parseCsvText(text, sourceMeta = {}) {
+  console.log("PARSE start");
   setUiMode("loading");
+  setParseStatus("parsing");
   setStatus("Parsing CSV");
   Papa.parse(text, {
     header: false,
@@ -785,6 +808,7 @@ function parseCsvText(text, sourceMeta = {}) {
         return;
       }
       console.log("parse complete");
+      console.log("PARSE raw rows", results.data?.length || 0);
       ingestRows(results.data, sourceMeta);
     },
   });
@@ -1917,6 +1941,7 @@ function clearMessages() {
 
 function resetStateForNewDataset() {
   destroyAllCharts();
+  state.dataset = null;
   state.filteredRows = [];
   state.schema = { columns: [], profiles: {}, numeric: [], dates: [], categoricals: [] };
   state.numericColumns = [];
@@ -1929,8 +1954,11 @@ function resetStateForNewDataset() {
   state.chosenXAxisType = "category";
   state.normalizedDataset = null;
   state.uiMode = "empty";
+  state.parseStatus = "idle";
+  state.error = null;
   updateAnalysisHeaderState(false);
   syncUploadAnalysisState();
+  renderDebugUploadStatus();
   if (kpiGrid) kpiGrid.innerHTML = "";
   if (driversList) driversList.innerHTML = "";
   if (insightsList) insightsList.innerHTML = "";
@@ -1966,6 +1994,7 @@ function showError(message, detail) {
     errorSection.innerHTML = `<strong>${message}</strong><div class="error-detail">${debug}</div>`;
   }
   errorSection.classList.remove("hidden");
+  setParseStatus("error", detail || message);
   if (!hasLoadedDataset()) {
     state.uiMode = "error";
     syncUploadAnalysisState();
@@ -2128,6 +2157,7 @@ function renderDashboardRenderer({ dataset, mode }) {
   // Shared renderer entry point. For now it delegates to the existing dashboard layout/render pipeline.
   // All sources should call into this function after normalization.
   if (!dataset) return;
+  state.dataset = dataset;
   state.normalizedDataset = dataset;
   state.datasetCapabilities = {
     hasDateField: Boolean(dataset.meta?.hasDateField),
@@ -2136,6 +2166,7 @@ function renderDashboardRenderer({ dataset, mode }) {
   };
   state.mode = mode;
   state.uiMode = dataset?.rows?.length ? "ready" : "empty";
+  if (dataset?.rows?.length) setParseStatus("ready");
   dashboard?.setAttribute("data-dashboard-mode", mode || "user");
   dashboard?.setAttribute("data-source-type", dataset.meta?.sourceType || "csv");
   if (dataset.meta && dataset.meta.hasDateField === false) {
@@ -2153,6 +2184,7 @@ function renderDashboardRenderer({ dataset, mode }) {
 
 function ingestRows(rawRows, sourceMeta = {}) {
   setStatus("Profiling columns");
+  setParseStatus("parsing");
   if (!rawRows || rawRows.length === 0) {
     showError("No rows found in this CSV.");
     return;
@@ -2233,6 +2265,7 @@ function ingestRows(rawRows, sourceMeta = {}) {
     },
   });
   state.mode = getDashboardModeForDataset(state.normalizedDataset);
+  console.log("NORMALIZE result", state.normalizedDataset?.rows?.length || 0, state.normalizedDataset?.columns?.length || 0);
 
   initControls(recommendedMetrics);
   setStatus("Rendering dashboard");
@@ -2242,6 +2275,9 @@ function ingestRows(rawRows, sourceMeta = {}) {
   });
 
   const sourceBadge = state.normalizedDataset?.meta?.sourceType ? ` · ${String(state.normalizedDataset.meta.sourceType).toUpperCase()}` : "";
+  state.dataset = state.normalizedDataset;
+  console.log("STATE dataset set", state.dataset?.rows?.length || 0);
+  setParseStatus("ready");
   datasetSummary.textContent = `${rows.length} rows · ${state.schema.columns.length} columns${sourceBadge}`;
   closeUploaderModal();
   stateSection.classList.add("hidden");
