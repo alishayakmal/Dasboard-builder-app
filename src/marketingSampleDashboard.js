@@ -112,12 +112,14 @@ function renderInsights(container, evidencePanel, breakdownChart) {
       <p class="insight-meta">Driver: ${insight.driver}</p>
       <p class="insight-meta">Action: ${insight.action}</p>
       <span class="severity ${insight.confidence}">Confidence: ${insight.confidence}</span>
-      <button class="ghost view-evidence">View evidence</button>
+      <button type="button" class="ghost view-evidence" data-insight-id="${insight.id}">View evidence</button>
     `;
     const button = card.querySelector(".view-evidence");
     if (button) {
-      button.addEventListener("click", () => {
-        console.log("View evidence clicked", insight);
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        console.log("view-evidence", insight.id);
         showEvidence(evidencePanel, insight);
         breakdownChart?.scrollIntoView({ behavior: "smooth" });
       });
