@@ -252,6 +252,93 @@ function computeMetricValue(items, metricKey) {
   return 0;
 }
 
+function getMetricFieldKeys(metricKey) {
+  if (metricKey === "retention") return ["retainedUsers", "eligibleUsers"];
+  if (metricKey === "pipeline") return ["pipelineAmount"];
+  if (metricKey === "activeUsers") return ["activeUsers"];
+  if (metricKey === "revenue") return ["revenue"];
+  return [];
+}
+
+function buildMonthlyMetricMap(items, metricKey) {
+  const buckets = {};
+  items.forEach((row) => {
+    const monthKey = `${row.date.getFullYear()}-${String(row.date.getMonth() + 1).padStart(2, "0")}-01`;
+    if (!buckets[monthKey]) buckets[monthKey] = [];
+    buckets[monthKey].push(row);
+  });
+  return Object.entries(buckets).reduce((acc, [monthKey, monthItems]) => {
+    acc[monthKey] = computeMetricValue(monthItems, metricKey);
+    return acc;
+  }, {});
+}
+
+function computeVarianceScore(values) {
+  if (!values.length) return 1;
+  const mean = values.reduce((acc, value) => acc + value, 0) / values.length;
+  const meanAbs = Math.abs(mean) || 1;
+  const variance = values.reduce((acc, value) => acc + ((value - mean) ** 2), 0) / values.length;
+  return Math.sqrt(variance) / meanAbs;
+}
+
+function computeConfidenceEvidence(topItems, bottomItems, metricKey, topValue, bottomValue, delta) {
+  const comparedItems = [...topItems, ...bottomItems];
+  const metricFields = getMetricFieldKeys(metricKey);
+  const totalCompared = comparedItems.length || 1;
+  const missingCount = comparedItems.filter((row) => metricFields.some((fieldKey) => !Number.isFinite(row[fieldKey]))).length;
+  const missingRate = missingCount / totalCompared;
+  const sampleSize = Math.min(topItems.length, bottomItems.length);
+
+  const topMonthly = buildMonthlyMetricMap(topItems, metricKey);
+  const bottomMonthly = buildMonthlyMetricMap(bottomItems, metricKey);
+  const overlapMonths = Object.keys(topMonthly).filter((monthKey) => Object.prototype.hasOwnProperty.call(bottomMonthly, monthKey));
+  const periods = overlapMonths.length;
+  const monthlyDeltas = overlapMonths.map((monthKey) => topMonthly[monthKey] - bottomMonthly[monthKey]);
+  const varianceScore = computeVarianceScore(monthlyDeltas);
+  const deltaPercent = Math.abs(delta) / Math.max(Math.abs(topValue) + Math.abs(bottomValue), 1);
+
+  const reasonCandidates = [];
+  if (sampleSize < 5) {
+    reasonCandidates.push({ weight: 40, text: "Limited sample size in this segment." });
+  }
+  if (deltaPercent < 0.08) {
+    reasonCandidates.push({ weight: 25, text: "Difference is small relative to overall volume." });
+  }
+  if (periods < 3) {
+    reasonCandidates.push({ weight: 20, text: "Not enough time periods to confirm a stable trend." });
+  }
+  if (missingRate > 0.1) {
+    reasonCandidates.push({ weight: 35, text: "Missing data reduces reliability of the comparison." });
+  }
+  if (varianceScore > 0.75) {
+    reasonCandidates.push({ weight: 15, text: "High volatility makes the trend less consistent." });
+  }
+
+  let score = 100;
+  reasonCandidates.forEach((reason) => {
+    score -= reason.weight;
+  });
+
+  let confidenceLevel = "high";
+  if (score < 70) confidenceLevel = "medium";
+  if (score < 40) confidenceLevel = "low";
+
+  return {
+    confidenceLevel,
+    confidenceReasons: reasonCandidates
+      .sort((a, b) => b.weight - a.weight)
+      .slice(0, 2)
+      .map((reason) => reason.text),
+    confidenceDetails: {
+      sampleSize,
+      deltaPercent,
+      periods,
+      missingRate,
+      varianceScore,
+    },
+  };
+}
+
 export function computeBreakdown(rows, metricKey, dimension, windowDays = 30) {
   const { start, end } = computePeriods(rows, windowDays);
   const current = rows.filter((row) => row.date >= start && row.date <= end);
@@ -269,23 +356,47 @@ export function computeBreakdown(rows, metricKey, dimension, windowDays = 30) {
 }
 
 export function computeInsights(rows, metricKey, dimension) {
-  const breakdown = computeBreakdown(rows, metricKey, dimension);
+  const { start, end } = computePeriods(rows, 30);
+  const currentRows = rows.filter((row) => row.date >= start && row.date <= end);
+  const buckets = {};
+  currentRows.forEach((row) => {
+    const key = row[dimension];
+    if (!buckets[key]) buckets[key] = [];
+    buckets[key].push(row);
+  });
+
+  const breakdown = Object.entries(buckets).map(([key, items]) => ({
+    key,
+    items,
+    value: computeMetricValue(items, metricKey),
+    sampleSize: items.length,
+  })).sort((a, b) => b.value - a.value);
+
   if (!breakdown.length) return [];
   const top = breakdown[0];
   const bottom = breakdown[breakdown.length - 1];
-  const metricLabel = METRICS.find((m) => m.key === metricKey)?.label || metricKey;
+  const metricConfig = METRICS.find((m) => m.key === metricKey);
+  const metricLabel = metricConfig?.label || metricKey;
+  const metricUnit = metricConfig?.unit;
   const delta = top.value - bottom.value;
-  const deltaLabel = metricKey === "retention" ? `${(delta * 100).toFixed(1)} pp` : formatValue(delta, METRICS.find((m) => m.key === metricKey)?.unit);
+  const deltaLabel = metricKey === "retention"
+    ? `${(delta * 100).toFixed(1)} pp`
+    : formatValue(delta, metricUnit);
+  const confidenceEvidence = computeConfidenceEvidence(top.items, bottom.items, metricKey, top.value, bottom.value, delta);
 
   return [
     {
+      id: `${metricKey}:${dimension}:${top.key}:${bottom.key}`,
       claim: `${metricLabel} is higher in ${top.key} than ${bottom.key}.`,
-      evidence: `Δ ${deltaLabel} (${top.key} vs ${bottom.key}) · n=${top.sampleSize}/${bottom.sampleSize}`,
-      driver: `Top segment: ${top.key} (${formatValue(top.value, METRICS.find((m) => m.key === metricKey)?.unit)})`,
+      evidence: `Delta ${deltaLabel} (${top.key} vs ${bottom.key}) � n=${top.sampleSize}/${bottom.sampleSize}`,
+      driver: `Top segment: ${top.key} (${formatValue(top.value, metricUnit)})`,
       action: `Review ${dimension} drivers to replicate ${top.key} performance.`,
-      confidence: top.sampleSize >= 5 && bottom.sampleSize >= 5 ? "medium" : "low",
+      confidence: confidenceEvidence.confidenceLevel,
+      confidenceLevel: confidenceEvidence.confidenceLevel,
+      confidenceReasons: confidenceEvidence.confidenceReasons,
+      confidenceDetails: confidenceEvidence.confidenceDetails,
     },
   ];
 }
-
 export { formatValue };
+
