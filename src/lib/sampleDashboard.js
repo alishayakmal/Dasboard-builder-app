@@ -1,4 +1,41 @@
 const SAMPLE_DATA_PATH = "./src/sample_data/sample_insights.csv";
+const FALLBACK_CSV = `date,plan,channel,region,revenue,activeUsers,retainedUsers,eligibleUsers,pipelineAmount
+2024-01-03,Enterprise,Paid Search,NA,42000,1200,520,1000,78000
+2024-01-10,Enterprise,Organic,NA,43800,1260,530,1020,82000
+2024-01-17,Enterprise,Paid Social,EU,44500,1310,545,1040,83500
+2024-01-24,Enterprise,Paid Search,EU,46200,1360,560,1060,86000
+2024-01-31,Enterprise,Organic,APAC,47800,1400,575,1080,88000
+2024-02-07,Enterprise,Paid Search,NA,51200,1500,610,1110,94000
+2024-02-14,Enterprise,Paid Social,EU,52600,1540,625,1130,96000
+2024-02-21,Enterprise,Organic,APAC,54800,1600,640,1160,99000
+2024-02-28,Enterprise,Paid Search,NA,57200,1660,660,1190,103000
+2024-03-06,Enterprise,Organic,EU,59800,1720,680,1220,107000
+2024-03-13,Enterprise,Paid Social,APAC,61200,1780,698,1250,110000
+2024-03-20,Enterprise,Paid Search,NA,64000,1860,720,1280,115000
+2024-01-03,Mid-market,Paid Search,NA,26000,980,410,920,52000
+2024-01-10,Mid-market,Organic,NA,24800,960,402,910,50500
+2024-01-17,Mid-market,Paid Social,EU,25200,970,405,915,51200
+2024-01-24,Mid-market,Paid Search,EU,25800,980,412,920,52000
+2024-01-31,Mid-market,Organic,APAC,26400,990,418,925,52800
+2024-02-07,Mid-market,Paid Search,NA,27200,1010,424,935,54000
+2024-02-14,Mid-market,Paid Social,EU,26800,1000,420,930,53500
+2024-02-21,Mid-market,Organic,APAC,27500,1020,426,940,54800
+2024-02-28,Mid-market,Paid Search,NA,28100,1030,432,950,56000
+2024-03-06,Mid-market,Organic,EU,28600,1040,438,960,57000
+2024-03-13,Mid-market,Paid Social,APAC,29200,1060,444,970,58500
+2024-03-20,Mid-market,Paid Search,NA,29800,1070,450,980,59500
+2024-01-03,SMB,Organic,NA,14000,720,280,700,30000
+2024-01-10,SMB,Paid Social,NA,14500,735,286,710,31000
+2024-01-17,SMB,Paid Search,EU,14800,745,290,720,31500
+2024-01-24,SMB,Organic,EU,15100,755,294,730,32000
+2024-01-31,SMB,Paid Social,APAC,15400,765,298,740,32500
+2024-02-07,SMB,Paid Search,NA,15800,780,304,755,33500
+2024-02-14,SMB,Organic,EU,16200,795,310,770,34500
+2024-02-21,SMB,Paid Social,APAC,16600,810,316,785,35500
+2024-02-28,SMB,Paid Search,NA,17000,825,322,800,36500
+2024-03-06,SMB,Organic,EU,17500,840,328,815,37500
+2024-03-13,SMB,Paid Social,APAC,18000,860,334,830,39000
+2024-03-20,SMB,Paid Search,NA,18600,880,342,850,41000`;
 
 const METRICS = [
   {
@@ -62,9 +99,14 @@ function toDate(value) {
 }
 
 export async function loadSampleDataset() {
-  const response = await fetch(SAMPLE_DATA_PATH);
-  if (!response.ok) throw new Error("Sample dataset unavailable");
-  const text = await response.text();
+  let text = "";
+  try {
+    const response = await fetch(SAMPLE_DATA_PATH);
+    if (!response.ok) throw new Error("Sample dataset unavailable");
+    text = await response.text();
+  } catch (error) {
+    text = FALLBACK_CSV;
+  }
   return parseCsv(text).map((row) => ({
     date: toDate(row.date),
     plan: row.plan,
