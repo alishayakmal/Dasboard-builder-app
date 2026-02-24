@@ -477,6 +477,8 @@ button:disabled {
   border: 1px solid var(--border-color);
   border-radius: 14px;
   padding: 14px;
+  position: relative;
+  z-index: 0;
 }
 
 .insight-header {
@@ -635,6 +637,9 @@ button:disabled {
 
 .view-evidence {
   margin-top: 12px;
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
 }
 
 .insight-drilldown {
