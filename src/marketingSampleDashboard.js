@@ -120,10 +120,10 @@ function renderInsights(container, evidencePanel, breakdownChart) {
     const card = document.createElement("div");
     card.className = "insight-card";
     card.innerHTML = `
-      <h4>${insight.claim}</h4>
-      <p class="insight-meta">${insight.evidence}</p>
+      <h4>${insight.headline || insight.claim}</h4>
+      <p class="insight-meta">${insight.deltaSummary || insight.evidenceSummary || insight.evidence || ""}</p>
       <p class="insight-meta">Driver: ${insight.driver}</p>
-      <p class="insight-meta">Action: ${insight.action}</p>
+      <p class="insight-meta">Action: ${insight.actionSummary || insight.action}</p>
       <span
         class="severity ${confidenceLevel} confidence-pill"
         tabindex="0"
@@ -165,12 +165,60 @@ function renderInsights(container, evidencePanel, breakdownChart) {
 function showEvidence(panel, insight) {
   if (!panel) return;
   panel.classList.remove("hidden");
+  const evidence = insight.evidence || {};
+  const comparisonRows = Array.isArray(evidence.comparisonTable) ? evidence.comparisonTable : [];
+  const comparisonTable = comparisonRows.length
+    ? `
+      <div class="evidence-table-wrap">
+        <table class="evidence-table">
+          <thead>
+            <tr>
+              <th>Segment</th>
+              <th>Value</th>
+              <th>Share</th>
+              <th>Rank</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${comparisonRows.map((row) => `
+              <tr>
+                <td>${row.segment}</td>
+                <td>${row.valueLabel ?? row.value}</td>
+                <td>${row.shareLabel ?? ""}</td>
+                <td>${row.rank}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `
+    : "<div class=\"helper-text\">No comparison evidence available.</div>";
+  const trendSummary = evidence.trendSummary || {};
+  const confidenceReasons = Array.isArray(insight.confidenceReasons) && insight.confidenceReasons.length
+    ? insight.confidenceReasons.map((reason) => `<li>${reason}</li>`).join("")
+    : "<li>No major reliability issues detected.</li>";
   panel.innerHTML = `
-    <strong>Evidence detail</strong>
-    <div>${insight.evidence}</div>
-    <div>${insight.driver}</div>
-    <div>${insight.action}</div>
-    <div>Confidence: ${insight.confidence}</div>
+    <div class="evidence-section">
+      <strong>Segment comparison</strong>
+      ${comparisonTable}
+    </div>
+    <div class="evidence-section">
+      <strong>What drives this insight</strong>
+      <div>${evidence.contributionSummary || "No contribution summary available."}</div>
+    </div>
+    <div class="evidence-section">
+      <strong>Trend consistency</strong>
+      <div class="evidence-stats">
+        <div class="evidence-stat"><span>Periods analysed</span><strong>${trendSummary.periodsAnalysed ?? 0}</strong></div>
+        <div class="evidence-stat"><span>Stability score</span><strong>${evidence.consistencyScore ?? 0}</strong></div>
+        <div class="evidence-stat"><span>Variance</span><strong>${Number.isFinite(trendSummary.variance) ? trendSummary.variance.toFixed(2) : "0.00"}</strong></div>
+      </div>
+      <div class="helper-text">${(trendSummary.leadPeriods ?? 0)} of ${(trendSummary.comparedPeriods ?? 0)} overlapping periods favor the top segment.</div>
+    </div>
+    <div class="evidence-section">
+      <strong>Confidence explanation</strong>
+      <ul class="evidence-reasons">${confidenceReasons}</ul>
+    </div>
   `;
 }
 
@@ -179,8 +227,10 @@ function buildLineChart(series, options = {}) {
   const unit = options.unit || "count";
   const breakdown = options.breakdown || "overall";
   const width = 640;
-  const height = 220;
-  const padding = 20;
+  const height = 260;
+  const paddingX = 24;
+  const paddingTop = 16;
+  const paddingBottom = 42;
   const allPoints = series.flatMap((s) => s.points);
   if (!allPoints.length) return "<div class=\"helper-text\">No data</div>";
   const xs = allPoints.map((p) => p.monthTs);
@@ -190,9 +240,10 @@ function buildLineChart(series, options = {}) {
   const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
 
-  const scaleX = (x) => padding + ((x - minX) / (maxX - minX || 1)) * (width - padding * 2);
-  const scaleY = (y) => height - padding - ((y - minY) / (maxY - minY || 1)) * (height - padding * 2);
+  const scaleX = (x) => paddingX + ((x - minX) / (maxX - minX || 1)) * (width - paddingX * 2);
+  const scaleY = (y) => (height - paddingBottom) - ((y - minY) / (maxY - minY || 1)) * ((height - paddingBottom) - paddingTop);
   const colors = ["#60a5fa", "#34d399", "#f59e0b", "#f472b6", "#a78bfa", "#fb7185"];
+  const monthTicks = Array.from(new Set(allPoints.map((point) => point.monthTs))).sort((a, b) => a - b);
 
   const paths = series.map((s, seriesIndex) => {
     const color = colors[seriesIndex % colors.length];
@@ -205,10 +256,35 @@ function buildLineChart(series, options = {}) {
   const dots = series.map((s, seriesIndex) => s.points.map((p) => {
     const color = colors[seriesIndex % colors.length];
     const label = new Date(p.monthTs).toLocaleString("en-US", { month: "short", year: "numeric" });
-    return `<circle cx="${scaleX(p.monthTs)}" cy="${scaleY(p.value)}" r="3" fill="${color}">
-      <title>${s.group} · ${metricLabel} · ${label}: ${formatValue(p.value, unit)}</title>
-    </circle>`;
+    const cx = scaleX(p.monthTs);
+    const cy = scaleY(p.value);
+    const tooltip = `${label} · ${s.group}: ${formatValue(p.value, unit)} (${metricLabel})`;
+    return `
+      <g>
+        <circle cx="${cx}" cy="${cy}" r="6" fill="transparent">
+          <title>${tooltip}</title>
+        </circle>
+        <circle cx="${cx}" cy="${cy}" r="3" fill="${color}" pointer-events="none"></circle>
+      </g>
+    `;
   }).join("")).join("");
+
+  const xAxisLineY = height - paddingBottom;
+  const xAxis = `<line x1="${paddingX}" y1="${xAxisLineY}" x2="${width - paddingX}" y2="${xAxisLineY}" stroke="rgba(255,255,255,0.18)" stroke-width="1" />`;
+  const xTicks = monthTicks.map((monthTs) => {
+    const x = scaleX(monthTs);
+    const label = new Date(monthTs).toLocaleString("en-US", { month: "short" });
+    const fullLabel = new Date(monthTs).toLocaleString("en-US", { month: "short", year: "numeric" });
+    return `
+      <g>
+        <line x1="${x}" y1="${xAxisLineY}" x2="${x}" y2="${xAxisLineY + 4}" stroke="rgba(255,255,255,0.14)" />
+        <text x="${x}" y="${height - 18}" text-anchor="middle" fill="rgba(255,255,255,0.65)" font-size="10">
+          ${label}
+          <title>${fullLabel}</title>
+        </text>
+      </g>
+    `;
+  }).join("");
 
   const legend = series.map((s, seriesIndex) => {
     const color = colors[seriesIndex % colors.length];
@@ -232,6 +308,8 @@ function buildLineChart(series, options = {}) {
   return `
     <div class="trend-legend">${legend}</div>
     <svg class="trend-line" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+      ${xAxis}
+      ${xTicks}
       ${paths}
       ${dots}
     </svg>
