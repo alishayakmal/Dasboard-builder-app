@@ -421,7 +421,195 @@ function buildAction({ metricKey, dimensionKey, deltaPercent }) {
   return `Investigate top ${normalizedDimension || "segment"} drivers to replicate performance.`;
 }
 
-function buildEvidenceDetail({ breakdown, top, bottom, metricKey, metricUnit, confidenceEvidence }) {
+function formatComboNarrative(dimensions, valuesByDimension) {
+  const has = (key) => Object.prototype.hasOwnProperty.call(valuesByDimension, key);
+  if (has("plan") && has("region") && has("channel")) {
+    return `${valuesByDimension.plan} in ${valuesByDimension.region} via ${valuesByDimension.channel}`;
+  }
+  if (has("plan") && has("region")) {
+    return `${valuesByDimension.plan} in ${valuesByDimension.region}`;
+  }
+  if (has("plan") && has("channel")) {
+    return `${valuesByDimension.plan} via ${valuesByDimension.channel}`;
+  }
+  return dimensions.map((dim) => valuesByDimension[dim]).join(" + ");
+}
+
+function buildDimensionCombos(primaryDimension, candidateDimensions) {
+  const combos = [];
+  candidateDimensions.forEach((dim) => {
+    combos.push([primaryDimension, dim]);
+  });
+  for (let i = 0; i < candidateDimensions.length; i += 1) {
+    for (let j = i + 1; j < candidateDimensions.length; j += 1) {
+      combos.push([primaryDimension, candidateDimensions[i], candidateDimensions[j]]);
+    }
+  }
+  return combos;
+}
+
+function aggregateComboRows(rows, metricKey, dimensions, winnerDimension, winnerValue) {
+  const buckets = {};
+  rows.forEach((row) => {
+    if (row[winnerDimension] !== winnerValue) return;
+    const valuesByDimension = {};
+    dimensions.forEach((dim) => {
+      valuesByDimension[dim] = row[dim] ?? "Unknown";
+    });
+    const key = dimensions.map((dim) => valuesByDimension[dim]).join("||");
+    if (!buckets[key]) {
+      buckets[key] = {
+        key,
+        dimensions,
+        valuesByDimension,
+        items: [],
+      };
+    }
+    buckets[key].items.push(row);
+  });
+  return Object.values(buckets).map((bucket) => ({
+    ...bucket,
+    value: computeMetricValue(bucket.items, metricKey),
+  }));
+}
+
+function computeTopDriverCombo({
+  rows,
+  currentRows,
+  priorRows,
+  metricKey,
+  primaryDimension,
+  winnerKey,
+  winnerValue,
+  confidenceLevel,
+  metricUnit,
+}) {
+  const candidatePool = ["region", "channel", "device", "creative"]
+    .filter((dim) => dim !== primaryDimension && rows.some((row) => Object.prototype.hasOwnProperty.call(row, dim)));
+  const dimensionSets = buildDimensionCombos(primaryDimension, candidatePool);
+  if (!dimensionSets.length) {
+    return {
+      narrative: "No dominant driver identified.",
+      breakdownTable: [],
+      driverNarrative: "No dominant driver identified.",
+      dominant: false,
+      liftShare: 0,
+      filtersUsed: `${primaryDimension}=${winnerKey}`,
+    };
+  }
+
+  let bestCandidate = null;
+
+  dimensionSets.forEach((dimensions) => {
+    const currentBuckets = aggregateComboRows(currentRows, metricKey, dimensions, primaryDimension, winnerKey);
+    const priorBuckets = aggregateComboRows(priorRows, metricKey, dimensions, primaryDimension, winnerKey);
+    const priorMap = Object.fromEntries(priorBuckets.map((bucket) => [bucket.key, bucket]));
+    const currentMap = Object.fromEntries(currentBuckets.map((bucket) => [bucket.key, bucket]));
+    const allKeys = Array.from(new Set([...Object.keys(currentMap), ...Object.keys(priorMap)]));
+    if (allKeys.length > 50) return;
+
+    const merged = allKeys.map((key) => {
+      const currentBucket = currentMap[key];
+      const priorBucket = priorMap[key];
+      const currentValue = currentBucket?.value || 0;
+      const priorValue = priorBucket?.value || 0;
+      const comboDelta = currentValue - priorValue;
+      const valuesByDimension = currentBucket?.valuesByDimension || priorBucket?.valuesByDimension || {};
+      return {
+        key,
+        dimensions,
+        valuesByDimension,
+        label: formatComboNarrative(dimensions, valuesByDimension),
+        currentValue,
+        priorValue,
+        comboDelta,
+      };
+    }).sort((a, b) => b.currentValue - a.currentValue).slice(0, 10);
+
+    const totalDeltaAcrossAllCombos = merged.reduce((acc, item) => acc + Math.max(0, item.comboDelta), 0);
+    if (Math.abs(totalDeltaAcrossAllCombos) < 1e-9) return;
+
+    merged.forEach((item) => {
+      const shareOfWinner = winnerValue ? item.currentValue / winnerValue : 0;
+      const liftShare = item.comboDelta > 0 ? item.comboDelta / totalDeltaAcrossAllCombos : 0;
+      const score = (0.6 * liftShare) + (0.4 * shareOfWinner);
+      const candidate = {
+        ...item,
+        shareOfWinner,
+        liftShare,
+        score,
+        winnerKey,
+        winnerValue,
+        metricUnit,
+        filtersUsed: `${primaryDimension}=${winnerKey}; dims=${dimensions.join(",")}`,
+      };
+      if (!bestCandidate || candidate.score > bestCandidate.score) {
+        bestCandidate = candidate;
+      }
+    });
+  });
+
+  if (!bestCandidate || bestCandidate.liftShare <= 0.05) {
+    return {
+      narrative: "No dominant driver identified.",
+      breakdownTable: [],
+      driverNarrative: "No dominant driver identified.",
+      dominant: false,
+      liftShare: 0,
+      filtersUsed: `${primaryDimension}=${winnerKey}`,
+    };
+  }
+
+  const chosenDims = bestCandidate.dimensions;
+  const currentBuckets = aggregateComboRows(currentRows, metricKey, chosenDims, primaryDimension, winnerKey);
+  const priorBuckets = aggregateComboRows(priorRows, metricKey, chosenDims, primaryDimension, winnerKey);
+  const priorMap = Object.fromEntries(priorBuckets.map((bucket) => [bucket.key, bucket]));
+  const chosenMergedAll = Array.from(new Set([
+    ...currentBuckets.map((bucket) => bucket.key),
+    ...priorBuckets.map((bucket) => bucket.key),
+  ])).map((key) => {
+    const currentBucket = currentBuckets.find((bucket) => bucket.key === key);
+    const priorBucket = priorBuckets.find((bucket) => bucket.key === key);
+    return {
+      key,
+      currentValue: currentBucket?.value || 0,
+      priorValue: priorBucket?.value || 0,
+    };
+  });
+  const chosenTotalDelta = chosenMergedAll.reduce((acc, item) => acc + Math.max(0, item.currentValue - item.priorValue), 0) || 1;
+  const table = currentBuckets
+    .map((bucket) => {
+      const priorValue = priorMap[bucket.key]?.value || 0;
+      const delta = bucket.value - priorValue;
+      const rowLiftShare = delta > 0 ? delta / chosenTotalDelta : 0;
+      return {
+        combination: formatComboNarrative(chosenDims, bucket.valuesByDimension),
+        current: bucket.value,
+        currentLabel: formatValue(bucket.value, metricUnit),
+        prior: priorValue,
+        priorLabel: formatValue(priorValue, metricUnit),
+        delta,
+        deltaLabel: metricUnit === "rate" ? `${(delta * 100).toFixed(1)} pp` : formatValue(delta, metricUnit),
+        liftShare: rowLiftShare,
+        liftShareLabel: `${Math.round(rowLiftShare * 100)}%`,
+      };
+    })
+    .sort((a, b) => b.current - a.current)
+    .slice(0, 5);
+
+  const leadLabel = formatComboNarrative(bestCandidate.dimensions, bestCandidate.valuesByDimension);
+  const prefix = confidenceLevel === "low" ? "Driver candidate, validate with more periods: " : "";
+  return {
+    narrative: `${prefix}${leadLabel} contributes ${Math.round(bestCandidate.liftShare * 100)}% of the lift.`,
+    driverNarrative: leadLabel,
+    dominant: true,
+    liftShare: bestCandidate.liftShare,
+    breakdownTable: table,
+    filtersUsed: bestCandidate.filtersUsed,
+  };
+}
+
+function buildEvidenceDetail({ breakdown, top, bottom, metricKey, metricUnit, confidenceEvidence, driverInfo }) {
   const totalValue = breakdown.reduce((acc, item) => acc + Math.max(0, item.value), 0) || 1;
   const comparisonTable = breakdown.slice(0, 5).map((item, index) => ({
     segment: item.key,
@@ -452,6 +640,10 @@ function buildEvidenceDetail({ breakdown, top, bottom, metricKey, metricUnit, co
   return {
     comparisonTable,
     contributionSummary,
+    driverNarrative: driverInfo?.driverNarrative || "No dominant driver identified.",
+    driverDominant: Boolean(driverInfo?.dominant),
+    driverBreakdownTable: driverInfo?.breakdownTable || [],
+    driverFiltersUsed: driverInfo?.filtersUsed || "",
     trendSummary: {
       periodsAnalysed: confidenceEvidence.confidenceDetails.periods,
       variance: confidenceEvidence.confidenceDetails.varianceScore || 0,
@@ -481,6 +673,8 @@ export function computeBreakdown(rows, metricKey, dimension, windowDays = 30) {
 export function computeInsights(rows, metricKey, dimension) {
   const { start, end } = computePeriods(rows, 30);
   const currentRows = rows.filter((row) => row.date >= start && row.date <= end);
+  const { priorStart, priorEnd } = computePeriods(rows, 30);
+  const priorRows = rows.filter((row) => row.date >= priorStart && row.date <= priorEnd);
   const buckets = {};
   currentRows.forEach((row) => {
     const key = row[dimension];
@@ -506,6 +700,17 @@ export function computeInsights(rows, metricKey, dimension) {
     ? `${(delta * 100).toFixed(1)} pp`
     : formatValue(delta, metricUnit);
   const confidenceEvidence = computeConfidenceEvidence(top.items, bottom.items, metricKey, top.value, bottom.value, delta);
+  const driverInfo = computeTopDriverCombo({
+    rows,
+    currentRows,
+    priorRows,
+    metricKey,
+    primaryDimension: dimension,
+    winnerKey: top.key,
+    winnerValue: top.value,
+    confidenceLevel: confidenceEvidence.confidence.level,
+    metricUnit,
+  });
   const evidence = buildEvidenceDetail({
     breakdown,
     top,
@@ -513,6 +718,7 @@ export function computeInsights(rows, metricKey, dimension) {
     metricKey,
     metricUnit,
     confidenceEvidence,
+    driverInfo,
   });
   const actionSummary = buildAction({
     metricKey,
@@ -528,7 +734,7 @@ export function computeInsights(rows, metricKey, dimension) {
       delta,
       deltaSummary: `Delta ${deltaLabel} (${top.key} vs ${bottom.key}) · n=${top.sampleSize}/${bottom.sampleSize}`,
       topSegment: top.key,
-      driver: `Top segment: ${top.key} (${formatValue(top.value, metricUnit)})`,
+      driver: driverInfo.narrative,
       actionSummary,
       action: actionSummary,
       confidence: confidenceEvidence.confidence,
