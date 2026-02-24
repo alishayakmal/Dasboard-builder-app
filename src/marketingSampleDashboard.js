@@ -2,6 +2,7 @@ import {
   loadSampleDataset,
   getMetricConfig,
   computeKpis,
+  computeKpiMiniTrend,
   computeTrend,
   computeBreakdown,
   computeInsights,
@@ -77,18 +78,59 @@ function renderKpis(container) {
   kpis.forEach((kpi) => {
     const card = document.createElement("div");
     card.className = "kpi-pill";
-    const deltaLabel = kpi.deltaType === "percentagePoints"
-      ? `${(kpi.delta * 100).toFixed(1)} pp`
-      : `${(kpi.delta * 100).toFixed(1)}%`;
+    const deltaLabel = formatKpiDelta(kpi);
+    const deltaArrow = kpi.direction === "up" ? "▲" : kpi.direction === "down" ? "▼" : "•";
     const metricConfig = getMetricConfig().find((m) => m.key === kpi.key);
+    const miniTrend = computeKpiMiniTrend(state.rows, kpi.key);
     card.innerHTML = `
       <span>${kpi.label}</span>
       <strong title="${kpi.definition}">${formatValue(kpi.value, metricConfig.unit)}</strong>
-      <em>${deltaLabel}</em>
+      <em class="kpi-delta ${kpi.direction}">${deltaArrow} ${deltaLabel}</em>
+      <div class="kpi-mini-trend">${buildKpiMiniTrendSvg(miniTrend, metricConfig.unit, kpi.label)}</div>
       <small class="kpi-caption">${kpi.window}</small>
     `;
     container.appendChild(card);
   });
+}
+
+function formatKpiDelta(kpi) {
+  if (kpi.deltaType === "percentagePoints") {
+    const signed = (kpi.delta * 100).toFixed(1);
+    return `${Number(signed) > 0 ? "+" : Number(signed) < 0 ? "" : ""}${signed} pp`;
+  }
+  const signed = (kpi.delta * 100).toFixed(1);
+  return `${Number(signed) > 0 ? "+" : Number(signed) < 0 ? "" : ""}${signed}%`;
+}
+
+function buildKpiMiniTrendSvg(series, unit, label) {
+  const currentSeries = Array.isArray(series?.currentSeries) ? series.currentSeries : [];
+  const priorSeries = Array.isArray(series?.priorSeries) ? series.priorSeries : [];
+  const length = Math.max(currentSeries.length, priorSeries.length, 30);
+  const width = 240;
+  const height = 50;
+  const padX = 4;
+  const padY = 4;
+  const values = [...currentSeries, ...priorSeries];
+  const maxY = Math.max(...values, 0);
+  const minY = Math.min(...values, 0);
+  const scaleX = (index) => padX + (index / Math.max(length - 1, 1)) * (width - padX * 2);
+  const scaleY = (value) => (height - padY) - ((value - minY) / (Math.max(maxY - minY, 1))) * (height - padY * 2);
+  const linePath = (points) => points.map((value, index) => `${index === 0 ? "M" : "L"}${scaleX(index)},${scaleY(value)}`).join(" ");
+  const currentPath = linePath(currentSeries);
+  const priorPath = linePath(priorSeries);
+  const lastCurrent = currentSeries[currentSeries.length - 1] ?? 0;
+  const lastPrior = priorSeries[priorSeries.length - 1] ?? 0;
+
+  return `
+    <svg class="kpi-sparkline" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-label="${label} 30 day comparison sparkline">
+      <path d="${priorPath}" fill="none" stroke="rgba(161,161,170,0.65)" stroke-width="1.5">
+        <title>Prior 30 days (day 30): ${formatValue(lastPrior, unit)}</title>
+      </path>
+      <path d="${currentPath}" fill="none" stroke="rgba(52,211,153,0.9)" stroke-width="1.8">
+        <title>Current 30 days (day 30): ${formatValue(lastCurrent, unit)}</title>
+      </path>
+    </svg>
+  `;
 }
 
 function renderTrend(container) {
