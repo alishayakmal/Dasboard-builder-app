@@ -173,6 +173,11 @@ const percentFormatter = new Intl.NumberFormat("en-US", {
 
 const state = {
   normalizedDataset: null,
+  datasetCapabilities: {
+    hasDateField: false,
+    hasNumericMetrics: false,
+    hasCategoricalDimensions: false,
+  },
   mode: "demo",
   rawRows: [],
   filteredRows: [],
@@ -1391,7 +1396,15 @@ function setStatus(message) {
  * @typedef {{
  * rows: Record<string, any>[],
  * columns: { name: string, type: "number" | "currency" | "percent" | "date" | "string" }[],
- * meta: { sourceType: "csv" | "pdf" | "sheet" | "api" | "demo", name?: string, dateField?: string, hasDateField: boolean, pdfMode?: "table" | "text" }
+ * meta: {
+ *   sourceType: "csv" | "pdf" | "sheet" | "api" | "demo",
+ *   name?: string,
+ *   dateField?: string,
+ *   hasDateField: boolean,
+ *   hasNumericMetrics: boolean,
+ *   hasCategoricalDimensions: boolean,
+ *   pdfMode?: "table" | "text"
+ * }
  * }} NormalizedDataset
  */
 
@@ -1409,16 +1422,81 @@ function inferNormalizedColumnType(columnName, profile) {
   return "string";
 }
 
+function isLikelyTemporalColumnName(columnName) {
+  const key = String(columnName || "").trim().toLowerCase();
+  return [
+    "date",
+    "time",
+    "timestamp",
+    "datetime",
+    "month",
+    "period",
+    "week",
+    "created_at",
+    "updated_at",
+    "run_date",
+    "batch",
+  ].some((token) => key === token || key.includes(token));
+}
+
+function canParseTemporalValue(value) {
+  if (value === null || value === undefined) return false;
+  const text = String(value).trim();
+  if (!text) return false;
+  if (parseDate(text)) return true;
+
+  // Common month/period formats not always captured by parseDate consistently.
+  if (/^\d{4}[-/]\d{1,2}$/.test(text)) return true; // YYYY-MM
+  if (/^[A-Za-z]{3,9}\s+\d{4}$/.test(text)) return true; // Jan 2024 / January 2024
+  if (/^\d{4}\s*W\d{1,2}$/i.test(text) || /^W\d{1,2}\s+\d{4}$/i.test(text)) return true; // 2024W12 / W12 2024
+  if (/^Q[1-4]\s+\d{4}$/i.test(text) || /^\d{4}\s+Q[1-4]$/i.test(text)) return true; // Q1 2024 / 2024 Q1
+  return false;
+}
+
+function inferFlexibleDateField({ rows, columns, profiles, fallbackDateField }) {
+  if (fallbackDateField) return fallbackDateField;
+  const candidateColumns = (columns || []).filter((col) => {
+    const profile = profiles?.[col];
+    if (profile?.type === "date") return true;
+    return isLikelyTemporalColumnName(col);
+  });
+
+  for (const col of candidateColumns) {
+    const sampleValues = (rows || [])
+      .map((row) => row?.[col])
+      .filter((value) => value !== null && value !== undefined && String(value).trim() !== "")
+      .slice(0, 25);
+    if (!sampleValues.length) continue;
+    const parsedCount = sampleValues.filter((value) => canParseTemporalValue(value)).length;
+    if (parsedCount >= Math.max(2, Math.ceil(sampleValues.length * 0.4))) {
+      return col;
+    }
+  }
+  return null;
+}
+
+function isLikelyIdColumnName(columnName) {
+  const key = String(columnName || "").trim().toLowerCase();
+  return key === "id" || key.endsWith("_id") || key.includes("uuid");
+}
+
 function buildNormalizedDataset({ rows, columns, profiles, sourceMeta = {} }) {
   const normalizedColumns = (columns || []).map((name) => ({
     name,
     type: inferNormalizedColumnType(name, profiles?.[name]),
   }));
-  const inferredDateField = sourceMeta.dateField || state.dateColumn || undefined;
+  const inferredDateField = inferFlexibleDateField({
+    rows,
+    columns,
+    profiles,
+    fallbackDateField: sourceMeta.dateField || state.dateColumn || undefined,
+  }) || undefined;
   const hasDateField = Boolean(
     inferredDateField
-    || normalizedColumns.some((column) => column.type === "date")
+    || normalizedColumns.some((column) => column.type === "date" || isLikelyTemporalColumnName(column.name))
   );
+  const hasNumericMetrics = normalizedColumns.some((column) => column.type === "number" || column.type === "currency" || column.type === "percent");
+  const hasCategoricalDimensions = normalizedColumns.some((column) => column.type === "string" && !isLikelyIdColumnName(column.name));
   /** @type {NormalizedDataset} */
   const dataset = {
     rows: Array.isArray(rows) ? rows : [],
@@ -1428,6 +1506,8 @@ function buildNormalizedDataset({ rows, columns, profiles, sourceMeta = {} }) {
       name: sourceMeta.name || undefined,
       dateField: inferredDateField,
       hasDateField,
+      hasNumericMetrics,
+      hasCategoricalDimensions,
       pdfMode: sourceMeta.pdfMode || undefined,
     },
   };
@@ -1445,6 +1525,11 @@ function renderDashboardRenderer({ dataset, mode }) {
   // All sources should call into this function after normalization.
   if (!dataset) return;
   state.normalizedDataset = dataset;
+  state.datasetCapabilities = {
+    hasDateField: Boolean(dataset.meta?.hasDateField),
+    hasNumericMetrics: Boolean(dataset.meta?.hasNumericMetrics),
+    hasCategoricalDimensions: Boolean(dataset.meta?.hasCategoricalDimensions),
+  };
   state.mode = mode;
   if (dataset.meta && dataset.meta.hasDateField === false) {
     state.dateColumn = null;
@@ -1646,6 +1731,48 @@ function parseDate(value) {
     ) {
       return date;
     }
+  }
+
+  const ym = raw.match(/^(\d{4})[-\/](\d{1,2})$/);
+  if (ym) {
+    const year = Number(ym[1]);
+    const month = Number(ym[2]);
+    const date = new Date(Date.UTC(year, month - 1, 1));
+    if (date.getUTCFullYear() === year && date.getUTCMonth() === month - 1) {
+      return date;
+    }
+  }
+
+  const monthYear = raw.match(/^([A-Za-z]{3,9})\s+(\d{4})$/);
+  if (monthYear) {
+    const parsed = new Date(`${monthYear[1]} 1, ${monthYear[2]}`);
+    if (!Number.isNaN(parsed.valueOf())) return parsed;
+  }
+
+  const isoWeekA = raw.match(/^(\d{4})\s*W(\d{1,2})$/i);
+  const isoWeekB = raw.match(/^W(\d{1,2})\s+(\d{4})$/i);
+  const isoWeek = isoWeekA || isoWeekB;
+  if (isoWeek) {
+    const year = Number(isoWeekA ? isoWeekA[1] : isoWeekB[2]);
+    const week = Number(isoWeekA ? isoWeekA[2] : isoWeekB[1]);
+    if (week >= 1 && week <= 53) {
+      const jan4 = new Date(Date.UTC(year, 0, 4));
+      const jan4Day = jan4.getUTCDay() || 7;
+      const week1Monday = new Date(jan4);
+      week1Monday.setUTCDate(jan4.getUTCDate() - (jan4Day - 1));
+      const result = new Date(week1Monday);
+      result.setUTCDate(week1Monday.getUTCDate() + ((week - 1) * 7));
+      return result;
+    }
+  }
+
+  const quarterA = raw.match(/^Q([1-4])\s+(\d{4})$/i);
+  const quarterB = raw.match(/^(\d{4})\s+Q([1-4])$/i);
+  const quarter = quarterA || quarterB;
+  if (quarter) {
+    const year = Number(quarterA ? quarterA[2] : quarterB[1]);
+    const q = Number(quarterA ? quarterA[1] : quarterB[2]);
+    return new Date(Date.UTC(year, (q - 1) * 3, 1));
   }
 
   const fallback = new Date(raw);
