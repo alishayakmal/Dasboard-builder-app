@@ -177,24 +177,39 @@
 
       <section id="state" class="state tab-panel" data-tab-panel="upload">
         <div class="upload-panel">
-          <div class="drop-zone" id="dropZone">
-            <p>Drag and drop a CSV here</p>
-            <button id="uploadTrigger" class="ghost">Choose file</button>
-            <button id="loadFixture" class="ghost hidden">Load fixture</button>
-            <input type="file" id="uploadInput" accept=".csv,text/csv" />
-          </div>
-          <div class="upload-help">
-            <p>Supported: CSV with headers. We handle currency symbols, percent values, and thousands separators.</p>
+          <div class="upload-card">
+            <div class="upload-card-grid">
+              <div class="drop-zone" id="dropZone">
+                <p>Drag and drop a CSV here</p>
+                <div class="upload-card-actions">
+                  <button id="uploadTrigger" class="ghost">Choose file</button>
+                  <button id="loadFixture" class="ghost hidden">Load fixture</button>
+                </div>
+                <input type="file" id="uploadInput" accept=".csv,text/csv" />
+              </div>
+              <div class="upload-help-panel">
+                <h3>Supported formats</h3>
+                <p>CSV with headers. Currency, percentages, and thousands separators are normalized automatically.</p>
+                <p class="helper-text">Your data is processed in-browser for local analysis and exports.</p>
+              </div>
+            </div>
           </div>
         </div>
         <div class="state-card">
-          <h2>Get started</h2>
-          <p>Upload a CSV file to generate KPIs, charts, and a data table. Your data never leaves the browser.</p>
+          <h2>Upload data</h2>
+          <p>Drop a file or connect a source to generate KPIs, trends and insights.</p>
           <ul class="state-list">
-            <li>Auto-detects numeric metrics</li>
-            <li>Finds date columns for trends</li>
-            <li>Profiles data quality before analysis</li>
+            <li>Auto-detects metrics and dimensions</li>
+            <li>Builds charts and insights with confidence checks</li>
           </ul>
+          <details class="state-learn-more">
+            <summary>Learn more</summary>
+            <ul class="state-list compact">
+              <li>Finds date/month/period columns for trend analysis</li>
+              <li>Profiles data quality before analysis</li>
+              <li>Exports filtered CSV, insights and PDF after analysis</li>
+            </ul>
+          </details>
         </div>
       </section>
 
@@ -279,10 +294,11 @@
         <div id="metricNotice" class="status hidden"></div>
         <div class="section-header">
           <div class="section-title">
-            <h2>Dashboard</h2>
+            <h2 id="dashboardSectionTitle">Analysis</h2>
             <span id="qualityBadge" class="quality-badge">Quality —</span>
           </div>
           <p id="datasetSummary"></p>
+          <div id="datasetInlineNotice" class="inline-notice-pill hidden"></div>
         </div>
 
         <section class="kpi-grid" id="kpiGrid"></section>
