@@ -731,9 +731,31 @@ function switchTab(tabName) {
     panel.classList.toggle("hidden", panel.dataset.tabPanel !== tabName);
   });
   syncUploadAnalysisState();
+  focusSourceSection(tabName);
   if (tabName === "samples" && !state.rawRows.length && !state.sampleTabAutoloaded) {
     state.sampleTabAutoloaded = true;
     loadFixtureCsv();
+  }
+}
+
+function focusSourceSection(tabName) {
+  if (hasLoadedDataset() && state.uiMode === "ready") return;
+  const targetMap = {
+    upload: document.getElementById("upload-data"),
+    sheets: document.getElementById("sheetsPanel"),
+    api: document.getElementById("apiPanel"),
+    pdf: document.getElementById("pdfPanel"),
+    samples: document.getElementById("samplesPanel"),
+  };
+  const target = targetMap[tabName];
+  if (!target) return;
+  try {
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (_) {
+    target.scrollIntoView();
+  }
+  if (typeof target.focus === "function") {
+    target.focus({ preventScroll: true });
   }
 }
 
