@@ -282,6 +282,48 @@ function computeVarianceScore(values) {
   return Math.sqrt(variance) / meanAbs;
 }
 
+function computeConfidence({ periods, sampleSize, deltaPercent, variance, missingRate = 0 }) {
+  const reasons = [];
+  let level = "high";
+
+  if (periods < 3) {
+    level = "low";
+    reasons.push("Not enough time periods to confirm a stable trend.");
+  }
+
+  if (sampleSize < 5) {
+    level = "low";
+    reasons.push("Limited sample size in this segment.");
+  }
+
+  if (missingRate > 0.1) {
+    if (level === "high") level = "medium";
+    reasons.push("Missing data reduces reliability of the comparison.");
+  }
+
+  if (variance > 0.4 && level !== "low") {
+    level = "medium";
+    reasons.push("Trend shows volatility across periods.");
+  }
+
+  if (deltaPercent < 0.1 && level !== "low") {
+    level = "medium";
+    reasons.push("Performance gap is relatively small.");
+  }
+
+  return {
+    level,
+    reasons: reasons.slice(0, 3),
+    metrics: {
+      periods,
+      sampleSize,
+      deltaPercent,
+      variance,
+      missingRate,
+    },
+  };
+}
+
 function computeConfidenceEvidence(topItems, bottomItems, metricKey, topValue, bottomValue, delta) {
   const comparedItems = [...topItems, ...bottomItems];
   const metricFields = getMetricFieldKeys(metricKey);
@@ -298,43 +340,20 @@ function computeConfidenceEvidence(topItems, bottomItems, metricKey, topValue, b
   const varianceScore = computeVarianceScore(monthlyDeltas);
   const deltaPercent = Math.abs(delta) / Math.max(Math.abs(topValue) + Math.abs(bottomValue), 1);
 
-  const reasonCandidates = [];
-  if (sampleSize < 5) {
-    reasonCandidates.push({ weight: 40, text: "Limited sample size in this segment." });
-  }
-  if (deltaPercent < 0.08) {
-    reasonCandidates.push({ weight: 25, text: "Difference is small relative to overall volume." });
-  }
-  if (periods < 3) {
-    reasonCandidates.push({ weight: 20, text: "Not enough time periods to confirm a stable trend." });
-  }
-  if (missingRate > 0.1) {
-    reasonCandidates.push({ weight: 35, text: "Missing data reduces reliability of the comparison." });
-  }
-  if (varianceScore > 0.75) {
-    reasonCandidates.push({ weight: 15, text: "High volatility makes the trend less consistent." });
-  }
-
-  let score = 100;
-  reasonCandidates.forEach((reason) => {
-    score -= reason.weight;
+  const confidence = computeConfidence({
+    periods,
+    sampleSize,
+    deltaPercent,
+    variance: varianceScore,
+    missingRate,
   });
 
-  let confidenceLevel = "high";
-  if (score < 70) confidenceLevel = "medium";
-  if (score < 40) confidenceLevel = "low";
-
   return {
-    confidenceLevel,
-    confidenceReasons: reasonCandidates
-      .sort((a, b) => b.weight - a.weight)
-      .slice(0, 2)
-      .map((reason) => reason.text),
+    confidence,
+    confidenceLevel: confidence.level,
+    confidenceReasons: confidence.reasons.slice(0, 2),
     confidenceDetails: {
-      sampleSize,
-      deltaPercent,
-      periods,
-      missingRate,
+      ...confidence.metrics,
       varianceScore,
     },
   };
@@ -395,7 +414,9 @@ function buildEvidenceDetail({ breakdown, top, bottom, metricKey, metricUnit, co
     },
     consistencyScore,
   };
-}export function computeBreakdown(rows, metricKey, dimension, windowDays = 30) {
+}
+
+export function computeBreakdown(rows, metricKey, dimension, windowDays = 30) {
   const { start, end } = computePeriods(rows, windowDays);
   const current = rows.filter((row) => row.date >= start && row.date <= end);
   const buckets = {};
@@ -464,9 +485,9 @@ export function computeInsights(rows, metricKey, dimension) {
       driver: `Top segment: ${top.key} (${formatValue(top.value, metricUnit)})`,
       actionSummary,
       action: actionSummary,
-      confidence: confidenceEvidence.confidenceLevel,
-      confidenceLevel: confidenceEvidence.confidenceLevel,
-      confidenceReasons: confidenceEvidence.confidenceReasons,
+      confidence: confidenceEvidence.confidence,
+      confidenceLevel: confidenceEvidence.confidence.level,
+      confidenceReasons: confidenceEvidence.confidence.reasons.slice(0, 2),
       confidenceDetails: confidenceEvidence.confidenceDetails,
       evidence,
     },
