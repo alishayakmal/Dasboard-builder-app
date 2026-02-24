@@ -1,4 +1,4 @@
-const SAMPLE_DATA_PATH = "./src/sample_data/sample_insights.csv";
+﻿const SAMPLE_DATA_PATH = "./src/sample_data/sample_insights.csv";
 const FALLBACK_CSV = `date,plan,channel,region,revenue,activeUsers,retainedUsers,eligibleUsers,pipelineAmount
 2024-01-03,Enterprise,Paid Search,NA,42000,1200,520,1000,78000
 2024-01-10,Enterprise,Organic,NA,43800,1260,530,1020,82000
@@ -213,7 +213,7 @@ export function computeTrend(rows, metricKey, breakdown) {
   Object.values(groups).forEach((months) => {
     Object.keys(months).forEach((key) => allMonthKeys.add(key));
   });
-  const sortedMonths = fillMissingMonths(Array.from(allMonthKeys).sort());
+  const sortedMonths = buildRecentMonthWindow(Array.from(allMonthKeys).sort(), 12);
 
   return Object.entries(groups).map(([group, months]) => {
     const points = sortedMonths.map((month) => {
@@ -225,10 +225,11 @@ export function computeTrend(rows, metricKey, breakdown) {
   });
 }
 
-function fillMissingMonths(sortedMonthKeys) {
+function buildRecentMonthWindow(sortedMonthKeys, desiredMonths = 12) {
   if (!sortedMonthKeys.length) return [];
-  const start = new Date(sortedMonthKeys[0]);
-  const end = new Date(sortedMonthKeys[sortedMonthKeys.length - 1]);
+  const latest = new Date(sortedMonthKeys[sortedMonthKeys.length - 1]);
+  const end = new Date(latest.getFullYear(), latest.getMonth(), 1);
+  const start = new Date(end.getFullYear(), end.getMonth() - (desiredMonths - 1), 1);
   const keys = [];
   const cursor = new Date(start);
   while (cursor <= end) {
@@ -339,7 +340,62 @@ function computeConfidenceEvidence(topItems, bottomItems, metricKey, topValue, b
   };
 }
 
-export function computeBreakdown(rows, metricKey, dimension, windowDays = 30) {
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function buildAction({ metricKey, dimensionKey, deltaPercent }) {
+  const normalizedDimension = String(dimensionKey || "").toLowerCase();
+  if (metricKey === "pipeline" && normalizedDimension === "plan") {
+    return "Shift budget toward Enterprise acquisition channels where pipeline growth is strongest.";
+  }
+  if (deltaPercent < 0.1) {
+    return "Monitor performance before reallocating budget due to a small performance gap.";
+  }
+  return `Investigate top ${normalizedDimension || "segment"} drivers to replicate performance.`;
+}
+
+function buildEvidenceDetail({ breakdown, top, bottom, metricKey, metricUnit, confidenceEvidence }) {
+  const totalValue = breakdown.reduce((acc, item) => acc + Math.max(0, item.value), 0) || 1;
+  const comparisonTable = breakdown.slice(0, 5).map((item, index) => ({
+    segment: item.key,
+    value: item.value,
+    valueLabel: formatValue(item.value, metricUnit),
+    share: item.value / totalValue,
+    shareLabel: `${Math.round((item.value / totalValue) * 100)}%`,
+    rank: index + 1,
+  }));
+
+  const topMonthly = buildMonthlyMetricMap(top.items, metricKey);
+  const bottomMonthly = buildMonthlyMetricMap(bottom.items, metricKey);
+  const overlapMonths = Object.keys(topMonthly)
+    .filter((monthKey) => Object.prototype.hasOwnProperty.call(bottomMonthly, monthKey))
+    .sort();
+  const leadPeriods = overlapMonths.filter((monthKey) => topMonthly[monthKey] > bottomMonthly[monthKey]).length;
+  const comparedPeriods = overlapMonths.length;
+  const relativeLift = Math.abs(bottom.value) > 0 ? ((top.value - bottom.value) / Math.abs(bottom.value)) : 0;
+  const consistencyScore = clamp(
+    Math.round((1 / (1 + (confidenceEvidence.confidenceDetails.varianceScore || 0))) * 100),
+    0,
+    100
+  );
+
+  const metricLabel = metricKey === "activeUsers" ? "active users" : metricKey;
+  const contributionSummary = `${top.key} contributes ${Math.round(relativeLift * 100)}% more ${metricLabel} than ${bottom.key} and leads in ${leadPeriods} of ${Math.max(comparedPeriods, 1)} overlapping periods.`;
+
+  return {
+    comparisonTable,
+    contributionSummary,
+    trendSummary: {
+      periodsAnalysed: confidenceEvidence.confidenceDetails.periods,
+      variance: confidenceEvidence.confidenceDetails.varianceScore || 0,
+      leadPeriods,
+      comparedPeriods,
+    },
+    consistencyScore,
+  };
+}export function computeBreakdown(rows, metricKey, dimension, windowDays = 30) {
   const { start, end } = computePeriods(rows, windowDays);
   const current = rows.filter((row) => row.date >= start && row.date <= end);
   const buckets = {};
@@ -383,18 +439,36 @@ export function computeInsights(rows, metricKey, dimension) {
     ? `${(delta * 100).toFixed(1)} pp`
     : formatValue(delta, metricUnit);
   const confidenceEvidence = computeConfidenceEvidence(top.items, bottom.items, metricKey, top.value, bottom.value, delta);
+  const evidence = buildEvidenceDetail({
+    breakdown,
+    top,
+    bottom,
+    metricKey,
+    metricUnit,
+    confidenceEvidence,
+  });
+  const actionSummary = buildAction({
+    metricKey,
+    dimensionKey: dimension,
+    deltaPercent: confidenceEvidence.confidenceDetails.deltaPercent,
+  });
 
   return [
     {
       id: `${metricKey}:${dimension}:${top.key}:${bottom.key}`,
+      headline: `${metricLabel} is higher in ${top.key} than ${bottom.key}.`,
       claim: `${metricLabel} is higher in ${top.key} than ${bottom.key}.`,
-      evidence: `Delta ${deltaLabel} (${top.key} vs ${bottom.key}) � n=${top.sampleSize}/${bottom.sampleSize}`,
+      delta,
+      deltaSummary: `Delta ${deltaLabel} (${top.key} vs ${bottom.key}) · n=${top.sampleSize}/${bottom.sampleSize}`,
+      topSegment: top.key,
       driver: `Top segment: ${top.key} (${formatValue(top.value, metricUnit)})`,
-      action: `Review ${dimension} drivers to replicate ${top.key} performance.`,
+      actionSummary,
+      action: actionSummary,
       confidence: confidenceEvidence.confidenceLevel,
       confidenceLevel: confidenceEvidence.confidenceLevel,
       confidenceReasons: confidenceEvidence.confidenceReasons,
       confidenceDetails: confidenceEvidence.confidenceDetails,
+      evidence,
     },
   ];
 }
