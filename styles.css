@@ -299,6 +299,140 @@ button:disabled {
   margin: 0 auto;
 }
 
+.sample-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.demo-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid rgba(124, 58, 237, 0.35);
+  color: var(--text-primary);
+  background: rgba(124, 58, 237, 0.18);
+}
+
+.sample-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.sample-trend {
+  display: grid;
+  gap: 12px;
+  background: rgba(16, 16, 20, 0.75);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.trend-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.trend-controls {
+  display: flex;
+  gap: 12px;
+}
+
+.trend-controls label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.trend-controls select {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.trend-chart {
+  min-height: 220px;
+}
+
+.trend-line {
+  width: 100%;
+  height: 220px;
+}
+
+.sample-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.detail-chart {
+  background: rgba(16, 16, 20, 0.75);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.detail-header label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: grid;
+  gap: 6px;
+}
+
+.detail-header select {
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.breakdown-chart {
+  min-height: 220px;
+}
+
+.bar-chart {
+  display: grid;
+  gap: 10px;
+}
+
+.bar-row {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(124, 58, 237, 0.2);
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, rgba(124, 58, 237, 0.9), rgba(167, 139, 250, 0.6));
+}
 .sample-cards {
   display: grid;
   gap: 12px;
