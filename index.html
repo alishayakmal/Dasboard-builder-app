@@ -72,7 +72,7 @@
     </section>
 
     <section class="sample-preview" id="samples">
-      <div class="sample-copy">
+      <div class="sample-preview-header">
         <div class="sample-header">
           <div>
             <h3>Sample insights</h3>
@@ -80,9 +80,11 @@
           </div>
           <span class="demo-badge">Demo data</span>
         </div>
-        <div id="sampleKpiGrid" class="sample-kpis"></div>
       </div>
-      <div class="sample-visual">
+      <div class="sample-row sample-row-top">
+        <div class="sample-copy">
+        <div id="sampleKpiGrid" class="sample-kpis"></div>
+        </div>
         <div class="sample-trend">
           <div class="trend-header">
             <div>
@@ -104,10 +106,10 @@
           </div>
           <div id="sampleTrendChart" class="trend-chart"></div>
         </div>
-        <div class="sample-details">
-          <div class="detail-grid">
-            <div id="sampleInsightsRoot" class="sample-cards"></div>
-            <div class="detail-chart">
+      </div>
+      <div class="sample-row sample-row-middle">
+        <div id="sampleInsightsRoot" class="sample-cards"></div>
+        <div class="detail-chart">
             <div class="detail-header">
               <h4>Performance details</h4>
               <label>Dimension
@@ -119,11 +121,9 @@
               </label>
             </div>
             <div id="sampleBreakdownChart" class="breakdown-chart"></div>
-          </div>
-          <div id="sampleEvidencePanel" class="evidence-panel hidden"></div>
-          </div>
         </div>
       </div>
+      <div id="sampleEvidencePanel" class="evidence-panel hidden"></div>
     </section>
 
     <section class="social-proof" id="pricing">
