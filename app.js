@@ -549,6 +549,7 @@ function ensureDashboardActionsToolbar() {
 
   if (changeDataButton && !changeDataButton.dataset.bound) {
     changeDataButton.addEventListener("click", () => {
+      console.log("Upload data clicked");
       openUploaderModal();
     });
     changeDataButton.dataset.bound = "true";
@@ -593,9 +594,14 @@ function updateAnalysisHeaderState(hasDataset) {
 }
 
 function openUploaderModal() {
-  if (!uploaderModal) return;
+  if (!uploaderModal) {
+    console.warn("Uploader modal not found; falling back to file picker");
+    uploadInput?.click();
+    return;
+  }
   uploaderModal.classList.remove("hidden");
   uploaderModal.setAttribute("aria-hidden", "false");
+  console.log("Uploader modal open", !uploaderModal.classList.contains("hidden"));
 }
 
 function closeUploaderModal() {
