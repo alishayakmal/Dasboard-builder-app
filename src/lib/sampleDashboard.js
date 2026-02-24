@@ -158,44 +158,90 @@ export function computeKpis(rows, windowDays = 30) {
   const retentionCurrent = retention(current);
   const retentionPrior = retention(prior);
 
+  const buildKpi = ({ key, label, value, priorValue, deltaType, definition }) => {
+    const rawDelta = value - priorValue;
+    const delta = deltaType === "percentagePoints"
+      ? rawDelta
+      : (priorValue ? rawDelta / priorValue : 0);
+    const direction = rawDelta > 0 ? "up" : rawDelta < 0 ? "down" : "flat";
+    return {
+      key,
+      label,
+      value,
+      priorValue,
+      deltaRaw: rawDelta,
+      delta,
+      deltaType,
+      direction,
+      window: "Last 30 days vs prior 30 days",
+      definition,
+    };
+  };
+
   return [
-    {
+    buildKpi({
       key: "revenue",
       label: "Revenue",
       value: revenueCurrent,
-      delta: revenuePrior ? (revenueCurrent - revenuePrior) / revenuePrior : 0,
+      priorValue: revenuePrior,
       deltaType: "percent",
-      window: "Last 30 days vs prior 30 days",
       definition: METRICS.find((m) => m.key === "revenue").definition,
-    },
-    {
+    }),
+    buildKpi({
       key: "retention",
       label: "Retention",
       value: retentionCurrent,
-      delta: retentionCurrent - retentionPrior,
+      priorValue: retentionPrior,
       deltaType: "percentagePoints",
-      window: "Last 30 days vs prior 30 days",
       definition: METRICS.find((m) => m.key === "retention").definition,
-    },
-    {
+    }),
+    buildKpi({
       key: "activeUsers",
       label: "Active users",
       value: activeCurrent,
-      delta: activePrior ? (activeCurrent - activePrior) / activePrior : 0,
+      priorValue: activePrior,
       deltaType: "percent",
-      window: "Last 30 days vs prior 30 days",
       definition: METRICS.find((m) => m.key === "activeUsers").definition,
-    },
-    {
+    }),
+    buildKpi({
       key: "pipeline",
       label: "Pipeline",
       value: pipelineCurrent,
-      delta: pipelinePrior ? (pipelineCurrent - pipelinePrior) / pipelinePrior : 0,
+      priorValue: pipelinePrior,
       deltaType: "percent",
-      window: "Last 30 days vs prior 30 days",
       definition: METRICS.find((m) => m.key === "pipeline").definition,
-    },
+    }),
   ];
+}
+
+function toDayKey(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+export function computeKpiMiniTrend(rows, metricKey, windowDays = 30) {
+  const { start, end, priorStart, priorEnd } = computePeriods(rows, windowDays);
+  const bucketRange = (rangeStart, rangeEnd) => {
+    const days = [];
+    const cursor = new Date(rangeStart);
+    while (cursor <= rangeEnd) {
+      days.push(new Date(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    const dayKeys = days.map((day) => toDayKey(day));
+    const buckets = Object.fromEntries(dayKeys.map((key) => [key, []]));
+    rows.forEach((row) => {
+      if (row.date < rangeStart || row.date > rangeEnd) return;
+      const key = toDayKey(row.date);
+      if (!buckets[key]) buckets[key] = [];
+      buckets[key].push(row);
+    });
+    return dayKeys.map((key) => computeMetricValue(buckets[key] || [], metricKey));
+  };
+
+  return {
+    currentSeries: bucketRange(start, end),
+    priorSeries: bucketRange(priorStart, priorEnd),
+  };
 }
 
 export function computeTrend(rows, metricKey, breakdown) {
