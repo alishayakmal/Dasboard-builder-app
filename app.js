@@ -84,6 +84,10 @@ const dropZone = document.getElementById("dropZone");
 const uploadTrigger = document.getElementById("uploadTrigger");
 const uploadInput = document.getElementById("uploadInput");
 const loadFixtureButton = document.getElementById("loadFixture");
+const uploadCsvQuick = document.getElementById("uploadCsvQuick");
+const uploadPdfQuick = document.getElementById("uploadPdfQuick");
+const uploadSheetsQuick = document.getElementById("uploadSheetsQuick");
+const uploadApiQuick = document.getElementById("uploadApiQuick");
 const apiBaseUrl = document.getElementById("apiBaseUrl");
 const apiAuthType = document.getElementById("apiAuthType");
 const apiKey = document.getElementById("apiKey");
@@ -243,6 +247,18 @@ function init() {
 
   if (uploadTrigger && uploadInput) {
     uploadTrigger.addEventListener("click", () => uploadInput.click());
+  }
+  if (uploadCsvQuick && uploadInput) {
+    uploadCsvQuick.addEventListener("click", () => uploadInput.click());
+  }
+  if (uploadPdfQuick && pdfInput) {
+    uploadPdfQuick.addEventListener("click", () => pdfInput.click());
+  }
+  if (uploadSheetsQuick) {
+    uploadSheetsQuick.addEventListener("click", () => switchTab("sheets"));
+  }
+  if (uploadApiQuick) {
+    uploadApiQuick.addEventListener("click", () => switchTab("api"));
   }
 
   [fileInput, fileInputInline, uploadInput].forEach((input) => {
@@ -558,13 +574,19 @@ function hasLoadedDataset() {
   return Boolean(state.rawRows && state.rawRows.length > 0);
 }
 
+function hasUserDataLoaded() {
+  const sourceType = state.normalizedDataset?.meta?.sourceType || null;
+  if (!hasLoadedDataset()) return false;
+  return sourceType !== "demo";
+}
+
 function setUiMode(mode) {
   state.uiMode = mode;
   syncUploadAnalysisState();
 }
 
 function syncUploadAnalysisState() {
-  const hasDataset = hasLoadedDataset() && state.uiMode === "ready";
+  const hasDataset = hasUserDataLoaded() && state.uiMode === "ready";
   updateAnalysisHeaderState(hasDataset);
 
   if (dashboard) {
@@ -730,6 +752,14 @@ function loadSampleGallery() {
 }
 
 function switchTab(tabName) {
+  const isSourceTab = ["upload", "sheets", "api", "pdf"].includes(tabName);
+  if (isSourceTab && hasUserDataLoaded() && state.uiMode === "ready") {
+    resetStateForNewDataset();
+    tabName = "upload";
+  }
+  if (isSourceTab && !hasUserDataLoaded()) {
+    tabName = "upload";
+  }
   tabButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === tabName);
   });
