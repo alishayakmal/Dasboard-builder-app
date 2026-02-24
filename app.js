@@ -104,6 +104,7 @@ let currentTableRows = [];
 let currentSort = { key: null, direction: "asc" };
 let googleAccessToken = null;
 let googleTokenClient = null;
+let logoWarningShown = false;
 
 const samplePath = "data-sample.csv";
 // Use the deployed Apps Script Web App URL ending in /exec (not the editor URL).
@@ -189,6 +190,8 @@ function init() {
   if (buildStamp) {
     buildStamp.textContent = `Build: ${new Date().toISOString()}`;
   }
+
+  applyBrandAssets();
 
   window.addEventListener("hashchange", handleRoute);
 
@@ -312,6 +315,37 @@ function init() {
   disableUnavailableButtons();
   auditActionHandlers();
   console.log("handlers wired");
+}
+
+function applyBrandAssets() {
+  const path = window.location.pathname || "/";
+  const base = path.endsWith("/") ? path : path.replace(/\/[^/]*$/, "/");
+  const logoSrc = `${base}Brand/logo.png`;
+  const logo192 = `${base}Brand/logo-192.png`;
+  const logo512 = `${base}Brand/logo-512.png`;
+
+  document.querySelectorAll(".logo-img").forEach((img) => {
+    img.src = logoSrc;
+    img.alt = "Shay Analytics AI";
+    img.onerror = () => {
+      if (!logoWarningShown) {
+        console.warn(`Logo failed to load: ${logoSrc}`);
+        logoWarningShown = true;
+      }
+      img.onerror = null;
+      img.src = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><rect width='100%' height='100%' fill='%2318181b'/><text x='50%' y='55%' font-size='28' text-anchor='middle' fill='%23a78bfa' font-family='Arial'>Shay</text></svg>";
+    };
+  });
+
+  document.querySelectorAll("link[rel='icon']").forEach((link) => {
+    link.href = link.getAttribute("sizes") === "512x512" ? logo512 : logo192;
+  });
+  const apple = document.querySelector("link[rel='apple-touch-icon']");
+  if (apple) apple.href = logo192;
+  const ogImage = document.querySelector("meta[property='og:image']");
+  if (ogImage) ogImage.setAttribute("content", logo512);
+  const twitterImage = document.querySelector("meta[name='twitter:image']");
+  if (twitterImage) twitterImage.setAttribute("content", logo512);
 }
 
 function handleFileSelection(file) {
