@@ -393,7 +393,7 @@
       <h3>Start for Free</h3>
       <p class="helper-text">Create your account to unlock the dashboard.</p>
       <form id="signupForm" class="modal-form">
-        <label>Full name
+        <label class="signup-only">Full name
           <input type="text" id="signupName" required />
           <span class="field-error" id="nameError"></span>
         </label>
@@ -401,11 +401,11 @@
           <input type="email" id="signupEmail" required />
           <span class="field-error" id="emailError"></span>
         </label>
-        <label>Company
+        <label class="signup-only">Company
           <input type="text" id="signupCompany" required />
           <span class="field-error" id="companyError"></span>
         </label>
-        <label>Use case
+        <label class="signup-only">Use case
           <select id="signupUseCase" required>
             <option value="">Select one</option>
             <option value="Marketing reporting">Marketing reporting</option>
@@ -418,7 +418,7 @@
           </select>
           <span class="field-error" id="useCaseError"></span>
         </label>
-        <label id="useCaseDetailField" class="hidden">Describe your use case
+        <label id="useCaseDetailField" class="hidden signup-only">Describe your use case
           <input type="text" id="signupUseCaseDetail" placeholder="Example: Weekly campaign performance dashboards for client teams" />
           <span class="field-error" id="useCaseDetailError"></span>
         </label>
