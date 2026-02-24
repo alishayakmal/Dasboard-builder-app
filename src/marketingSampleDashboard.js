@@ -168,7 +168,7 @@ function renderInsights(container, evidencePanel, breakdownChart) {
       <h4>${insight.headline || insight.claim}</h4>
       <p class="insight-meta">${insight.deltaSummary || insight.evidenceSummary || insight.evidence || ""}</p>
       <p class="insight-meta">Driver: ${insight.driver}</p>
-      <p class="insight-meta">Action: ${insight.actionSummary || insight.action}</p>
+      <p class="insight-meta">Action: ${insight.action}</p>
       <span
         class="severity ${confidenceLevel} confidence-pill"
         tabindex="0"
