@@ -472,7 +472,6 @@ function ensureUnifiedUserDashboardLayout() {
     dashboard.appendChild(shell);
   }
 
-  ensureDashboardChangeDataSourceButton();
   ensureDashboardActionsToolbar();
 }
 
@@ -487,7 +486,9 @@ function ensureDashboardActionsToolbar() {
     toolbar.id = "dashboardActionsToolbar";
     toolbar.className = "dashboard-actions-toolbar";
     toolbar.innerHTML = `
-      <div class="dashboard-actions-row" role="toolbar" aria-label="Dashboard actions"></div>
+      <div class="dashboard-actions-row" role="toolbar" aria-label="Dashboard actions">
+        <button type="button" id="dashboardChangeDataSourceBtn" class="ghost dashboard-action-btn">Upload data</button>
+      </div>
       <div id="dashboardActionsStatus" class="helper-text hidden"></div>
     `;
     sectionHeader.appendChild(toolbar);
@@ -495,7 +496,17 @@ function ensureDashboardActionsToolbar() {
 
   const row = toolbar.querySelector(".dashboard-actions-row");
   const status = document.getElementById("dashboardActionsStatus");
+  const changeDataButton = document.getElementById("dashboardChangeDataSourceBtn");
   if (!row) return;
+
+  if (changeDataButton && !changeDataButton.dataset.bound) {
+    changeDataButton.addEventListener("click", () => {
+      resetStateForNewDataset();
+      switchTab("upload");
+      focusSourceSection("upload");
+    });
+    changeDataButton.dataset.bound = "true";
+  }
 
   [downloadPdfButton, exportCsvButton, downloadInsightsButton, exportSheetsButton].forEach((button) => {
     if (!button) return;
@@ -511,51 +522,16 @@ function ensureDashboardActionsToolbar() {
   updateAnalysisHeaderState(Boolean(state.rawRows?.length));
 }
 
-function ensureDashboardChangeDataSourceButton() {
-  if (!dashboard) return;
-  const sectionHeader = dashboard.querySelector(".section-header");
-  if (!sectionHeader) return;
-
-  let wrap = document.getElementById("dashboardChangeDataSourceWrap");
-  if (!wrap) {
-    wrap = document.createElement("div");
-    wrap.id = "dashboardChangeDataSourceWrap";
-    wrap.className = "dashboard-change-source-wrap";
-    wrap.innerHTML = `
-      <button type="button" id="dashboardChangeDataSourceBtn" class="ghost dashboard-upload-toggle">
-        Upload data
-      </button>
-    `;
-    const actionsToolbar = document.getElementById("dashboardActionsToolbar");
-    if (actionsToolbar && actionsToolbar.parentNode === sectionHeader) {
-      sectionHeader.insertBefore(wrap, actionsToolbar);
-    } else {
-      sectionHeader.appendChild(wrap);
-    }
-  }
-  const button = document.getElementById("dashboardChangeDataSourceBtn");
-  if (button && !button.dataset.bound) {
-    button.addEventListener("click", () => {
-      resetStateForNewDataset();
-      switchTab("upload");
-      focusSourceSection("upload");
-    });
-    button.dataset.bound = "true";
-  }
-  updateAnalysisHeaderState(Boolean(state.rawRows?.length));
-}
-
 function updateAnalysisHeaderState(hasDataset) {
   if (dashboardSectionTitle) {
     dashboardSectionTitle.textContent = hasDataset ? "Analysis" : "Upload";
   }
   const toolbar = document.getElementById("dashboardActionsToolbar");
   if (toolbar) toolbar.classList.toggle("hidden", !hasDataset);
-  const uploadWrap = document.getElementById("dashboardChangeDataSourceWrap");
-  if (uploadWrap) uploadWrap.classList.remove("hidden");
   const uploadToggle = document.getElementById("dashboardChangeDataSourceBtn");
   if (uploadToggle) {
     uploadToggle.textContent = hasDataset ? "Change data source" : "Upload data";
+    uploadToggle.classList.toggle("hidden", !hasDataset);
   }
   [downloadPdfButton, exportCsvButton, downloadInsightsButton, exportSheetsButton].forEach((button) => {
     if (!button) return;
@@ -2100,7 +2076,6 @@ function renderDashboardRenderer({ dataset, mode }) {
     state.dateColumn = dataset.meta.dateField;
   }
   ensureUnifiedUserDashboardLayout();
-  ensureDashboardChangeDataSourceButton();
   ensureDashboardActionsToolbar();
   dashboard?.classList.add("dashboard-unified-active");
   updateAnalysisHeaderState(Boolean(dataset?.rows?.length));
