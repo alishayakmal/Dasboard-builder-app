@@ -222,6 +222,19 @@ export function computeTrend(rows, metricKey, breakdown) {
   return series;
 }
 
+function computeMetricValue(items, metricKey) {
+  const sum = (key) => items.reduce((acc, row) => acc + row[key], 0);
+  if (metricKey === "revenue") return sum("revenue");
+  if (metricKey === "pipeline") return sum("pipelineAmount");
+  if (metricKey === "activeUsers") return sum("activeUsers");
+  if (metricKey === "retention") {
+    const retained = sum("retainedUsers");
+    const eligible = sum("eligibleUsers");
+    return eligible ? retained / eligible : 0;
+  }
+  return 0;
+}
+
 export function computeBreakdown(rows, metricKey, dimension, windowDays = 30) {
   const { start, end } = computePeriods(rows, windowDays);
   const current = rows.filter((row) => row.date >= start && row.date <= end);
