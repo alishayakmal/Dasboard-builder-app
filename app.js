@@ -1481,6 +1481,10 @@ async function loadSampleFile(sample) {
 }
 
 function activateSourceTab(sourceMeta = {}) {
+  if (state.uiMode === "ready" && hasLoadedDataset()) {
+    console.log("activateSourceTab skipped in ready mode");
+    return;
+  }
   const sourceType = String(sourceMeta?.sourceType || "").toLowerCase();
   if (sourceMeta?.isSample) {
     switchTab("samples");
