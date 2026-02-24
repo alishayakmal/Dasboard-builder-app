@@ -507,6 +507,17 @@ button:disabled {
   align-items: center;
 }
 
+.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.primary:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 16px 32px rgba(124, 58, 237, 0.35);
+}
+
 .primary:hover {
   background: var(--accent-hover);
 }
