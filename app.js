@@ -221,6 +221,7 @@ function init() {
   }
 
   applyBrandAssets();
+  ensureUnifiedUserDashboardLayout();
 
   window.addEventListener("hashchange", handleRoute);
 
@@ -359,6 +360,94 @@ function init() {
   disableUnavailableButtons();
   auditActionHandlers();
   console.log("handlers wired");
+}
+
+function ensureUnifiedUserDashboardLayout() {
+  if (!dashboard) return;
+  if (dashboard.querySelector("#unifiedDashboardShell")) return;
+
+  const charts = dashboard.querySelector(".charts");
+  const insightsCard = dashboard.querySelector(".insights-card");
+  const comparisonSectionEl = document.getElementById("comparisonSection");
+  const tableCards = Array.from(dashboard.querySelectorAll(".table-card"));
+  const controlsPanel = dashboard.querySelector(".controls-panel");
+  const sectionHeader = dashboard.querySelector(".section-header");
+  const demoBanner = dashboard.querySelector(".demo-banner");
+  const metricNoticeEl = document.getElementById("metricNotice");
+  const kpiSection = document.getElementById("kpiGrid");
+  if (!charts || !insightsCard || !kpiSection) return;
+
+  const chartCards = Array.from(charts.querySelectorAll(".chart-card"));
+  const trendCard = chartCards[0];
+  const performanceCard = chartCards[1];
+  const extraChartCard = chartCards[2] || null;
+  const filterBadgeEl = document.getElementById("filterBadge");
+  if (!trendCard || !performanceCard) return;
+
+  const shell = document.createElement("div");
+  shell.id = "unifiedDashboardShell";
+  shell.className = "unified-dashboard-shell";
+
+  const row1 = document.createElement("div");
+  row1.className = "unified-dashboard-row unified-dashboard-row-top";
+  const kpiWrap = document.createElement("div");
+  kpiWrap.className = "unified-col unified-kpi-col";
+  const trendWrap = document.createElement("div");
+  trendWrap.className = "unified-col unified-trend-col";
+
+  const kpiCardWrap = document.createElement("div");
+  kpiCardWrap.className = "unified-panel unified-kpi-panel";
+  kpiCardWrap.appendChild(kpiSection);
+
+  const trendPanelWrap = document.createElement("div");
+  trendPanelWrap.className = "unified-panel unified-trend-panel";
+  if (filterBadgeEl) trendPanelWrap.appendChild(filterBadgeEl);
+  trendPanelWrap.appendChild(trendCard);
+
+  kpiWrap.appendChild(kpiCardWrap);
+  trendWrap.appendChild(trendPanelWrap);
+  row1.appendChild(kpiWrap);
+  row1.appendChild(trendWrap);
+
+  const row2 = document.createElement("div");
+  row2.className = "unified-dashboard-row unified-dashboard-row-middle";
+  const insightsWrap = document.createElement("div");
+  insightsWrap.className = "unified-col unified-insights-col";
+  const perfWrap = document.createElement("div");
+  perfWrap.className = "unified-col unified-performance-col";
+  insightsWrap.appendChild(insightsCard);
+  perfWrap.appendChild(performanceCard);
+  row2.appendChild(insightsWrap);
+  row2.appendChild(perfWrap);
+
+  const evidenceRow = document.createElement("div");
+  evidenceRow.id = "userEvidencePanel";
+  evidenceRow.className = "unified-evidence-panel hidden";
+  evidenceRow.innerHTML = `<div class="helper-text">Select an insight to view evidence details.</div>`;
+
+  const extras = document.createElement("div");
+  extras.className = "unified-dashboard-extras";
+  if (extraChartCard) extras.appendChild(extraChartCard);
+  if (comparisonSectionEl) extras.appendChild(comparisonSectionEl);
+  tableCards.forEach((card) => extras.appendChild(card));
+
+  shell.appendChild(row1);
+  shell.appendChild(row2);
+  shell.appendChild(evidenceRow);
+  if (extras.children.length) shell.appendChild(extras);
+
+  if (charts && !charts.classList.contains("hidden")) {
+    charts.classList.add("hidden");
+  } else {
+    charts.classList.add("hidden");
+  }
+
+  const insertionTarget = controlsPanel || metricNoticeEl || sectionHeader || demoBanner;
+  if (insertionTarget && insertionTarget.parentNode === dashboard) {
+    insertionTarget.insertAdjacentElement("afterend", shell);
+  } else {
+    dashboard.appendChild(shell);
+  }
 }
 
 function loadUsers() {
