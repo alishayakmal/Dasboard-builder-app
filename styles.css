@@ -1191,6 +1191,7 @@ button:disabled {
 .modal {
   position: fixed;
   inset: 0;
+  z-index: 9999;
   background: rgba(6, 6, 8, 0.7);
   display: grid;
   place-items: center;
