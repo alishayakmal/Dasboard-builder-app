@@ -295,9 +295,11 @@ button:disabled {
   grid-template-columns: 1fr;
   gap: 16px;
   padding: 0 48px 56px;
-  max-width: 1100px;
+  width: 100%;
+  max-width: 1280px;
   margin: 0 auto;
   align-items: start;
+  box-sizing: border-box;
 }
 
 .sample-preview > * {
@@ -312,8 +314,8 @@ button:disabled {
 }
 
 .sample-copy {
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   height: 100%;
   min-width: 0;
 }
@@ -383,6 +385,8 @@ button:disabled {
   align-content: stretch;
   height: 100%;
   min-width: 0;
+  width: 100%;
+  flex: 1 1 auto;
 }
 
 @media (min-width: 1200px) {
@@ -393,8 +397,8 @@ button:disabled {
 }
 
 .sample-trend {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 12px;
   background: rgba(16, 16, 20, 0.75);
   border: 1px solid var(--border-color);
@@ -402,6 +406,7 @@ button:disabled {
   padding: 16px;
   height: 100%;
   min-width: 0;
+  overflow: hidden;
 }
 
 .trend-header {
@@ -435,11 +440,28 @@ button:disabled {
   min-height: 220px;
   min-width: 0;
   flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  overflow: hidden;
 }
 
 .trend-line {
   width: 100%;
-  height: 220px;
+  height: 260px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+@media (min-width: 1200px) {
+  .sample-row-top {
+    align-items: stretch;
+  }
+
+  .sample-row-top > .sample-copy,
+  .sample-row-top > .sample-trend {
+    align-self: stretch;
+  }
 }
 
 .trend-legend {
@@ -624,6 +646,57 @@ button:disabled {
 .evidence-stat span {
   color: var(--text-secondary);
   font-size: 11px;
+}
+
+.inline-info {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.info-dot {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+  font-size: 10px;
+  line-height: 1;
+  cursor: help;
+}
+
+.info-dot:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.8);
+  outline-offset: 2px;
+}
+
+.info-tooltip {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  width: min(260px, 70vw);
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(8, 10, 20, 0.96);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  z-index: 25;
+}
+
+.info-dot:hover .info-tooltip,
+.info-dot:focus-visible .info-tooltip {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .evidence-stat strong {
