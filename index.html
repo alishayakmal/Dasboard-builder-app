@@ -178,6 +178,10 @@
       <section id="state" class="state tab-panel" data-tab-panel="upload">
         <div class="upload-panel">
           <div id="upload-data" class="upload-card" tabindex="-1">
+            <div class="upload-card-heading">
+              <h2>Upload data</h2>
+              <p>Drop a file or connect a source to generate KPIs, trends and insights.</p>
+            </div>
             <div class="upload-card-grid">
               <div class="drop-zone" id="dropZone">
                 <p>Drag and drop a CSV here</p>
@@ -191,25 +195,23 @@
                 <h3>Supported formats</h3>
                 <p>CSV with headers. Currency, percentages, and thousands separators are normalized automatically.</p>
                 <p class="helper-text">Your data is processed in-browser for local analysis and exports.</p>
+                <div class="upload-source-buttons">
+                  <button id="uploadCsvQuick" class="ghost">Upload CSV</button>
+                  <button id="uploadPdfQuick" class="ghost">Upload PDF</button>
+                  <button id="uploadSheetsQuick" class="ghost">Google Sheets</button>
+                  <button id="uploadApiQuick" class="ghost">Connect API</button>
+                </div>
+                <details class="state-learn-more">
+                  <summary>Learn more</summary>
+                  <ul class="state-list compact">
+                    <li>Finds date/month/period columns for trend analysis</li>
+                    <li>Profiles data quality before analysis</li>
+                    <li>Exports filtered CSV, insights and PDF after analysis</li>
+                  </ul>
+                </details>
               </div>
             </div>
           </div>
-        </div>
-        <div class="state-card">
-          <h2>Upload data</h2>
-          <p>Drop a file or connect a source to generate KPIs, trends and insights.</p>
-          <ul class="state-list">
-            <li>Auto-detects metrics and dimensions</li>
-            <li>Builds charts and insights with confidence checks</li>
-          </ul>
-          <details class="state-learn-more">
-            <summary>Learn more</summary>
-            <ul class="state-list compact">
-              <li>Finds date/month/period columns for trend analysis</li>
-              <li>Profiles data quality before analysis</li>
-              <li>Exports filtered CSV, insights and PDF after analysis</li>
-            </ul>
-          </details>
         </div>
       </section>
 
