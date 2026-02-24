@@ -22,6 +22,7 @@ export async function renderSampleDashboard() {
   const trendChart = document.getElementById("sampleTrendChart");
   const dimensionSelect = document.getElementById("sampleDimensionSelect");
   const breakdownChart = document.getElementById("sampleBreakdownChart");
+  const evidencePanel = document.getElementById("sampleEvidencePanel");
   const insightsRoot = document.getElementById("sampleInsightsRoot");
 
   if (!kpiRoot || !trendMetric || !trendBreakdown || !trendChart || !dimensionSelect || !breakdownChart || !insightsRoot) {
@@ -66,7 +67,7 @@ export async function renderSampleDashboard() {
   renderKpis(kpiRoot);
   renderTrend(trendChart);
   renderBreakdown(breakdownChart);
-  renderInsights(insightsRoot);
+  renderInsights(insightsRoot, evidencePanel, breakdownChart);
 }
 
 function renderKpis(container) {
@@ -99,7 +100,7 @@ function renderBreakdown(container) {
   container.innerHTML = buildBarChart(breakdown);
 }
 
-function renderInsights(container) {
+function renderInsights(container, evidencePanel, breakdownChart) {
   const insights = computeInsights(state.rows, state.metric, state.dimension);
   container.innerHTML = "";
   insights.forEach((insight) => {
@@ -116,11 +117,25 @@ function renderInsights(container) {
     const button = card.querySelector(".view-evidence");
     if (button) {
       button.addEventListener("click", () => {
-        document.getElementById("sampleBreakdownChart")?.scrollIntoView({ behavior: "smooth" });
+        console.log("View evidence clicked", insight);
+        showEvidence(evidencePanel, insight);
+        breakdownChart?.scrollIntoView({ behavior: "smooth" });
       });
     }
     container.appendChild(card);
   });
+}
+
+function showEvidence(panel, insight) {
+  if (!panel) return;
+  panel.classList.remove("hidden");
+  panel.innerHTML = `
+    <strong>Evidence detail</strong>
+    <div>${insight.evidence}</div>
+    <div>${insight.driver}</div>
+    <div>${insight.action}</div>
+    <div>Confidence: ${insight.confidence}</div>
+  `;
 }
 
 function buildLineChart(series) {
@@ -129,7 +144,7 @@ function buildLineChart(series) {
   const padding = 20;
   const allPoints = series.flatMap((s) => s.points);
   if (!allPoints.length) return "<div class=\"helper-text\">No data</div>";
-  const xs = allPoints.map((p) => new Date(p.month).getTime());
+  const xs = allPoints.map((p) => p.monthTs);
   const ys = allPoints.map((p) => p.value);
   const minX = Math.min(...xs);
   const maxX = Math.max(...xs);
@@ -141,14 +156,22 @@ function buildLineChart(series) {
 
   const paths = series.map((s) => {
     const path = s.points
-      .map((p, idx) => `${idx === 0 ? "M" : "L"}${scaleX(new Date(p.month).getTime())},${scaleY(p.value)}`)
+      .map((p, idx) => `${idx === 0 ? "M" : "L"}${scaleX(p.monthTs)},${scaleY(p.value)}`)
       .join(" ");
     return `<path d="${path}" fill="none" stroke="#a78bfa" stroke-width="2" />`;
   }).join("");
 
+  const dots = series.map((s) => s.points.map((p) => {
+    const label = new Date(p.monthTs).toLocaleString("en-US", { month: "short", year: "numeric" });
+    return `<circle cx="${scaleX(p.monthTs)}" cy="${scaleY(p.value)}" r="3" fill="#a78bfa">
+      <title>${label}: ${p.value.toFixed(0)}</title>
+    </circle>`;
+  }).join("")).join("");
+
   return `
     <svg class="trend-line" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
       ${paths}
+      ${dots}
     </svg>
   `;
 }
