@@ -2,7 +2,15 @@
  * @typedef {{
  * rows: Record<string, any>[],
  * columns: { name: string, type: "number" | "currency" | "percent" | "date" | "string" }[],
- * meta: { sourceType: "csv" | "pdf" | "sheet" | "api" | "demo", name?: string, dateField?: string, hasDateField: boolean, pdfMode?: "table" | "text" }
+ * meta: {
+ *   sourceType: "csv" | "pdf" | "sheet" | "api" | "demo",
+ *   name?: string,
+ *   dateField?: string,
+ *   hasDateField: boolean,
+ *   hasNumericMetrics: boolean,
+ *   hasCategoricalDimensions: boolean,
+ *   pdfMode?: "table" | "text"
+ * }
  * }} NormalizedDataset
  */
 
@@ -21,6 +29,14 @@ export function createNormalizedDataset(input) {
       hasDateField: Boolean(
         input?.meta?.hasDateField
         || (Array.isArray(input?.columns) && input.columns.some((column) => column?.type === "date"))
+      ),
+      hasNumericMetrics: Boolean(
+        input?.meta?.hasNumericMetrics
+        || (Array.isArray(input?.columns) && input.columns.some((column) => ["number", "currency", "percent"].includes(column?.type)))
+      ),
+      hasCategoricalDimensions: Boolean(
+        input?.meta?.hasCategoricalDimensions
+        || (Array.isArray(input?.columns) && input.columns.some((column) => column?.type === "string"))
       ),
       pdfMode: input?.meta?.pdfMode,
     },
