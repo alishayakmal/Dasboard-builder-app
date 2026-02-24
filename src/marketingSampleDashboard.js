@@ -13,6 +13,7 @@ const state = {
   metric: "revenue",
   breakdown: "overall",
   dimension: "plan",
+  evidenceInsightId: null,
 };
 
 export async function renderSampleDashboard() {
@@ -44,7 +45,7 @@ export async function renderSampleDashboard() {
     state.metric = trendMetric.value;
     renderTrend(trendChart);
     renderBreakdown(breakdownChart);
-    renderInsights(insightsRoot);
+    renderInsights(insightsRoot, evidencePanel, breakdownChart);
   });
 
   trendBreakdown.addEventListener("change", () => {
@@ -55,7 +56,7 @@ export async function renderSampleDashboard() {
   dimensionSelect.addEventListener("change", () => {
     state.dimension = dimensionSelect.value;
     renderBreakdown(breakdownChart);
-    renderInsights(insightsRoot);
+    renderInsights(insightsRoot, evidencePanel, breakdownChart);
   });
 
   kpiRoot.innerHTML = "<div class=\"skeleton-line wide\"></div>";
@@ -91,8 +92,14 @@ function renderKpis(container) {
 }
 
 function renderTrend(container) {
+  const metricConfig = getMetricConfig().find((m) => m.key === state.metric) || { label: state.metric, unit: "count" };
   const series = computeTrend(state.rows, state.metric, state.breakdown);
-  container.innerHTML = buildLineChart(series);
+  warnIfIdenticalTrendSeries(series, state.breakdown);
+  container.innerHTML = buildLineChart(series, {
+    metricLabel: metricConfig.label,
+    unit: metricConfig.unit,
+    breakdown: state.breakdown,
+  });
 }
 
 function renderBreakdown(container) {
@@ -101,9 +108,15 @@ function renderBreakdown(container) {
 }
 
 function renderInsights(container, evidencePanel, breakdownChart) {
+  console.log("INSIGHT INPUT", state.metric, state.dimension);
   const insights = computeInsights(state.rows, state.metric, state.dimension);
   container.innerHTML = "";
   insights.forEach((insight) => {
+    const confidenceLevel = insight.confidenceLevel || insight.confidence || "low";
+    const confidenceLabel = `${confidenceLevel.charAt(0).toUpperCase()}${confidenceLevel.slice(1)}`;
+    const whyLine = confidenceLevel !== "high" && Array.isArray(insight.confidenceReasons) && insight.confidenceReasons.length
+      ? `<p class="insight-meta confidence-why"><strong>Why this confidence:</strong> ${insight.confidenceReasons.join(" ")}</p>`
+      : "";
     const card = document.createElement("div");
     card.className = "insight-card";
     card.innerHTML = `
@@ -111,7 +124,15 @@ function renderInsights(container, evidencePanel, breakdownChart) {
       <p class="insight-meta">${insight.evidence}</p>
       <p class="insight-meta">Driver: ${insight.driver}</p>
       <p class="insight-meta">Action: ${insight.action}</p>
-      <span class="severity ${insight.confidence}">Confidence: ${insight.confidence}</span>
+      <span
+        class="severity ${confidenceLevel} confidence-pill"
+        tabindex="0"
+        aria-label="Confidence info: Confidence reflects how reliable this insight is based on sample size, size of the difference and consistency over time."
+      >
+        Confidence: ${confidenceLabel}
+        <span class="confidence-tooltip" role="tooltip">Confidence reflects how reliable this insight is based on sample size, size of the difference and consistency over time.</span>
+      </span>
+      ${whyLine}
       <button type="button" class="ghost view-evidence" data-insight-id="${insight.id}">View evidence</button>
     `;
     const button = card.querySelector(".view-evidence");
@@ -119,6 +140,7 @@ function renderInsights(container, evidencePanel, breakdownChart) {
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();
+        state.evidenceInsightId = insight.id;
         console.log("view-evidence", insight.id);
         showEvidence(evidencePanel, insight);
         breakdownChart?.scrollIntoView({ behavior: "smooth" });
@@ -126,6 +148,18 @@ function renderInsights(container, evidencePanel, breakdownChart) {
     }
     container.appendChild(card);
   });
+
+  if (evidencePanel && !evidencePanel.classList.contains("hidden")) {
+    const activeInsight = insights.find((insight) => insight.id === state.evidenceInsightId) || insights[0];
+    if (activeInsight) {
+      showEvidence(evidencePanel, activeInsight);
+      state.evidenceInsightId = activeInsight.id;
+    } else {
+      evidencePanel.classList.add("hidden");
+      evidencePanel.innerHTML = "";
+      state.evidenceInsightId = null;
+    }
+  }
 }
 
 function showEvidence(panel, insight) {
@@ -140,7 +174,10 @@ function showEvidence(panel, insight) {
   `;
 }
 
-function buildLineChart(series) {
+function buildLineChart(series, options = {}) {
+  const metricLabel = options.metricLabel || "Metric";
+  const unit = options.unit || "count";
+  const breakdown = options.breakdown || "overall";
   const width = 640;
   const height = 220;
   const padding = 20;
@@ -155,27 +192,61 @@ function buildLineChart(series) {
 
   const scaleX = (x) => padding + ((x - minX) / (maxX - minX || 1)) * (width - padding * 2);
   const scaleY = (y) => height - padding - ((y - minY) / (maxY - minY || 1)) * (height - padding * 2);
+  const colors = ["#60a5fa", "#34d399", "#f59e0b", "#f472b6", "#a78bfa", "#fb7185"];
 
-  const paths = series.map((s) => {
+  const paths = series.map((s, seriesIndex) => {
+    const color = colors[seriesIndex % colors.length];
     const path = s.points
       .map((p, idx) => `${idx === 0 ? "M" : "L"}${scaleX(p.monthTs)},${scaleY(p.value)}`)
       .join(" ");
-    return `<path d="${path}" fill="none" stroke="#a78bfa" stroke-width="2" />`;
+    return `<path d="${path}" fill="none" stroke="${color}" stroke-width="2" />`;
   }).join("");
 
-  const dots = series.map((s) => s.points.map((p) => {
+  const dots = series.map((s, seriesIndex) => s.points.map((p) => {
+    const color = colors[seriesIndex % colors.length];
     const label = new Date(p.monthTs).toLocaleString("en-US", { month: "short", year: "numeric" });
-    return `<circle cx="${scaleX(p.monthTs)}" cy="${scaleY(p.value)}" r="3" fill="#a78bfa">
-      <title>${label}: ${p.value.toFixed(0)}</title>
+    return `<circle cx="${scaleX(p.monthTs)}" cy="${scaleY(p.value)}" r="3" fill="${color}">
+      <title>${s.group} · ${metricLabel} · ${label}: ${formatValue(p.value, unit)}</title>
     </circle>`;
   }).join("")).join("");
 
+  const legend = series.map((s, seriesIndex) => {
+    const color = colors[seriesIndex % colors.length];
+    return `
+      <span class="trend-legend-item">
+        <span class="trend-legend-swatch" style="background:${color}"></span>
+        <span>${s.group}</span>
+      </span>
+    `;
+  }).join("");
+
+  const breakdownLabel = breakdown === "overall" ? "Overall" : `By ${breakdown}`;
+  const debug = `
+    <div class="trend-debug helper-text">
+      Metric: ${metricLabel} · Breakdown: ${breakdownLabel} · Datasets: ${series.length}
+      <br />
+      Dataset labels: ${series.map((s) => s.group).join(", ")}
+    </div>
+  `;
+
   return `
+    <div class="trend-legend">${legend}</div>
     <svg class="trend-line" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
       ${paths}
       ${dots}
     </svg>
+    ${debug}
   `;
+}
+
+function warnIfIdenticalTrendSeries(series, breakdown) {
+  if (breakdown === "overall" || series.length < 2) return;
+  const baseline = series[0]?.points?.map((p) => p.value).join("|");
+  if (!baseline) return;
+  const allIdentical = series.every((entry) => entry.points.map((p) => p.value).join("|") === baseline);
+  if (allIdentical) {
+    console.warn("Trend breakdown series identical, check breakdown field mapping", breakdown);
+  }
 }
 
 function buildBarChart(items) {
