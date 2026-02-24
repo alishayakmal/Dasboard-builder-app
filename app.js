@@ -453,6 +453,7 @@ function ensureUnifiedUserDashboardLayout() {
     dashboard.appendChild(shell);
   }
 
+  ensureDashboardUploadPopover();
   ensureDashboardActionsToolbar();
 }
 
@@ -491,12 +492,117 @@ function ensureDashboardActionsToolbar() {
   updateAnalysisHeaderState(Boolean(state.rawRows?.length));
 }
 
+function ensureDashboardUploadPopover() {
+  if (!dashboard) return;
+  const sectionHeader = dashboard.querySelector(".section-header");
+  if (!sectionHeader) return;
+
+  let popover = document.getElementById("dashboardUploadPopover");
+  if (!popover) {
+    popover = document.createElement("div");
+    popover.id = "dashboardUploadPopover";
+    popover.className = "dashboard-upload-popover";
+    popover.innerHTML = `
+      <button type="button" id="dashboardUploadPopoverToggle" class="ghost dashboard-upload-toggle" aria-expanded="false" aria-controls="dashboardUploadPopoverPanel">
+        Upload data
+      </button>
+      <div id="dashboardUploadPopoverPanel" class="dashboard-upload-panel hidden" role="dialog" aria-label="Upload data options">
+        <div class="dashboard-upload-dropzone" id="dashboardUploadDropzone" tabindex="0">
+          <strong>Drag and drop CSV</strong>
+          <span class="helper-text">Drop a file here or choose a source below.</span>
+        </div>
+        <div class="dashboard-upload-panel-actions">
+          <button type="button" id="dashboardChooseFileBtn" class="ghost">Choose file</button>
+          <button type="button" id="dashboardGoSheetsBtn" class="ghost">Google Sheets</button>
+          <button type="button" id="dashboardGoApiBtn" class="ghost">Connect API</button>
+          <button type="button" id="dashboardGoPdfBtn" class="ghost">Upload PDF</button>
+        </div>
+      </div>
+    `;
+    const actionsToolbar = document.getElementById("dashboardActionsToolbar");
+    if (actionsToolbar && actionsToolbar.parentNode === sectionHeader) {
+      sectionHeader.insertBefore(popover, actionsToolbar);
+    } else {
+      sectionHeader.appendChild(popover);
+    }
+  }
+
+  const toggle = document.getElementById("dashboardUploadPopoverToggle");
+  const panel = document.getElementById("dashboardUploadPopoverPanel");
+  const miniDropzone = document.getElementById("dashboardUploadDropzone");
+  const chooseBtn = document.getElementById("dashboardChooseFileBtn");
+  const goSheets = document.getElementById("dashboardGoSheetsBtn");
+  const goApi = document.getElementById("dashboardGoApiBtn");
+  const goPdf = document.getElementById("dashboardGoPdfBtn");
+  if (!toggle || !panel) return;
+
+  if (!popover.dataset.bound) {
+    const setOpen = (open) => {
+      panel.classList.toggle("hidden", !open);
+      popover.classList.toggle("open", open);
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    };
+    let hoverCloseTimer = null;
+    toggle.addEventListener("click", (event) => {
+      event.preventDefault();
+      const nextOpen = panel.classList.contains("hidden");
+      setOpen(nextOpen);
+    });
+    popover.addEventListener("mouseenter", () => {
+      if (hoverCloseTimer) clearTimeout(hoverCloseTimer);
+      setOpen(true);
+    });
+    popover.addEventListener("mouseleave", () => {
+      if (hoverCloseTimer) clearTimeout(hoverCloseTimer);
+      hoverCloseTimer = setTimeout(() => setOpen(false), 120);
+    });
+    document.addEventListener("click", (event) => {
+      if (!popover.contains(event.target)) setOpen(false);
+    });
+
+    if (chooseBtn) chooseBtn.addEventListener("click", () => uploadInput?.click());
+    if (goSheets) goSheets.addEventListener("click", () => switchTab("sheets"));
+    if (goApi) goApi.addEventListener("click", () => switchTab("api"));
+    if (goPdf) goPdf.addEventListener("click", () => switchTab("pdf"));
+
+    if (miniDropzone) {
+      miniDropzone.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        miniDropzone.classList.add("dragover");
+      });
+      miniDropzone.addEventListener("dragleave", () => miniDropzone.classList.remove("dragover"));
+      miniDropzone.addEventListener("drop", (event) => {
+        event.preventDefault();
+        miniDropzone.classList.remove("dragover");
+        const file = event.dataTransfer?.files?.[0];
+        handleFileSelection(file);
+      });
+      miniDropzone.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          uploadInput?.click();
+        }
+      });
+      miniDropzone.addEventListener("click", () => uploadInput?.click());
+    }
+    popover.dataset.bound = "true";
+  }
+
+  updateAnalysisHeaderState(Boolean(state.rawRows?.length));
+}
+
 function updateAnalysisHeaderState(hasDataset) {
   if (dashboardSectionTitle) {
     dashboardSectionTitle.textContent = hasDataset ? "Analysis" : "Upload";
   }
   const toolbar = document.getElementById("dashboardActionsToolbar");
   if (toolbar) toolbar.classList.toggle("hidden", !hasDataset);
+  const uploadPopover = document.getElementById("dashboardUploadPopover");
+  if (uploadPopover) uploadPopover.classList.remove("hidden");
+  const uploadToggle = document.getElementById("dashboardUploadPopoverToggle");
+  if (uploadToggle) {
+    uploadToggle.textContent = hasDataset ? "Change data source" : "Upload data";
+  }
   [downloadPdfButton, exportCsvButton, downloadInsightsButton, exportSheetsButton].forEach((button) => {
     if (!button) return;
     button.classList.toggle("hidden", !hasDataset);
@@ -1943,6 +2049,7 @@ function renderDashboardRenderer({ dataset, mode }) {
     state.dateColumn = dataset.meta.dateField;
   }
   ensureUnifiedUserDashboardLayout();
+  ensureDashboardUploadPopover();
   ensureDashboardActionsToolbar();
   dashboard?.classList.add("dashboard-unified-active");
   updateAnalysisHeaderState(Boolean(dataset?.rows?.length));
