@@ -185,28 +185,47 @@ button:disabled {
 
 .state {
   display: grid;
-  place-items: center;
-  min-height: 50vh;
+  gap: 14px;
+  align-content: start;
+  min-height: 0;
 }
 
 .state-card {
   background: var(--card-bg);
-  border-radius: 24px;
-  padding: 36px;
+  border-radius: 16px;
+  padding: 16px;
   border: 1px solid var(--border-color);
   box-shadow: var(--card-glow);
-  max-width: 720px;
+  max-width: 860px;
   width: 100%;
 }
 
 .state-card h2 {
-  margin-bottom: 10px;
+  margin-bottom: 6px;
+  font-size: 18px;
 }
 
 .state-list {
-  margin: 18px 0 0;
+  margin: 10px 0 0;
   padding-left: 20px;
   color: var(--text-secondary);
+}
+
+.state-list.compact {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.state-learn-more {
+  margin-top: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  padding-top: 10px;
+}
+
+.state-learn-more summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 
 .state-actions {
@@ -1335,19 +1354,34 @@ button:disabled {
 }
 
 .upload-panel {
+  margin-bottom: 0;
+}
+
+.upload-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: var(--card-glow);
+}
+
+.upload-card-grid {
   display: grid;
+  grid-template-columns: 1fr;
   gap: 12px;
-  margin-bottom: 18px;
+  align-items: center;
 }
 
 .drop-zone {
   background: var(--bg-secondary);
   border: 1px dashed var(--border-color);
   border-radius: 12px;
-  padding: 20px;
+  padding: 14px;
   text-align: center;
   display: grid;
-  gap: 12px;
+  gap: 8px;
+  min-height: 116px;
+  align-content: center;
 }
 
 .drop-zone.dragover {
@@ -1362,6 +1396,58 @@ button:disabled {
 .upload-help {
   color: var(--text-secondary);
   font-size: 13px;
+}
+
+.upload-card-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.upload-help-panel {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 2px;
+}
+
+.upload-help-panel h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.upload-help-panel p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.inline-notice-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fde68a;
+}
+
+@media (min-width: 768px) {
+  .upload-card-grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+
+  .upload-card-grid > .drop-zone {
+    grid-column: span 7;
+  }
+
+  .upload-card-grid > .upload-help-panel {
+    grid-column: span 5;
+  }
 }
 
 .api-form {
