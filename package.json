@@ -6,12 +6,18 @@
   "main": "server/server.js",
   "scripts": {
     "dev": "node server/server.js",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:root": "npm run dev",
+    "dev:all": "concurrently \"npm run dev:backend\" \"npm run dev:root\"",
     "start": "node server/server.js",
-    "test": "node scripts/tests.js"
+    "test": "node scripts/tests.js",
+    "audit:gitdeps": "node scripts/scan-git-deps.js"
   },
   "dependencies": {
     "cookie-parser": "^1.4.6",
     "express": "^4.19.2",
+    "http-proxy-middleware": "^3.0.0",
+    "concurrently": "^8.2.2",
     "sqlite3": "^5.1.7"
   }
 }
