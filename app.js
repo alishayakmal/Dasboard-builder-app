@@ -233,17 +233,72 @@ const state = {
   error: null,
 };
 
+const appStore = (() => {
+  let store = {
+    dataset: null,
+    source: null,
+    parseStatus: "idle", // idle | parsing | ready | error
+    error: null,
+    view: "upload",
+    selections: {
+      primaryMetric: null,
+      breakdown: null,
+      dateStart: null,
+      dateEnd: null,
+      topN: 8,
+    },
+  };
+  const listeners = new Set();
+  return {
+    getState() {
+      return store;
+    },
+    setState(partial) {
+      store = {
+        ...store,
+        ...partial,
+        selections: {
+          ...store.selections,
+          ...(partial?.selections || {}),
+        },
+      };
+      listeners.forEach((listener) => {
+        try {
+          listener(store);
+        } catch (error) {
+          console.error("store listener error", error);
+        }
+      });
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+})();
+
+function isAnalysisReady(storeState = appStore.getState()) {
+  return storeState.parseStatus === "ready" && Boolean(storeState.dataset?.rows?.length);
+}
+
+window.__appStore = appStore;
+
 document.addEventListener("DOMContentLoaded", init);
+appStore.subscribe(() => {
+  renderDebugUploadStatus();
+});
 
 function renderDebugUploadStatus() {
   if (!debugUploadStatus) return;
-  const dataset = state.dataset || state.normalizedDataset;
-  debugUploadStatus.textContent = `Status: ${state.parseStatus} · Rows: ${dataset?.rows?.length || 0} · Columns: ${dataset?.columns?.length || 0}`;
+  const storeState = appStore.getState();
+  const dataset = storeState.dataset;
+  debugUploadStatus.textContent = `Status: ${storeState.parseStatus} · Rows: ${dataset?.rows?.length || 0} · Columns: ${dataset?.columns?.length || 0} · Source: ${storeState.source || "—"}`;
 }
 
 function setParseStatus(nextStatus, error = null) {
   state.parseStatus = nextStatus;
   state.error = error || null;
+  appStore.setState({ parseStatus: nextStatus, error: error || null });
   renderDebugUploadStatus();
 }
 
@@ -632,19 +687,22 @@ function closeUploaderModal() {
 }
 
 function hasLoadedDataset() {
-  const dataset = state.dataset || state.normalizedDataset;
+  const storeState = appStore.getState();
+  const dataset = storeState.dataset;
   return Boolean((dataset?.rows && dataset.rows.length > 0) || (state.rawRows && state.rawRows.length > 0));
 }
 
 function hasUserDataLoaded() {
-  const sourceType = state.dataset?.meta?.sourceType || state.normalizedDataset?.meta?.sourceType || null;
-  if (!hasLoadedDataset()) return false;
+  const storeState = appStore.getState();
+  if (!isAnalysisReady(storeState)) return false;
+  const sourceType = storeState.source || storeState.dataset?.meta?.sourceType || null;
   return sourceType !== "demo";
 }
 
 function setUiMode(mode) {
   state.uiMode = mode;
   if (mode === "ready") closeUploaderModal();
+  appStore.setState({ view: mode === "ready" ? "analysis" : "upload" });
   syncUploadAnalysisState();
   renderDebugUploadStatus();
 }
@@ -1956,6 +2014,13 @@ function resetStateForNewDataset() {
   state.uiMode = "empty";
   state.parseStatus = "idle";
   state.error = null;
+  appStore.setState({
+    dataset: null,
+    source: null,
+    parseStatus: "idle",
+    error: null,
+    view: "upload",
+  });
   updateAnalysisHeaderState(false);
   syncUploadAnalysisState();
   renderDebugUploadStatus();
@@ -2166,6 +2231,13 @@ function renderDashboardRenderer({ dataset, mode }) {
   };
   state.mode = mode;
   state.uiMode = dataset?.rows?.length ? "ready" : "empty";
+  appStore.setState({
+    dataset,
+    source: dataset?.meta?.sourceType || null,
+    parseStatus: dataset?.rows?.length ? "ready" : appStore.getState().parseStatus,
+    error: null,
+    view: dataset?.rows?.length ? "analysis" : "upload",
+  });
   if (dataset?.rows?.length) setParseStatus("ready");
   dashboard?.setAttribute("data-dashboard-mode", mode || "user");
   dashboard?.setAttribute("data-source-type", dataset.meta?.sourceType || "csv");
@@ -2277,6 +2349,13 @@ function ingestRows(rawRows, sourceMeta = {}) {
   const sourceBadge = state.normalizedDataset?.meta?.sourceType ? ` · ${String(state.normalizedDataset.meta.sourceType).toUpperCase()}` : "";
   state.dataset = state.normalizedDataset;
   console.log("STATE dataset set", state.dataset?.rows?.length || 0);
+  appStore.setState({
+    dataset: state.dataset,
+    source: state.dataset?.meta?.sourceType || sourceMeta?.sourceType || null,
+    parseStatus: "ready",
+    error: null,
+    view: "analysis",
+  });
   setParseStatus("ready");
   datasetSummary.textContent = `${rows.length} rows · ${state.schema.columns.length} columns${sourceBadge}`;
   closeUploaderModal();
