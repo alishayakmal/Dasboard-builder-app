@@ -107,6 +107,28 @@ const testApiButton = document.getElementById("testApi");
 const apiStatus = document.getElementById("apiStatus");
 const sampleGallery = document.getElementById("sampleGallery");
 const suggestedTrends = document.getElementById("suggestedTrends");
+const chatPanel = document.getElementById("chatPanel");
+const chatInput = document.getElementById("chatInput");
+const chatSendButton = document.getElementById("chatSend");
+const chatStatus = document.getElementById("chatStatus");
+const chatPreview = document.getElementById("chatPreview");
+const chatApplyButton = document.getElementById("chatApply");
+const chatCancelButton = document.getElementById("chatCancel");
+const chatUndoButton = document.getElementById("chatUndo");
+const chatRedoButton = document.getElementById("chatRedo");
+const chatActivity = document.getElementById("chatActivity");
+const evidenceDrawer = document.getElementById("evidenceDrawer");
+const evidenceCloseButton = document.getElementById("evidenceClose");
+const evidenceContent = document.getElementById("evidenceContent");
+const evidenceScrim = document.getElementById("evidenceScrim");
+
+let dashboardStateModule = null;
+let chartActionsModule = null;
+let schemaGuardsModule = null;
+let detectDateFieldModule = null;
+let chatPreviewState = null;
+let pendingToolCalls = [];
+let pendingAssistantMessage = "";
 
 window.addEventListener("error", (event) => {
   const detail = event?.message ? `Details: ${event.message}` : "Details: unknown error";
@@ -221,12 +243,20 @@ const state = {
     compareMetrics: [],
   },
   selectedMetric: null,
+  selectedDimension: null,
+  chartType: "line",
+  aggregation: "sum",
+  sort: null,
+  chartFilters: [],
+  chartState: null,
   dateRange: { start: null, end: null },
   domain: "general",
   domainAuto: true,
   inferredDomain: "general",
   chosenXAxisType: "category",
   industryColumn: null,
+  dateColumn: null,
+  dateFieldConfidence: 0,
   topN: 8,
   sampleTabAutoloaded: false,
   uiMode: "empty", // empty | loading | ready | error
@@ -346,6 +376,7 @@ function init() {
 
   applyBrandAssets();
   ensureUnifiedUserDashboardLayout();
+  ensureDashboardModules();
 
   window.addEventListener("hashchange", handleRoute);
 
@@ -465,16 +496,19 @@ function init() {
 
   metricSelect.addEventListener("change", () => {
     state.selections.primaryMetric = metricSelect.value;
+    syncChartStateDirect({ selectedMetric: metricSelect.value });
     applyFiltersAndRender();
   });
 
   dimensionSelect.addEventListener("change", () => {
     state.selectedDimension = dimensionSelect.value;
+    syncChartStateDirect({ selectedDimension: dimensionSelect.value });
     applyFiltersAndRender();
   });
 
   topNSelect.addEventListener("change", () => {
     state.topN = Number(topNSelect.value);
+    syncChartStateDirect({ topN: state.topN });
     applyFiltersAndRender();
   });
 
@@ -532,6 +566,13 @@ function init() {
   if (loginGoogleButton) loginGoogleButton.addEventListener("click", handleLoginGoogleClick);
   if (exportSheetsButton) exportSheetsButton.addEventListener("click", handleExportToSheets);
   if (downloadPdfButton) downloadPdfButton.addEventListener("click", handleExportPdf);
+  if (chatSendButton) chatSendButton.addEventListener("click", handleChatSend);
+  if (chatApplyButton) chatApplyButton.addEventListener("click", applyChatPreview);
+  if (chatCancelButton) chatCancelButton.addEventListener("click", clearChatPreview);
+  if (chatUndoButton) chatUndoButton.addEventListener("click", () => handleUndoRedo("undo"));
+  if (chatRedoButton) chatRedoButton.addEventListener("click", () => handleUndoRedo("redo"));
+  if (evidenceCloseButton) evidenceCloseButton.addEventListener("click", closeEvidenceDrawer);
+  if (evidenceScrim) evidenceScrim.addEventListener("click", closeEvidenceDrawer);
   if (pdfInput) {
     pdfInput.addEventListener("change", () => {
       const file = pdfInput.files?.[0];
@@ -833,6 +874,264 @@ function syncUploadAnalysisState() {
     if (statusSection && state.uiMode !== "loading") statusSection.classList.add("hidden");
   }
 
+}
+
+async function ensureDashboardModules() {
+  if (dashboardStateModule && chartActionsModule && schemaGuardsModule && detectDateFieldModule) return;
+  try {
+    const [stateMod, actionsMod, guardsMod, dateMod] = await Promise.all([
+      import("./src/state/dashboardState.js"),
+      import("./src/actions/chartActions.js"),
+      import("./src/validation/schemaGuards.js"),
+      import("./src/profiling/detectDateField.js"),
+    ]);
+    dashboardStateModule = stateMod;
+    chartActionsModule = actionsMod;
+    schemaGuardsModule = guardsMod;
+    detectDateFieldModule = dateMod;
+  } catch (error) {
+    console.warn("Dashboard modules failed to load, chat features disabled.", error);
+  }
+}
+
+function buildDatasetSchema() {
+  const columns = (state.schema.columns || []).map((name) => ({
+    name,
+    type: state.schema.profiles?.[name]?.type || "string",
+  }));
+  return {
+    columns,
+    dateField: state.dateColumn || null,
+  };
+}
+
+function buildChartStateSnapshot() {
+  return {
+    dataset: state.dataset || null,
+    selectedMetric: state.selections.primaryMetric || null,
+    selectedDimension: state.selectedDimension || null,
+    chartType: state.chartType || "bar",
+    filters: Array.isArray(state.chartFilters) ? state.chartFilters : [],
+    sort: state.sort || null,
+    topN: state.topN || 8,
+    aggregation: state.aggregation || "sum",
+    timeField: state.dateColumn || null,
+  };
+}
+
+function ensureChartState() {
+  if (!dashboardStateModule?.createDashboardState) return;
+  if (!state.chartState) {
+    state.chartState = dashboardStateModule.createDashboardState(buildChartStateSnapshot());
+  }
+}
+
+function syncChartStateDirect(patch = {}) {
+  ensureChartState();
+  if (!state.chartState) return;
+  state.chartState = {
+    ...state.chartState,
+    ...patch,
+  };
+}
+
+function applyChartState(nextState, options = {}) {
+  if (!nextState) return;
+  state.chartState = nextState;
+  state.selections.primaryMetric = nextState.selectedMetric || state.selections.primaryMetric;
+  state.selectedMetric = state.selections.primaryMetric;
+  state.selectedDimension = nextState.selectedDimension || state.selectedDimension;
+  state.chartType = nextState.chartType || state.chartType;
+  state.aggregation = nextState.aggregation || state.aggregation;
+  state.sort = nextState.sort || null;
+  state.chartFilters = Array.isArray(nextState.filters) ? nextState.filters : [];
+  state.topN = Number.isFinite(nextState.topN) ? nextState.topN : state.topN;
+  state.dateColumn = nextState.timeField || state.dateColumn;
+
+  if (metricSelect && state.selections.primaryMetric) {
+    metricSelect.value = state.selections.primaryMetric;
+  }
+  if (dimensionSelect) {
+    dimensionSelect.value = state.selectedDimension || "";
+  }
+  if (topNSelect) {
+    topNSelect.value = String(state.topN || 8);
+  }
+
+  applyFiltersAndRender();
+  if (options?.logMessage) logChatActivity(options.logMessage);
+}
+
+function setChatStatus(message, tone = "info") {
+  if (!chatStatus) return;
+  chatStatus.textContent = message || "";
+  chatStatus.classList.toggle("error", tone === "error");
+}
+
+function logChatActivity(message) {
+  if (!chatActivity) return;
+  const item = document.createElement("div");
+  item.className = "chat-activity-item";
+  item.textContent = message;
+  chatActivity.prepend(item);
+}
+
+function clearChatPreview() {
+  chatPreviewState = null;
+  pendingToolCalls = [];
+  pendingAssistantMessage = "";
+  if (chatPreview) {
+    chatPreview.classList.add("hidden");
+    chatPreview.innerHTML = "";
+  }
+  if (chatApplyButton) chatApplyButton.disabled = true;
+  if (chatCancelButton) chatCancelButton.disabled = true;
+}
+
+function renderChatPreview(diff, assistantMessage) {
+  if (!chatPreview) return;
+  const diffLines = diff.map((item) => `<div><strong>${escapeHtml(item.label)}:</strong> ${escapeHtml(item.before)} → ${escapeHtml(item.after)}</div>`).join("");
+  chatPreview.innerHTML = `
+    <div class="chat-preview-message">${escapeHtml(assistantMessage || "Proposed changes")}</div>
+    <div class="chat-preview-diff">${diffLines || "<div>No changes detected.</div>"}</div>
+  `;
+  chatPreview.classList.remove("hidden");
+  if (chatApplyButton) chatApplyButton.disabled = false;
+  if (chatCancelButton) chatCancelButton.disabled = false;
+}
+
+function buildPreviewDiff(currentState, nextState) {
+  const fields = [
+    { key: "selectedMetric", label: "Metric" },
+    { key: "selectedDimension", label: "Dimension" },
+    { key: "chartType", label: "Chart type" },
+    { key: "aggregation", label: "Aggregation" },
+    { key: "topN", label: "Top N" },
+    { key: "sort", label: "Sort" },
+    { key: "timeField", label: "Time field" },
+  ];
+  const diffs = [];
+  fields.forEach((field) => {
+    const before = currentState?.[field.key];
+    const after = nextState?.[field.key];
+    if (JSON.stringify(before) !== JSON.stringify(after)) {
+      diffs.push({
+        label: field.label,
+        before: before == null ? "—" : String(before),
+        after: after == null ? "—" : String(after),
+      });
+    }
+  });
+  if (JSON.stringify(currentState?.filters || []) !== JSON.stringify(nextState?.filters || [])) {
+    diffs.push({
+      label: "Filters",
+      before: (currentState?.filters || []).map((f) => `${f.field} ${f.operator} ${f.value}`).join("; ") || "—",
+      after: (nextState?.filters || []).map((f) => `${f.field} ${f.operator} ${f.value}`).join("; ") || "—",
+    });
+  }
+  return diffs;
+}
+
+function applyToolCall(stateSnapshot, toolCall) {
+  const handlers = {
+    setMetric: (s, args) => chartActionsModule.setMetric(s, args.field),
+    setDimension: (s, args) => chartActionsModule.setDimension(s, args.field),
+    setChartType: (s, args) => chartActionsModule.setChartType(s, args.type),
+    setAggregation: (s, args) => chartActionsModule.setAggregation(s, args.agg),
+    applyFilter: (s, args) => chartActionsModule.applyFilter(s, args.field, args.operator, args.value),
+    clearFilter: (s, args) => chartActionsModule.clearFilter(s, args.field),
+    setTopN: (s, args) => chartActionsModule.setTopN(s, args.n),
+    setSort: (s, args) => chartActionsModule.setSort(s, args.field, args.direction),
+    undo: (s) => chartActionsModule.undo(s),
+    redo: (s) => chartActionsModule.redo(s),
+  };
+  const handler = handlers[toolCall?.name];
+  if (!handler) return null;
+  return handler(stateSnapshot, toolCall.args || {});
+}
+
+function previewToolCalls(toolCalls, assistantMessage) {
+  if (!schemaGuardsModule || !chartActionsModule) {
+    setChatStatus("Chat tools are still loading. Try again in a moment.", "error");
+    return;
+  }
+  ensureChartState();
+  const schema = buildDatasetSchema();
+  let nextState = state.chartState;
+  for (const toolCall of toolCalls) {
+    const validation = schemaGuardsModule.validateToolCall(schema, nextState, toolCall);
+    if (!validation.ok) {
+      setChatStatus(validation.message || "Invalid request.", "error");
+      return;
+    }
+    const updated = applyToolCall(nextState, toolCall);
+    if (!updated) {
+      setChatStatus(`Unknown action: ${toolCall?.name}`, "error");
+      return;
+    }
+    nextState = updated;
+  }
+  chatPreviewState = nextState;
+  pendingToolCalls = toolCalls;
+  pendingAssistantMessage = assistantMessage || "";
+  const diff = buildPreviewDiff(state.chartState, nextState);
+  renderChatPreview(diff, assistantMessage);
+}
+
+async function handleChatSend() {
+  if (!chatInput) return;
+  const message = chatInput.value.trim();
+  if (!message) return;
+  if (!state.dataset || !state.rawRows?.length) {
+    setChatStatus("Load a dataset before using chat.", "error");
+    return;
+  }
+  clearChatPreview();
+  setChatStatus("Thinking...");
+  await ensureDashboardModules();
+  ensureChartState();
+  const payload = {
+    message,
+    datasetSchema: buildDatasetSchema(),
+    currentDashboardState: state.chartState,
+  };
+  try {
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok || data?.ok === false) {
+      setChatStatus(data?.error || "Chat request failed.", "error");
+      return;
+    }
+    if (!Array.isArray(data.toolCalls)) {
+      setChatStatus("Chat response missing tool calls.", "error");
+      return;
+    }
+    setChatStatus("");
+    previewToolCalls(data.toolCalls, data.assistantMessage);
+  } catch (error) {
+    setChatStatus(error?.message || "Chat request failed.", "error");
+  }
+}
+
+function applyChatPreview() {
+  if (!chatPreviewState) return;
+  applyChartState(chatPreviewState, {
+    logMessage: pendingAssistantMessage || "Applied chat edits.",
+  });
+  clearChatPreview();
+}
+
+function handleUndoRedo(kind) {
+  if (!chartActionsModule) return;
+  ensureChartState();
+  const next = kind === "redo"
+    ? chartActionsModule.redo(state.chartState)
+    : chartActionsModule.undo(state.chartState);
+  applyChartState(next, { logMessage: kind === "redo" ? "Redo applied." : "Undo applied." });
 }
 
 function loadUsers() {
@@ -2248,10 +2547,18 @@ function resetStateForNewDataset(options = {}) {
   state.filters = { industry: "All" };
   state.selections = { primaryMetric: null, compareMetrics: [] };
   state.selectedMetric = null;
+  state.selectedDimension = null;
+  state.chartType = "line";
+  state.aggregation = "sum";
+  state.sort = null;
+  state.chartFilters = [];
+  state.chartState = null;
   state.industryColumn = null;
   state.dateRange = { start: null, end: null };
   state.chosenXAxisType = "category";
   state.normalizedDataset = null;
+  state.dateColumn = null;
+  state.dateFieldConfidence = 0;
   state.uiMode = "empty";
   state.parseStatus = "idle";
   state.error = null;
@@ -2396,24 +2703,8 @@ function canParseTemporalValue(value) {
 
 function inferFlexibleDateField({ rows, columns, profiles, fallbackDateField }) {
   if (fallbackDateField) return fallbackDateField;
-  const candidateColumns = (columns || []).filter((col) => {
-    const profile = profiles?.[col];
-    if (profile?.type === "date") return true;
-    return isLikelyTemporalColumnName(col);
-  });
-
-  for (const col of candidateColumns) {
-    const sampleValues = (rows || [])
-      .map((row) => row?.[col])
-      .filter((value) => value !== null && value !== undefined && String(value).trim() !== "")
-      .slice(0, 25);
-    if (!sampleValues.length) continue;
-    const parsedCount = sampleValues.filter((value) => canParseTemporalValue(value)).length;
-    if (parsedCount >= Math.max(2, Math.ceil(sampleValues.length * 0.4))) {
-      return col;
-    }
-  }
-  return null;
+  const detection = detectDateFieldFromProfiles(rows, profiles || {});
+  return detection.field || null;
 }
 
 function isLikelyIdColumnName(columnName) {
@@ -2432,10 +2723,7 @@ function buildNormalizedDataset({ rows, columns, profiles, sourceMeta = {} }) {
     profiles,
     fallbackDateField: sourceMeta.dateField || state.dateColumn || undefined,
   }) || undefined;
-  const hasDateField = Boolean(
-    inferredDateField
-    || normalizedColumns.some((column) => column.type === "date" || isLikelyTemporalColumnName(column.name))
-  );
+  const hasDateField = Boolean(inferredDateField);
   const hasNumericMetrics = normalizedColumns.some((column) => column.type === "number" || column.type === "currency" || column.type === "percent");
   const hasCategoricalDimensions = normalizedColumns.some((column) => column.type === "string" && !isLikelyIdColumnName(column.name));
   /** @type {NormalizedDataset} */
@@ -2489,6 +2777,14 @@ function renderDashboardRenderer({ dataset, mode }) {
   } else if (dataset.meta?.dateField) {
     state.dateColumn = dataset.meta.dateField;
   }
+  state.chartType = state.dateColumn ? "line" : "bar";
+  syncChartStateDirect({
+    timeField: state.dateColumn,
+    chartType: state.chartType,
+    selectedMetric: state.selections.primaryMetric,
+    selectedDimension: state.selectedDimension,
+    topN: state.topN,
+  });
   ensureUnifiedUserDashboardLayout();
   ensureDashboardActionsToolbar();
   dashboard?.classList.add("dashboard-unified-active");
@@ -2617,7 +2913,10 @@ function ingestRows(rawRows, sourceMeta = {}) {
   state.debug.usableNumericMetrics = state.schema.numeric;
   state.debug.dateCandidates = state.schema.dates;
   state.industryColumn = findIndustryColumn(state.schema.columns);
-  state.dateColumn = chooseBestDateColumn(state.schema.profiles);
+  const dateDetection = detectDateFieldFromProfiles(rows, state.schema.profiles);
+  state.dateColumn = dateDetection.field;
+  state.dateFieldConfidence = dateDetection.confidence;
+  syncChartStateDirect({ timeField: state.dateColumn });
 
   ensureMetrics(state.schema, state.rawRows);
 
@@ -2625,6 +2924,14 @@ function ingestRows(rawRows, sourceMeta = {}) {
   state.selections.primaryMetric = recommendedMetrics[0] || state.schema.numeric[0] || null;
   state.selectedMetric = state.selections.primaryMetric;
   state.selectedDimension = chooseBestDimension(state.schema.profiles, state.schema.categoricals) || state.schema.dates[0] || null;
+  state.chartType = state.dateColumn ? "line" : "bar";
+  syncChartStateDirect({
+    selectedMetric: state.selections.primaryMetric,
+    selectedDimension: state.selectedDimension,
+    chartType: state.chartType,
+    topN: state.topN,
+    aggregation: state.aggregation,
+  });
   state.normalizedDataset = buildNormalizedDataset({
     rows: state.rawRows,
     columns: state.schema.columns,
@@ -3244,11 +3551,13 @@ function initControls(recommendedMetrics) {
 function applyFiltersAndRender() {
   clearMessages();
   state.filteredRows = applyIndustryFilter(state.rawRows, state.filters.industry);
+  state.filteredRows = applyFieldFilters(state.filteredRows, state.chartFilters, state.schema.profiles);
   let scopedRows = getFilteredRows();
   if ((!scopedRows || scopedRows.length === 0) && state.filters.industry !== "All") {
     state.filters.industry = "All";
     if (industrySelect) industrySelect.value = "All";
     state.filteredRows = applyIndustryFilter(state.rawRows, state.filters.industry);
+    state.filteredRows = applyFieldFilters(state.filteredRows, state.chartFilters, state.schema.profiles);
     scopedRows = getFilteredRows();
   }
   if (!Array.isArray(scopedRows) || scopedRows.length === 0) {
@@ -3279,15 +3588,21 @@ function applyFiltersAndRender() {
   state.debug.numericCandidates = numericCandidates;
   state.debug.usableNumericMetrics = state.schema.numeric;
   state.debug.dateCandidates = state.schema.dates;
-  if (!state.dateColumn) {
-    state.dateColumn = chooseBestDateColumn(state.schema.profiles);
-  }
+  const dateDetection = detectDateFieldFromProfiles(scopedRows, state.schema.profiles);
+  state.dateColumn = dateDetection.field;
+  state.dateFieldConfidence = dateDetection.confidence;
+  syncChartStateDirect({ timeField: state.dateColumn });
   ensureMetrics(state.schema, scopedRows);
   if (!state.selections.primaryMetric || !state.schema.numeric.includes(state.selections.primaryMetric)) {
     state.selections.primaryMetric = state.schema.numeric[0] || null;
   }
   state.selectedMetric = state.selections.primaryMetric;
   state.selections.compareMetrics = (state.selections.compareMetrics || []).filter((m) => state.schema.numeric.includes(m));
+  syncChartStateDirect({
+    selectedMetric: state.selections.primaryMetric,
+    selectedDimension: state.selectedDimension,
+    topN: state.topN,
+  });
 
   if (topNSelect) {
     const uniqueCount = state.selectedDimension ? (state.schema.profiles[state.selectedDimension]?.uniqueCount || 0) : 0;
@@ -3305,7 +3620,7 @@ function applyFiltersAndRender() {
   }
   if (datasetInlineNotice) {
     if (!state.schema.dates.length) {
-      datasetInlineNotice.textContent = "Time trend unavailable, no date field detected";
+      datasetInlineNotice.textContent = "No date field detected. Showing distribution view.";
       datasetInlineNotice.classList.remove("hidden");
     } else {
       datasetInlineNotice.classList.add("hidden");
@@ -3375,6 +3690,81 @@ function applyIndustryFilter(rows, industry) {
   return rows.filter((row) => String(row[state.industryColumn] ?? "").trim().toLowerCase() === target);
 }
 
+function detectDateFieldFromProfiles(rows, profiles) {
+  if (detectDateFieldModule?.detectDateField) {
+    return detectDateFieldModule.detectDateField({
+      columns: state.schema.columns,
+      profiles,
+      rows,
+    });
+  }
+  return { field: chooseBestDateColumn(profiles), confidence: 0.4 };
+}
+
+function applyFieldFilters(rows, filters, profiles) {
+  const active = Array.isArray(filters) ? filters.filter((filter) => filter?.field) : [];
+  if (!active.length) return rows;
+  return (rows || []).filter((row) => {
+    return active.every((filter) => matchFieldFilter(row, filter, profiles));
+  });
+}
+
+function matchFieldFilter(row, filter, profiles) {
+  const field = filter.field;
+  const operator = String(filter.operator || "==").toLowerCase();
+  const value = filter.value;
+  const profile = profiles?.[field];
+  const type = profile?.type || "categorical";
+  const raw = row?.[field];
+
+  if (type === "numeric") {
+    const num = parseNumber(raw);
+    const target = parseNumber(value);
+    if (num === null || target === null) return false;
+    if (operator === ">" || operator === "gt") return num > target;
+    if (operator === "<" || operator === "lt") return num < target;
+    if (operator === ">=") return num >= target;
+    if (operator === "<=") return num <= target;
+    if (operator === "equals") return num === target;
+    if (operator === "!=") return num !== target;
+    if (operator === "between" && Array.isArray(value) && value.length === 2) {
+      const min = parseNumber(value[0]);
+      const max = parseNumber(value[1]);
+      if (min === null || max === null) return false;
+      return num >= min && num <= max;
+    }
+    return num === target;
+  }
+
+  if (type === "date") {
+    const date = parseDate(raw);
+    if (!date) return false;
+    if (operator === "equals") {
+      const target = new Date(value);
+      return date.toDateString() === target.toDateString();
+    }
+    if (operator === "before") return date < new Date(value);
+    if (operator === "after") return date > new Date(value);
+    if (operator === "between" && Array.isArray(value) && value.length === 2) {
+      const start = new Date(value[0]);
+      const end = new Date(value[1]);
+      return date >= start && date <= end;
+    }
+    const target = new Date(value);
+    return date.toDateString() === target.toDateString();
+  }
+
+  const text = String(raw ?? "").toLowerCase();
+  const targetText = String(value ?? "").toLowerCase();
+  if (operator === "equals") return text === targetText;
+  if (operator === "contains") return text.includes(targetText);
+  if (operator === "in" && Array.isArray(value)) {
+    return value.map((item) => String(item ?? "").toLowerCase()).includes(text);
+  }
+  if (operator === "!=") return text !== targetText;
+  return text === targetText;
+}
+
 function getFilteredRows() {
   if (!state.dateColumn) return state.filteredRows || [];
   const start = state.dateRange.start;
@@ -3424,7 +3814,7 @@ function renderKPIs(rows) {
     const sparkline = supportsTrend && miniTrend
       ? `<div class="kpi-mini-trend">${buildUserKpiSparklineSvg(miniTrend, metricType, metricLabel)}</div>
          <div class="kpi-sparkline-caption">Daily trend last 30 days compared to prior 30 days</div>`
-      : `<div class="kpi-sparkline-caption">Snapshot metric, no time trend available.</div>`;
+      : `<div class="kpi-sparkline-caption">Snapshot metric only.</div>`;
 
     const card = document.createElement("div");
     card.className = "kpi-card user-kpi-card";
@@ -3433,7 +3823,7 @@ function renderKPIs(rows) {
       <div class="kpi-value">${formatMetricValue(primary, metricType)}</div>
       ${deltaBadge}
       ${sparkline}
-      <div class="kpi-caption">${supportsTrend ? "Last 30 days vs prior 30 days" : "Snapshot metric, no time trend available."}</div>
+      <div class="kpi-caption">${supportsTrend ? "Last 30 days vs prior 30 days" : "Snapshot metric only."}</div>
       <div class="kpi-meta">
         <div>Avg: ${formatMetricValue(avg, metricType, true)}</div>
         <div>Min/Max: ${formatMetricValue(min, metricType, true)} · ${formatMetricValue(max, metricType, true)}</div>
@@ -3532,29 +3922,54 @@ function renderCharts(rows) {
   const metricValues = rows.map((row) => parseNumber(row[metric])).filter((value) => value !== null);
   const metricType = inferMetricType(metric, metricValues);
 
-  if (state.dateColumn) {
-    state.chosenXAxisType = "date";
-    const bucket = rows.length > 200 ? "week" : "day";
-    const series = aggregateByDate(rows, state.dateColumn, metric, bucket, state.dateRange, metricType);
-    trendTitle.textContent = "Month over month trend";
-    const periodLabel = series.labels.length < 3 ? `${series.labels.length} periods (limited)` : `${series.labels.length} periods`;
-    trendSubtitle.textContent = `Metric: ${metricLabel} · ${periodLabel}`;
-    trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType, series.counts);
-  } else {
-    const category = chooseCategoryColumn(rows, state.schema.profiles);
+  const hasDate = Boolean(state.dateColumn && state.datasetCapabilities?.hasDateField);
+  const desiredChartType = state.chartType || (hasDate ? "line" : "bar");
+  if (desiredChartType === "bar") {
+    const category = state.selectedDimension || chooseCategoryColumn(rows, state.schema.profiles);
     if (category) {
       state.chosenXAxisType = "category";
       const series = aggregateByCategory(rows, category, metric, state.topN, metricType);
-      trendTitle.textContent = "Month over month trend";
-      trendSubtitle.textContent = "No date field detected in this dataset. Time based trends are unavailable.";
-      trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType, series.counts);
+      trendTitle.textContent = `Distribution by ${category}`;
+      trendSubtitle.textContent = `Metric: ${metricLabel}`;
+      trendChartInstance = createBarChart("trendChart", series.labels, series.values, metricType, series.counts);
+    } else if (hasDate) {
+      state.chosenXAxisType = "date";
+      const bucket = rows.length > 200 ? "week" : "day";
+      const series = aggregateByDate(rows, state.dateColumn, metric, bucket, state.dateRange, metricType);
+      trendTitle.textContent = "Distribution over date";
+      trendSubtitle.textContent = `Metric: ${metricLabel}`;
+      trendChartInstance = createBarChart("trendChart", series.labels, series.values, metricType, series.counts);
     } else {
       state.chosenXAxisType = "index";
       const labels = rows.map((_, index) => index + 1);
       const values = rows.map((row) => parseNumber(row[metric])).map((value) => value ?? 0);
-      trendTitle.textContent = "Month over month trend";
-      trendSubtitle.textContent = "No date field detected in this dataset. Time based trends are unavailable.";
-      trendChartInstance = createLineChart("trendChart", labels, values, metricType);
+      trendTitle.textContent = "Distribution overview";
+      trendSubtitle.textContent = `Metric: ${metricLabel}`;
+      trendChartInstance = createBarChart("trendChart", labels, values, metricType);
+    }
+  } else if (hasDate) {
+    state.chosenXAxisType = "date";
+    const bucket = rows.length > 200 ? "week" : "day";
+    const series = aggregateByDate(rows, state.dateColumn, metric, bucket, state.dateRange, metricType);
+    trendTitle.textContent = "Trend overview";
+    const periodLabel = series.labels.length < 3 ? `${series.labels.length} periods (limited)` : `${series.labels.length} periods`;
+    trendSubtitle.textContent = `Metric: ${metricLabel} · ${periodLabel}`;
+    trendChartInstance = createLineChart("trendChart", series.labels, series.values, metricType, series.counts);
+  } else {
+    const category = state.selectedDimension || chooseCategoryColumn(rows, state.schema.profiles);
+    if (category) {
+      state.chosenXAxisType = "category";
+      const series = aggregateByCategory(rows, category, metric, state.topN, metricType);
+      trendTitle.textContent = `Distribution by ${category}`;
+      trendSubtitle.textContent = `Metric: ${metricLabel}`;
+      trendChartInstance = createBarChart("trendChart", series.labels, series.values, metricType, series.counts);
+    } else {
+      state.chosenXAxisType = "index";
+      const labels = rows.map((_, index) => index + 1);
+      const values = rows.map((row) => parseNumber(row[metric])).map((value) => value ?? 0);
+      trendTitle.textContent = "Distribution overview";
+      trendSubtitle.textContent = `Metric: ${metricLabel}`;
+      trendChartInstance = createBarChart("trendChart", labels, values, metricType);
     }
   }
 
@@ -3842,16 +4257,32 @@ function computePeriodChange(rows, metric, metricType) {
   return { label, value };
 }
 
-function aggregateByDate(rows, dateColumn, metric, bucket, dateRange, metricType) {
+function aggregateByDate(rows, dateColumn, metric, bucket, dateRange, metricType, aggregation = state.aggregation || "sum") {
   const totals = new Map();
   const counts = new Map();
+  const distinct = new Map();
   (rows || []).forEach((row) => {
     const dateValue = parseDate(row[dateColumn]);
-    const metricValue = parseNumber(row[metric]);
-    if (!dateValue || metricValue === null) return;
+    if (!dateValue) return;
     if (dateRange.start && dateValue < dateRange.start) return;
     if (dateRange.end && dateValue > dateRange.end) return;
     const key = bucket === "week" ? getWeekStart(dateValue) : formatDateInput(dateValue);
+    if (aggregation === "count") {
+      totals.set(key, (totals.get(key) || 0) + 1);
+      counts.set(key, (counts.get(key) || 0) + 1);
+      return;
+    }
+    const rawValue = row[metric];
+    if (aggregation === "count_distinct") {
+      const set = distinct.get(key) || new Set();
+      if (rawValue != null && String(rawValue).trim() !== "") set.add(String(rawValue));
+      distinct.set(key, set);
+      totals.set(key, set.size);
+      counts.set(key, set.size);
+      return;
+    }
+    const metricValue = parseNumber(rawValue);
+    if (metricValue === null) return;
     totals.set(key, (totals.get(key) || 0) + metricValue);
     counts.set(key, (counts.get(key) || 0) + 1);
   });
@@ -3860,22 +4291,37 @@ function aggregateByDate(rows, dateColumn, metric, bucket, dateRange, metricType
   const values = labels.map((label) => {
     const total = totals.get(label) || 0;
     const count = counts.get(label) || 1;
-    if (metricType?.kind === "rate") return total / count;
+    if (aggregation === "avg" || metricType?.kind === "rate") return total / count;
     return total;
   });
   const ns = labels.map((label) => counts.get(label) || 0);
   return { labels, values, counts: ns };
 }
 
-function aggregateByCategory(rows, dimension, metric, topN, metricType) {
+function aggregateByCategory(rows, dimension, metric, topN, metricType, aggregation = state.aggregation || "sum") {
   if (!dimension) {
     return { labels: [], values: [], counts: [] };
   }
   const totals = new Map();
   const counts = new Map();
+  const distinct = new Map();
   (rows || []).forEach((row) => {
     const key = row[dimension] ? String(row[dimension]).trim() : "Unknown";
-    const metricValue = parseNumber(row[metric]);
+    if (aggregation === "count") {
+      totals.set(key, (totals.get(key) || 0) + 1);
+      counts.set(key, (counts.get(key) || 0) + 1);
+      return;
+    }
+    const rawValue = row[metric];
+    if (aggregation === "count_distinct") {
+      const set = distinct.get(key) || new Set();
+      if (rawValue != null && String(rawValue).trim() !== "") set.add(String(rawValue));
+      distinct.set(key, set);
+      totals.set(key, set.size);
+      counts.set(key, set.size);
+      return;
+    }
+    const metricValue = parseNumber(rawValue);
     if (metricValue === null) return;
     totals.set(key, (totals.get(key) || 0) + metricValue);
     counts.set(key, (counts.get(key) || 0) + 1);
@@ -3884,7 +4330,7 @@ function aggregateByCategory(rows, dimension, metric, topN, metricType) {
   const entries = Array.from(totals.entries())
     .map(([label, total]) => ({
       label,
-      value: metricType?.kind === "rate" ? total / (counts.get(label) || 1) : total,
+      value: (aggregation === "avg" || metricType?.kind === "rate") ? total / (counts.get(label) || 1) : total,
       count: counts.get(label) || 0,
     }))
     .sort((a, b) => b.value - a.value)
@@ -4210,6 +4656,10 @@ function renderInsights(rows) {
     ? `<span class="metric-warning-tag">Identifier-like metric, insights may be low quality</span>`
     : "";
   const diagnostics = insight?.diagnostics || {};
+  const hasDateField = Boolean(state.dateColumn && state.datasetCapabilities?.hasDateField);
+  const confidenceTooltip = hasDateField
+    ? "Confidence reflects data coverage, sample size, and consistency over time."
+    : "Confidence reflects data coverage, sample size, and consistency across segments.";
   const diagnosticsMarkup = `
     <details class="insight-diagnostics">
       <summary>More diagnostics</summary>
@@ -4251,7 +4701,7 @@ function renderInsights(rows) {
       <p class="insight-meta">${escapeHtml(insight.action || "Investigate top drivers and validate with a controlled test.")}</p>
       <span class="severity ${confidenceLevel} confidence-pill" tabindex="0" aria-label="Confidence info: Confidence reflects data coverage, consistency and evidence quality for this insight.">
         Confidence: ${confidenceLabel}
-        <span class="confidence-tooltip" role="tooltip">Confidence reflects data coverage, sample size, and consistency over time.</span>
+        <span class="confidence-tooltip" role="tooltip">${escapeHtml(confidenceTooltip)}</span>
       </span>
       ${whyLine}
     </section>
@@ -4286,115 +4736,91 @@ function buildUserInsightConfidenceReason(insight) {
     return "Limited supporting data or validation coverage for this insight.";
   }
   if (/no date column|limited|validate/i.test(bullets)) {
-    return "Evidence is directionally useful, but trend or segment validation is limited.";
+    const hasDateField = Boolean(state.dateColumn && state.datasetCapabilities?.hasDateField);
+    return hasDateField
+      ? "Evidence is directionally useful, but trend or segment validation is limited."
+      : "Evidence is directionally useful, but segment validation is limited.";
   }
   return "Evidence quality is moderate and should be validated with additional slices.";
 }
 
 function renderUserInsightEvidence(panel, insight) {
   if (!panel) return;
-  panel.classList.remove("hidden");
-  if (!insight?.evidence) {
-    const bullets = insight?.bullets || [];
-    panel.innerHTML = `
-      <div class="evidence-section">
-        <strong>Evidence detail</strong>
-        <div class="helper-text">${escapeHtml(insight.summary || "")}</div>
-      </div>
-      <div class="evidence-section">
-        <strong>Analytical proof</strong>
-        <div class="evidence-table-wrap">
-          <table class="evidence-table">
-            <thead>
-              <tr><th>Type</th><th>Detail</th></tr>
-            </thead>
-            <tbody>
-              ${bullets.map((bullet) => {
-                const parts = String(bullet).split(":");
-                const type = parts.length > 1 ? parts.shift() : "Note";
-                const detail = parts.length > 0 ? parts.join(":").trim() : String(bullet);
-                return `<tr><td>${escapeHtml(String(type))}</td><td>${escapeHtml(detail)}</td></tr>`;
-              }).join("")}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    `;
-    return;
-  }
-  const evidence = insight.evidence;
-  const comparisonRows = (evidence.comparisonTable || []).map((row) => `
-    <tr>
-      <td>${escapeHtml(String(row.segment))}</td>
-      <td>${escapeHtml(String(row.value))}</td>
-      <td>${escapeHtml(String(row.share))}</td>
-      <td>${escapeHtml(String(row.rank))}</td>
-    </tr>
-  `).join("");
-  const driverRows = (evidence.driverBreakdownTable || []).map((row) => `
-    <tr>
-      <td>${escapeHtml(String(row.combination))}</td>
-      <td>${escapeHtml(String(row.current))}</td>
-      <td>${escapeHtml(String(row.prior))}</td>
-      <td>${escapeHtml(String(row.delta))}</td>
-      <td>${escapeHtml(String(row.liftShare))}</td>
-    </tr>
-  `).join("");
-  const confidenceReasons = (insight?.confidence?.reasons || []).map((reason) => `<li>${escapeHtml(reason)}</li>`).join("");
-  const periods = insight?.confidence?.metrics?.periods ?? 0;
-  const periodsText = periods === 1
-    ? "Only one time period available. Trend reliability is limited."
-    : periods > 1 && periods < 3
-      ? `Limited history: this insight is based on only ${periods} time period(s).`
-      : periods >= 3
-        ? `Based on ${periods} time periods.`
-        : "No historical time buckets available.";
-  const trendConsistency = evidence.trendSummary
-    ? `
-      <div class="evidence-section">
-        <strong>Trend consistency</strong>
-        <div class="evidence-stats">
-          <div><span>Periods analysed</span><strong>${escapeHtml(String(evidence.trendSummary.periodsAnalysed ?? periods))}</strong><p class="helper-text">${escapeHtml(periodsText)}</p></div>
-          <div><span>Stability score</span><strong>${escapeHtml(String(evidence.consistencyScore ?? "—"))}</strong></div>
-          <div><span>Variance</span><strong>${escapeHtml(String(evidence.trendSummary.variance ?? "—"))}</strong></div>
-        </div>
-      </div>`
-    : `
-      <div class="evidence-section">
-        <strong>Trend consistency</strong>
-        <div class="helper-text">Trend analysis unavailable due to missing date field.</div>
-      </div>`;
+  openEvidenceDrawer(insight);
+}
 
-  panel.innerHTML = `
-    <div class="evidence-section">
-      <strong>Segment comparison</strong>
-      <div class="evidence-table-wrap">
-        <table class="evidence-table">
-          <thead><tr><th>Segment</th><th>Value</th><th>Share</th><th>Rank</th></tr></thead>
-          <tbody>${comparisonRows || `<tr><td colspan="4">No segment comparison available.</td></tr>`}</tbody>
-        </table>
-      </div>
-    </div>
-    <div class="evidence-section">
-      <strong>What drives this insight</strong>
-      <div class="helper-text">${escapeHtml(evidence.contributionSummary || evidence.driverNarrative || "No dominant driver identified.")}</div>
-    </div>
-    <div class="evidence-section">
-      <strong>Driver breakdown</strong>
-      <div class="evidence-table-wrap">
-        <table class="evidence-table">
-          <thead><tr><th>Combination</th><th>Current</th><th>Prior</th><th>Delta</th><th>Lift share</th></tr></thead>
-          <tbody>${driverRows || `<tr><td colspan="5">No dominant driver combination identified.</td></tr>`}</tbody>
-        </table>
-      </div>
-      <div class="helper-text">${escapeHtml((evidence.filtersUsed || []).join(" · "))}</div>
-    </div>
-    ${trendConsistency}
-    <div class="evidence-section">
-      <strong>Confidence explanation</strong>
-      ${confidenceReasons ? `<ul class="evidence-reasons">${confidenceReasons}</ul>` : `<div class="helper-text">No confidence factors available.</div>`}
+function openEvidenceDrawer(insight) {
+  if (!evidenceDrawer || !evidenceContent) return;
+  evidenceDrawer.classList.remove("hidden");
+  evidenceDrawer.setAttribute("aria-hidden", "false");
+  if (evidenceScrim) evidenceScrim.classList.remove("hidden");
+  evidenceContent.innerHTML = buildEvidenceDrawerContent(insight);
+}
+
+function closeEvidenceDrawer() {
+  if (!evidenceDrawer || !evidenceContent) return;
+  evidenceDrawer.classList.add("hidden");
+  evidenceDrawer.setAttribute("aria-hidden", "true");
+  if (evidenceScrim) evidenceScrim.classList.add("hidden");
+  evidenceContent.innerHTML = "";
+}
+
+function buildEvidenceDrawerContent(insight) {
+  const chartState = state.chartState || buildChartStateSnapshot();
+  const chartDefinition = `
+    <div class="evidence-definition-grid">
+      <div><strong>Chart type</strong><div>${escapeHtml(chartState.chartType || "bar")}</div></div>
+      <div><strong>Metric</strong><div>${escapeHtml(formatMetricLabel(chartState.selectedMetric || "—"))}</div></div>
+      <div><strong>Dimension</strong><div>${escapeHtml(chartState.selectedDimension || "—")}</div></div>
+      <div><strong>Aggregation</strong><div>${escapeHtml(chartState.aggregation || "sum")}</div></div>
+      <div><strong>Top N</strong><div>${escapeHtml(String(chartState.topN || 0))}</div></div>
+      <div><strong>Time field</strong><div>${escapeHtml(chartState.timeField || "—")}</div></div>
     </div>
   `;
+
+  const filterText = buildFilterSummary(chartState);
+  const rows = getFilteredRows();
+  const headerCells = (state.schema.columns || []).map((col) => `<th>${escapeHtml(col)}</th>`).join("");
+  const bodyRows = rows.map((row) => {
+    const cells = (state.schema.columns || []).map((col) => `<td>${escapeHtml(String(row?.[col] ?? ""))}</td>`).join("");
+    return `<tr>${cells}</tr>`;
+  }).join("");
+
+  return `
+    <div class="evidence-section">
+      <strong>Chart definition</strong>
+      ${chartDefinition}
+    </div>
+    <div class="evidence-section">
+      <strong>Filters</strong>
+      <div class="helper-text">${escapeHtml(filterText || "None")}</div>
+    </div>
+    <div class="evidence-section">
+      <strong>Rows used in chart (${rows.length})</strong>
+      <div class="evidence-table-wrap">
+        <table class="evidence-table">
+          <thead><tr>${headerCells || "<th>No columns</th>"}</tr></thead>
+          <tbody>${bodyRows || `<tr><td colspan="${state.schema.columns.length || 1}">No rows available.</td></tr>`}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function buildFilterSummary(chartState) {
+  const filters = [];
+  if (state.filters?.industry && state.filters.industry !== "All") {
+    filters.push(`Industry = ${state.filters.industry}`);
+  }
+  if (state.dateRange?.start || state.dateRange?.end) {
+    const start = state.dateRange.start ? formatDateInput(state.dateRange.start) : "—";
+    const end = state.dateRange.end ? formatDateInput(state.dateRange.end) : "—";
+    filters.push(`Date range: ${start} → ${end}`);
+  }
+  (chartState.filters || []).forEach((filter) => {
+    filters.push(`${filter.field} ${filter.operator} ${filter.value}`);
+  });
+  return filters.join(" · ");
 }
 
 function buildUnifiedInsights(rows) {
@@ -4454,6 +4880,7 @@ function buildUnifiedInsights(rows) {
     driverCombination: driverInfo.driverCombinationText || top.segment,
     confidence,
     deltaStrength: Math.abs(deltaPercent || 0),
+    hasDateField: periodSplit.hasDateField,
   });
 
   const insight = {
@@ -4510,7 +4937,7 @@ function buildSafeDescriptiveInsight(rows, metric) {
       metric === "__row_count__"
         ? "Limited structured metrics detected. Insights are descriptive only."
         : "Selected metric behaves like an identifier and is not suitable for causal insights.",
-      hasDate ? "Not enough reliable metric semantics for trend-based claims." : "No historical time buckets available.",
+      hasDate ? "Not enough reliable metric semantics for trend-based claims." : "No historical coverage available.",
     ],
     metrics: { periods: hasDate ? 1 : 0, sampleSize: rows.length, deltaPercent: 0, variance: 0 },
   };
@@ -4518,17 +4945,19 @@ function buildSafeDescriptiveInsight(rows, metric) {
     id: `safe:${metric}:${dimension}`,
     headline: "Structured tables detected, but insight quality is limited.",
     title: "Structured tables detected, but insight quality is limited.",
-    executiveSummary: "This file contains structured tables but time trends or metric semantics are limited. Review top segments by spend and conversions where available.",
+    executiveSummary: hasDate
+      ? "This file contains structured tables but metric semantics are limited. Review top segments by spend and conversions where available."
+      : "This file contains structured tables but metric semantics are limited. Review top segments by spend and conversions where available.",
     executiveBullets: [
       `Use ${dimension} to review top segments by core marketing metrics.`,
       "Prefer Spend, Clicks, Impressions, Conversions, CTR, CPC, CPA, or eCPM as the primary metric.",
     ],
-    deltaSummary: "Descriptive mode only; trend claims are suppressed.",
+    deltaSummary: "Descriptive mode only; change claims are suppressed.",
     driverNarrative: "No dominant driver is shown because the selected metric is not reliable for decisioning.",
     action: "Select a marketing metric such as Spend, Conversions, Clicks, or Impressions to generate higher-confidence insights.",
     confidence,
     diagnostics: {
-      anomalies: ["Trend-based insights are blocked until a meaningful metric is selected."],
+      anomalies: ["Change-based insights are blocked until a meaningful metric is selected."],
       concentrationRisk: ["Review top segments manually in Performance details."],
       relationships: ["Correlation analysis is less reliable on identifier-like or row count metrics."],
     },
@@ -4541,7 +4970,7 @@ function buildSafeDescriptiveInsight(rows, metric) {
       filtersUsed: [
         `Metric: ${formatMetricLabel(metric)}`,
         `Dimension: ${dimension}`,
-        hasDate ? "Time context detected but not used for claims" : "No time buckets detected",
+        hasDate ? "Date context detected but not used for claims" : "No date field detected",
       ],
     },
   };
@@ -4712,7 +5141,9 @@ function buildInsightDiagnostics({ rows, metric, metricType, comparisonTable, dr
     : 0;
   if (topShare > 0.6) concentrationRisk.push(`${comparisonTable[0].segment} accounts for ${percentFormatter.format(topShare)} of ${formatMetricLabel(metric)} in ${dimension}.`);
   if (Math.abs(deltaPercent || 0) < 10) anomalies.push("Performance gap is small; treat the insight as directional.");
-  if (driverInfo?.varianceScore != null && driverInfo.varianceScore > 0.4) anomalies.push("Driver trend is volatile across observed periods.");
+  if (state.dateColumn && driverInfo?.varianceScore != null && driverInfo.varianceScore > 0.4) {
+    anomalies.push("Driver pattern is volatile across observed periods.");
+  }
   const corrCandidates = (state.schema.numeric || []).filter((m) => m !== metric);
   let best = null;
   corrCandidates.forEach((candidate) => {
@@ -4756,19 +5187,19 @@ function computeUserUnifiedConfidence({ periods, sampleSize, deltaPercent, varia
   const reasons = [];
   if (!hasDateField) {
     level = "medium";
-    reasons.push("No historical time buckets available.");
+    reasons.push("No historical coverage available for this metric.");
   }
-  if (periods < 3) {
+  if (hasDateField && periods < 3) {
     level = "low";
-    reasons.push("Not enough time periods to confirm a stable trend.");
+    reasons.push("Not enough periods to confirm a stable pattern.");
   }
   if (sampleSize < 8 && level !== "low") {
     level = "medium";
     reasons.push("Limited sample size in the top driver combination.");
   }
-  if ((variance || 0) > 0.4 && level !== "low") {
+  if (hasDateField && (variance || 0) > 0.4 && level !== "low") {
     level = "medium";
-    reasons.push("Trend shows volatility across periods.");
+    reasons.push("Metric pattern is volatile across periods.");
   }
   if ((deltaPercent || 0) < 10 && level !== "low") {
     level = "medium";
@@ -4781,10 +5212,12 @@ function computeUserUnifiedConfidence({ periods, sampleSize, deltaPercent, varia
   };
 }
 
-function buildUserDynamicAction({ metricKey, topSegment, driverCombination, confidence, deltaStrength }) {
+function buildUserDynamicAction({ metricKey, topSegment, driverCombination, confidence, deltaStrength, hasDateField }) {
   const name = formatMetricLabel(metricKey);
   if (confidence?.level === "low") {
-    return `Validate whether ${driverCombination} remains the primary driver with additional time periods before reallocating budget.`;
+    return hasDateField
+      ? `Validate whether ${driverCombination} remains the primary driver with additional periods before reallocating budget.`
+      : `Validate whether ${driverCombination} remains the primary driver with an additional segment review before reallocating budget.`;
   }
   if (/retention|churn|rate/i.test(name)) {
     return `Identify what is unique about ${driverCombination} and apply the same lifecycle tactics to lift performance outside ${topSegment}.`;
@@ -4964,8 +5397,11 @@ function buildDecisionInsights(rows) {
     || (state.schema.categoricals || []).find((col) => /plan|region/i.test(col))
     || (state.schema.categoricals || [])[0]
     || "segment";
+  const hasDateField = Boolean(state.dateColumn && state.datasetCapabilities?.hasDateField);
   actions.push(`Investigate ${preferredDim} segments where ${metric} is lowest and compare Sessions/ActiveUsers to spot friction.`);
-  actions.push(`Run a cohort review for ${preferredDim} segments with low ${metric} and validate against ActiveUsers trends.`);
+  actions.push(hasDateField
+    ? `Run a cohort review for ${preferredDim} segments with low ${metric} and validate against ActiveUsers patterns over time.`
+    : `Run a cohort review for ${preferredDim} segments with low ${metric} and validate against ActiveUsers patterns.`);
   const driverMetric = best?.metric || "Sessions";
   actions.push(`Quantify how changes in ${driverMetric} shift ${metric} and test a targeted uplift plan.`);
 
@@ -5171,9 +5607,12 @@ function buildMetricComparisonNarrative(rows, primary, compareMetrics) {
     topSegments = (breakdown.labels || []).slice(0, 2);
   }
   const regionHint = topSegments.length ? `, especially in ${topSegments.join(" and ")}` : "";
+  const hasDateField = Boolean(state.dateColumn && state.datasetCapabilities?.hasDateField);
   const headline = topDriver && topCorr !== null
     ? `${formatMetricLabel(topDriver)} ${directionWord} with ${primaryLabel}${regionHint}.`
-    : `${primaryLabel} is shown in a single trend view${regionHint}.`;
+    : hasDateField
+      ? `${primaryLabel} is shown in a single trend view${regionHint}.`
+      : `${primaryLabel} is shown in a single distribution view${regionHint}.`;
   const driverExplanation = topDriver && topCorr !== null
     ? `${formatMetricLabel(topDriver)} explains ${topCorrPct}% of ${primaryLabel} variation${topCorr >= 0 ? "" : " (inverse relationship)"} based on correlation strength.`
     : `No strong numeric driver was detected for ${primaryLabel} in the current slice.`;
@@ -5206,13 +5645,13 @@ function renderSuggestedTrends() {
   if (!suggestedTrends) return;
   suggestedTrends.innerHTML = "";
   if (!state.rawRows.length) {
-    suggestedTrends.innerHTML = "<li>Load a sample to see suggested trends.</li>";
+    suggestedTrends.innerHTML = "<li>Load a sample to see suggested views.</li>";
     return;
   }
   const suggestions = [];
   if (state.dateColumn && state.schema.numeric.length) {
     const metric = state.selections.primaryMetric || state.schema.numeric[0];
-    suggestions.push(`${metric} trend over ${state.dateColumn}`);
+    suggestions.push(`${metric} over ${state.dateColumn}`);
     if (state.schema.categoricals.length) {
       suggestions.push(`${metric} by ${state.schema.categoricals[0]}`);
     }
@@ -5221,7 +5660,7 @@ function renderSuggestedTrends() {
   }
 
   if (!suggestions.length) {
-    suggestions.push("Add a date or categorical column to unlock trend suggestions.");
+    suggestions.push("Add a date or categorical column to unlock more suggestions.");
   }
 
   (suggestions || []).forEach((text) => {
