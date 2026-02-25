@@ -1285,6 +1285,41 @@ function parseCsvText(text, sourceMeta = {}) {
   });
 }
 
+function normalizePdfHeaderName(value, index) {
+  let cleaned = String(value ?? "").trim().toLowerCase();
+  if (!cleaned) cleaned = `column_${index + 1}`;
+  cleaned = cleaned.replace(/[^a-z0-9]+/g, "_");
+  cleaned = cleaned.replace(/^_+|_+$/g, "");
+  cleaned = cleaned.replace(/_+/g, "_");
+  if (!cleaned) cleaned = `column_${index + 1}`;
+  return cleaned;
+}
+
+function inferPdfHeaders(rawRows) {
+  const rows = Array.isArray(rawRows) ? rawRows : [];
+  if (!rows.length) return { headers: [], headerIndex: 0 };
+  const sample = rows.slice(0, 5);
+  let bestIndex = 0;
+  let bestScore = -Infinity;
+
+  sample.forEach((row, index) => {
+    const cells = Array.isArray(row) ? row : [];
+    const nonEmpty = cells.filter((cell) => String(cell ?? "").trim() !== "");
+    if (!cells.length || !nonEmpty.length) return;
+    const numericCount = nonEmpty.filter((cell) => parseNumber(cell) !== null).length;
+    const textDensity = nonEmpty.length / cells.length;
+    const numericRatio = numericCount / nonEmpty.length;
+    const score = (textDensity * 2) - (numericRatio * 3);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = index;
+    }
+  });
+
+  const headers = (sample[bestIndex] || []).map((cell, index) => normalizePdfHeaderName(cell, index));
+  return { headers, headerIndex: bestIndex };
+}
+
 function loadSampleGallery() {
   renderSampleGallery();
   switchTab("samples");
@@ -2204,13 +2239,39 @@ async function handlePdfUpload(file) {
       return;
     }
 
-    const csvText = finalRows.map((row) => row.map(csvEscape).join(",")).join("\n");
-    parseCsvText(csvText, {
-      sourceType: "pdf",
-      name: file?.name || "PDF upload",
-      pdfMode: "table",
-      extractedTableKind: selectedTable?.kind || "generic",
-      correlationId,
+    const headerInference = inferPdfHeaders(finalRows);
+    let normalizedRows = finalRows;
+    if (headerInference.headers.length) {
+      normalizedRows = finalRows.slice();
+      normalizedRows.splice(headerInference.headerIndex, 1);
+      normalizedRows.unshift(headerInference.headers);
+    }
+    const parsedRowsSample = normalizedRows.slice(0, 3);
+    ingestDataset({
+      source: "pdf",
+      rows: normalizedRows,
+      meta: {
+        sourceType: "pdf",
+        name: file?.name || "PDF upload",
+        pdfMode: "table",
+        extractedTableKind: selectedTable?.kind || "generic",
+        correlationId,
+      },
+    });
+    const headersForDebug = normalizedRows[0] || [];
+    const profilesForDebug = profileDataset(normalizedRows.slice(1).map((row) => {
+      const obj = {};
+      headersForDebug.forEach((header, idx) => {
+        obj[header] = row?.[idx] ?? "";
+      });
+      return obj;
+    }), headersForDebug);
+    const { numericCandidates, dimensionCandidates } = buildSchemaCandidates(headersForDebug, profilesForDebug);
+    console.log({
+      detectedHeaders: headersForDebug,
+      numericCandidates,
+      dimensionCandidates,
+      parsedRowsSample,
     });
     console.log("STORE setState parseStatus", appStore.getState().parseStatus);
   } catch (error) {
@@ -2896,13 +2957,7 @@ function ingestRows(rawRows, sourceMeta = {}) {
   state.schema.profiles = profileDataset(rows, cleanedHeaders);
   state.inferredDomain = inferDomain(state.schema.profiles);
   state.domain = state.domainAuto ? state.inferredDomain : state.domain;
-  const numericCandidates = Object.keys(state.schema.profiles)
-    .filter((col) => state.schema.profiles[col].type === "numeric")
-    .filter((col) => !isIdLikeColumn(col, state.schema.profiles[col], rows.length));
-  const dateCandidates = Object.keys(state.schema.profiles).filter((col) => state.schema.profiles[col].type === "date");
-  const categoricalCandidates = Object.keys(state.schema.profiles).filter(
-    (col) => state.schema.profiles[col].type === "categorical"
-  );
+  const { numericCandidates, dimensionCandidates, dateCandidates } = buildSchemaCandidates(state.schema.columns, state.schema.profiles);
   const usableNumericMetrics = numericCandidates.filter((col) => {
     let countParsed = 0;
     for (const row of state.rawRows) {
@@ -2912,7 +2967,8 @@ function ingestRows(rawRows, sourceMeta = {}) {
       }
     }
     return false;
-  });
+  }).filter((col) => !isIdLikeColumn(col, state.schema.profiles[col], rows.length));
+  const categoricalCandidates = dimensionCandidates.filter((col) => !isIdLikeColumn(col, state.schema.profiles[col], rows.length));
   state.schema.numeric = Array.isArray(usableNumericMetrics) ? usableNumericMetrics : [];
   state.numericColumns = state.schema.numeric;
   state.schema.dates = Array.isArray(dateCandidates) ? dateCandidates : [];
@@ -2931,7 +2987,11 @@ function ingestRows(rawRows, sourceMeta = {}) {
   const recommendedMetrics = chooseKpiMetrics(state.schema.profiles, state.schema.numeric);
   state.selections.primaryMetric = recommendedMetrics[0] || state.schema.numeric[0] || null;
   state.selectedMetric = state.selections.primaryMetric;
-  state.selectedDimension = chooseBestDimension(state.schema.profiles, state.schema.categoricals) || state.schema.dates[0] || null;
+  state.selectedDimension = state.selectedDimension
+    || dimensionCandidates[0]
+    || chooseBestDimension(state.schema.profiles, state.schema.categoricals)
+    || state.schema.dates[0]
+    || null;
   state.chartType = state.dateColumn ? "line" : "bar";
   syncChartStateDirect({
     selectedMetric: state.selections.primaryMetric,
@@ -3019,6 +3079,44 @@ function normalizeHeaders(headers) {
     }
     return cleaned;
   });
+}
+
+function getSemanticRole(columnName) {
+  const key = String(columnName || "").toLowerCase();
+  if (key.includes("cpm")) return "metric_cpm";
+  if (key.includes("ctr")) return "metric_ctr";
+  if (key.includes("revenue")) return "metric_revenue";
+  if (key.includes("date")) return "dimension_date";
+  if (key.includes("region")) return "dimension_region";
+  return null;
+}
+
+function buildSchemaCandidates(columns, profiles) {
+  const numericCandidates = [];
+  const dimensionCandidates = [];
+  const dateCandidates = [];
+
+  (columns || []).forEach((col) => {
+    const profile = profiles?.[col];
+    const numericRate = profile?.numericRate ?? 0;
+    const uniqueCount = profile?.uniqueCount ?? 0;
+    const role = getSemanticRole(col);
+
+    if (profile?.type === "date") {
+      dateCandidates.push(col);
+    }
+    if (numericRate >= 0.6 && profile?.type === "numeric") {
+      numericCandidates.push(col);
+    }
+    if (role && role.startsWith("metric_") && numericRate >= 0.6 && profile?.type === "numeric") {
+      if (!numericCandidates.includes(col)) numericCandidates.push(col);
+    }
+    if ((numericRate < 0.2 && uniqueCount > 1) || (role && role.startsWith("dimension_"))) {
+      dimensionCandidates.push(col);
+    }
+  });
+
+  return { numericCandidates, dimensionCandidates, dateCandidates };
 }
 
 function parseNumber(value) {
@@ -3574,11 +3672,7 @@ function applyFiltersAndRender() {
   }
 
   state.schema.profiles = profileDataset(scopedRows, state.schema.columns);
-  const numericCandidates = Object.keys(state.schema.profiles)
-    .filter((col) => state.schema.profiles[col].type === "numeric")
-    .filter((col) => !isIdLikeColumn(col, state.schema.profiles[col], scopedRows.length));
-  const dateCandidates = Object.keys(state.schema.profiles).filter((col) => state.schema.profiles[col].type === "date");
-  const categoricalCandidates = Object.keys(state.schema.profiles).filter((col) => state.schema.profiles[col].type === "categorical");
+  const { numericCandidates, dimensionCandidates, dateCandidates } = buildSchemaCandidates(state.schema.columns, state.schema.profiles);
   const usableNumeric = (numericCandidates || []).filter((col) => {
     let countParsed = 0;
     for (const row of scopedRows) {
@@ -3588,7 +3682,8 @@ function applyFiltersAndRender() {
       }
     }
     return false;
-  });
+  }).filter((col) => !isIdLikeColumn(col, state.schema.profiles[col], scopedRows.length));
+  const categoricalCandidates = dimensionCandidates.filter((col) => !isIdLikeColumn(col, state.schema.profiles[col], scopedRows.length));
   state.schema.numeric = Array.isArray(usableNumeric) ? usableNumeric : [];
   state.numericColumns = state.schema.numeric;
   state.schema.dates = Array.isArray(dateCandidates) ? dateCandidates : [];
@@ -3606,6 +3701,9 @@ function applyFiltersAndRender() {
   }
   state.selectedMetric = state.selections.primaryMetric;
   state.selections.compareMetrics = (state.selections.compareMetrics || []).filter((m) => state.schema.numeric.includes(m));
+  if (!state.selectedDimension) {
+    state.selectedDimension = dimensionCandidates[0] || chooseBestDimension(state.schema.profiles, state.schema.categoricals) || state.schema.dates[0] || null;
+  }
   syncChartStateDirect({
     selectedMetric: state.selections.primaryMetric,
     selectedDimension: state.selectedDimension,
