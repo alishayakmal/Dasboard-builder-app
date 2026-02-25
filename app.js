@@ -698,7 +698,11 @@ function ensureDashboardActionsToolbar() {
 
   if (changeDataButton && !changeDataButton.dataset.bound) {
     changeDataButton.addEventListener("click", () => {
-      console.log("Upload data clicked");
+      if (hasLoadedDataset()) {
+        console.log("Start new upload clicked");
+        resetStateForNewDataset();
+        switchTab("upload");
+      }
       openUploaderModal();
     });
     changeDataButton.dataset.bound = "true";
@@ -726,7 +730,7 @@ function updateAnalysisHeaderState(hasDataset) {
   if (toolbar) toolbar.classList.remove("hidden");
   const uploadToggle = document.getElementById("dashboardChangeDataSourceBtn");
   if (uploadToggle) {
-    uploadToggle.textContent = hasDataset ? "Change data source" : "Upload data";
+    uploadToggle.textContent = hasDataset ? "Start new upload" : "Upload data";
     uploadToggle.classList.remove("hidden");
   }
   [downloadPdfButton, exportCsvButton, downloadInsightsButton, exportSheetsButton].forEach((button) => {
@@ -780,6 +784,19 @@ function setUiMode(mode) {
   appStore.setState({ view: mode === "ready" ? "analysis" : "upload" });
   syncUploadAnalysisState();
   renderDebugUploadStatus();
+}
+
+function onDatasetReady(sourceMeta = {}) {
+  setUiMode("ready");
+  setParseStatus("ready");
+  updateAnalysisHeaderState(true);
+  tabPanels.forEach((panel) => panel.classList.add("hidden"));
+  if (dashboard) dashboard.classList.remove("hidden");
+  try {
+    dashboard?.scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (_) {
+    dashboard?.scrollIntoView();
+  }
 }
 
 function syncUploadAnalysisState() {
@@ -906,7 +923,8 @@ function applyBrandAssets() {
 
 function handleFileSelection(file) {
   if (!file) return;
-  console.log("UPLOAD file selected", file.name, file.size);
+  const correlationId = createIngestCorrelationId("csv");
+  console.log(`[INGEST ${correlationId}] UPLOAD file selected`, file.name, file.size);
   console.log("file selected", file.name);
   clearMessages();
   appStore.setState({
@@ -925,6 +943,7 @@ function handleFileSelection(file) {
     parseCsvText(text, {
       sourceType: "csv",
       name: file.name,
+      correlationId,
     });
   };
   reader.onerror = () => {
@@ -934,7 +953,8 @@ function handleFileSelection(file) {
 }
 
 function parseCsvText(text, sourceMeta = {}) {
-  console.log("PARSE start");
+  const correlationId = sourceMeta?.correlationId;
+  console.log(correlationId ? `[INGEST ${correlationId}] PARSE start` : "PARSE start");
   setUiMode("loading");
   setParseStatus("parsing");
   setStatus("Parsing CSV");
@@ -947,7 +967,7 @@ function parseCsvText(text, sourceMeta = {}) {
         showError("We could not parse that CSV. Please check the format and try again.", `Details: ${first.message}`);
         return;
       }
-      console.log("parse complete");
+      console.log(correlationId ? `[INGEST ${correlationId}] PARSE complete` : "parse complete");
       console.log("PARSE raw rows", results.data?.length || 0);
       ingestDataset({
         source: sourceMeta?.sourceType || "csv",
@@ -964,10 +984,6 @@ function loadSampleGallery() {
 }
 
 function switchTab(tabName) {
-  const isSourceTab = ["upload", "sheets", "api", "pdf"].includes(tabName);
-  if (isSourceTab && hasUserDataLoaded() && state.uiMode === "ready") {
-    resetStateForNewDataset();
-  }
   tabButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === tabName);
   });
@@ -1546,7 +1562,6 @@ async function handleApiFetch() {
     apiStatus.textContent = "API data loaded";
     ingestJsonRows(json, { sourceType: "api", name: `${base}${endpoint}` });
     console.log("STORE setState parseStatus", appStore.getState().parseStatus);
-    switchTab("upload");
   } catch (error) {
     apiStatus.textContent = "Network error while fetching API data.";
     appStore.setState({ dataset: null, source: { type: "api", name: `${base}/${endpoint}` }, parseStatus: "error", error: error.message || "Network error" });
@@ -1701,7 +1716,8 @@ async function loadSheetData() {
   const input = sheetsUrlInput?.value || "";
   const range = sheetsRangeInput?.value?.trim() || "A1:Z1000";
   clearMessages();
-  console.log("SHEET selected", input);
+  const correlationId = createIngestCorrelationId("sheets");
+  console.log(`[INGEST ${correlationId}] SHEET selected`, input);
   appStore.setState({ source: { type: "sheets", name: input || "Google Sheet" }, parseStatus: "parsing", error: null });
   console.log("SHEET parseStatus -> parsing");
   setUiMode("loading");
@@ -1709,6 +1725,25 @@ async function loadSheetData() {
   setStatus("Loading Google Sheet");
   try {
     const spreadsheetId = extractSheetId(input);
+    const trimmedInput = input.trim();
+    const looksLikeSheetsUrl = /docs\.google\.com\/spreadsheets/i.test(trimmedInput);
+    const looksLikeUrl = /^https?:\/\//i.test(trimmedInput);
+    if (!trimmedInput || (!spreadsheetId && !looksLikeSheetsUrl && !looksLikeUrl)) {
+      const msg = "Paste a valid Google Sheets link or ID to continue.";
+      appStore.setState({ dataset: null, source: { type: "sheets", name: input || "Google Sheet" }, parseStatus: "error", error: msg });
+      setParseStatus("error");
+      console.log("STORE setState parseStatus", appStore.getState().parseStatus);
+      showError(msg);
+      return;
+    }
+    if (googleAccessToken && looksLikeSheetsUrl && !spreadsheetId) {
+      const msg = "Invalid Google Sheets link. Make sure it includes the spreadsheet ID.";
+      appStore.setState({ dataset: null, source: { type: "sheets", name: input || "Google Sheet" }, parseStatus: "error", error: msg });
+      setParseStatus("error");
+      console.log("STORE setState parseStatus", appStore.getState().parseStatus);
+      showError(msg);
+      return;
+    }
     if (googleAccessToken && spreadsheetId) {
       const apiRange = encodeURIComponent(range || "A1:Z1000");
       const apiUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${apiRange}?majorDimension=ROWS`;
@@ -1737,11 +1772,10 @@ async function loadSheetData() {
         return;
       }
       updateGoogleStatus(true);
-      console.log("SHEET raw rows", payload.values.length);
+      console.log(`[INGEST ${correlationId}] SHEET raw rows`, payload.values.length);
       const csvText = valuesToCsv(payload.values || []);
-      parseCsvText(csvText, { sourceType: "sheets", name: spreadsheetId || "Google Sheet" });
+      parseCsvText(csvText, { sourceType: "sheets", name: spreadsheetId || "Google Sheet", correlationId });
       console.log("STORE setState parseStatus", appStore.getState().parseStatus);
-      switchTab("upload");
       return;
     }
 
@@ -1753,19 +1787,17 @@ async function loadSheetData() {
       return;
     }
     const text = await fetchSheetText(normalizedUrl);
-    console.log("SHEET csv text length", text.length);
-    parseCsvText(text, { sourceType: "sheets", name: normalizedUrl });
+    console.log(`[INGEST ${correlationId}] SHEET csv text length`, text.length);
+    parseCsvText(text, { sourceType: "sheets", name: normalizedUrl, correlationId });
     console.log("STORE setState parseStatus", appStore.getState().parseStatus);
-    switchTab("upload");
   } catch (error) {
     const fallback = buildSheetsFallback(normalizeSheetsUrl(input) || input);
     if (fallback) {
       try {
         const text = await fetchSheetText(fallback);
-        console.log("SHEET fallback csv text length", text.length);
-        parseCsvText(text, { sourceType: "sheets", name: fallback });
+        console.log(`[INGEST ${correlationId}] SHEET fallback csv text length`, text.length);
+        parseCsvText(text, { sourceType: "sheets", name: fallback, correlationId });
         console.log("STORE setState parseStatus", appStore.getState().parseStatus);
-        switchTab("upload");
         return;
       } catch (fallbackError) {
         console.warn("Fallback CSV fetch failed", fallbackError);
@@ -1791,7 +1823,8 @@ function valuesToCsv(values) {
 
 async function handlePdfUpload(file) {
   if (!file) return;
-  console.log("PDF selected", file.name, file.size);
+  const correlationId = createIngestCorrelationId("pdf");
+  console.log(`[INGEST ${correlationId}] PDF selected`, file.name, file.size);
   appStore.setState({ source: { type: "pdf", name: file.name }, parseStatus: "parsing", error: null });
   console.log("PDF parseStatus -> parsing");
   setUiMode("loading");
@@ -1845,6 +1878,7 @@ async function handlePdfUpload(file) {
             sourceType: "pdf",
             name: file?.name || "PDF upload",
             pdfMode: "text",
+            correlationId,
           },
         });
         console.log("STORE setState parseStatus", appStore.getState().parseStatus);
@@ -1869,19 +1903,19 @@ async function handlePdfUpload(file) {
       name: file?.name || "PDF upload",
       pdfMode: "table",
       extractedTableKind: selectedTable?.kind || "generic",
+      correlationId,
     });
     console.log("STORE setState parseStatus", appStore.getState().parseStatus);
-    switchTab("upload");
   } catch (error) {
-    const msg = "No structured tables detected in this PDF. Try a report PDF with selectable tables or export as CSV.";
+    const msg = error?.message || "PDF ingestion failed.";
     appStore.setState({
       dataset: null,
       source: { type: "pdf", name: file.name },
       parseStatus: "error",
-      error: error?.message || msg,
+      error: msg,
     });
     console.log("STORE setState parseStatus", appStore.getState().parseStatus);
-    showError(msg, `Details: ${error.message}`);
+    showError("PDF ingestion failed.", `Details: ${msg}`);
     renderPdfStatusFromStore();
   }
 }
@@ -2466,6 +2500,9 @@ function renderDashboardRenderer({ dataset, mode }) {
 function ingestDataset({ source, rows, columns, meta = {} }) {
   const sourceType = String(source || meta?.sourceType || "csv").toLowerCase();
   const sourceName = meta?.name || null;
+  if (meta?.correlationId) {
+    console.log(`[INGEST ${meta.correlationId}] ingestDataset`, sourceType, sourceName || "");
+  }
   appStore.setState({
     dataset: null,
     source: { type: sourceType, name: sourceName },
@@ -2504,6 +2541,9 @@ function ingestRows(rawRows, sourceMeta = {}) {
   try {
   setStatus("Profiling columns");
   setParseStatus("parsing");
+  if (sourceMeta?.correlationId) {
+    console.log(`[INGEST ${sourceMeta.correlationId}] ingestRows start`, rawRows?.length || 0);
+  }
   if (!rawRows || rawRows.length === 0) {
     showError("No rows found in this CSV.");
     return;
@@ -2546,7 +2586,7 @@ function ingestRows(rawRows, sourceMeta = {}) {
     error: null,
     view: "upload",
   });
-  state.uiMode = "loading";
+  setUiMode("loading");
   state.rawRows = rows;
   state.schema.columns = cleanedHeaders;
   state.schema.profiles = profileDataset(rows, cleanedHeaders);
@@ -2619,22 +2659,14 @@ function ingestRows(rawRows, sourceMeta = {}) {
     error: null,
     view: "analysis",
   });
-  setParseStatus("ready");
   datasetSummary.textContent = `${rows.length} rows · ${state.schema.columns.length} columns${sourceBadge}`;
-  closeUploaderModal();
-  stateSection.classList.add("hidden");
-  dashboard.classList.remove("hidden");
   activateSourceTab(sourceMeta);
-  syncUploadAnalysisState();
-  try {
-    dashboard?.scrollIntoView({ behavior: "smooth", block: "start" });
-  } catch (_) {
-    dashboard?.scrollIntoView();
-  }
+  onDatasetReady(sourceMeta);
   if (statusSection) {
     statusSection.classList.add("hidden");
     statusSection.textContent = "";
   }
+  setUiMode(state.dataset?.rows?.length ? "ready" : "empty");
   console.log("dashboard rendered");
   } catch (error) {
     console.error("INGEST rows failed", error);
@@ -2650,6 +2682,12 @@ function ingestRows(rawRows, sourceMeta = {}) {
     });
     showError("Data ingestion failed while building the dashboard.", `Details: ${error?.message || error}`);
   }
+}
+
+function createIngestCorrelationId(sourceType = "data") {
+  const stamp = Date.now();
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${sourceType}-${stamp}-${rand}`;
 }
 
 function normalizeHeaders(headers) {
