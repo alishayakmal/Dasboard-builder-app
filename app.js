@@ -94,6 +94,7 @@ const uploadApiQuick = document.getElementById("uploadApiQuick");
 const modalDropZone = document.getElementById("modalDropZone");
 const modalUploadTrigger = document.getElementById("modalUploadTrigger");
 const modalUploadInput = document.getElementById("modalUploadInput");
+const modalPdfInput = document.getElementById("modalPdfInput");
 const modalCsvQuick = document.getElementById("modalCsvQuick");
 const modalPdfQuick = document.getElementById("modalPdfQuick");
 const modalSheetsQuick = document.getElementById("modalSheetsQuick");
@@ -262,6 +263,14 @@ const appStore = (() => {
           ...(partial?.selections || {}),
         },
       };
+      console.log("STORE update", {
+        parseStatus: store.parseStatus,
+        source: store.source,
+        rows: store.dataset?.rows?.length || 0,
+        columns: store.dataset?.columns?.length || 0,
+        error: store.error || null,
+        view: store.view,
+      });
       listeners.forEach((listener) => {
         try {
           listener(store);
@@ -286,13 +295,17 @@ window.__appStore = appStore;
 document.addEventListener("DOMContentLoaded", init);
 appStore.subscribe(() => {
   renderDebugUploadStatus();
+  renderPdfStatusFromStore();
 });
 
 function renderDebugUploadStatus() {
   if (!debugUploadStatus) return;
   const storeState = appStore.getState();
   const dataset = storeState.dataset;
-  debugUploadStatus.textContent = `Status: ${storeState.parseStatus} · Rows: ${dataset?.rows?.length || 0} · Columns: ${dataset?.columns?.length || 0} · Source: ${storeState.source || "—"}`;
+  const sourceLabel = typeof storeState.source === "string"
+    ? storeState.source
+    : (storeState.source?.type || "—");
+  debugUploadStatus.textContent = `Status: ${storeState.parseStatus} · Rows: ${dataset?.rows?.length || 0} · Columns: ${dataset?.columns?.length || 0} · Source: ${sourceLabel || "—"}`;
 }
 
 function setParseStatus(nextStatus, error = null) {
@@ -300,6 +313,28 @@ function setParseStatus(nextStatus, error = null) {
   state.error = error || null;
   appStore.setState({ parseStatus: nextStatus, error: error || null });
   renderDebugUploadStatus();
+}
+
+function renderPdfStatusFromStore() {
+  if (!pdfStatus) return;
+  const storeState = appStore.getState();
+  const sourceType = typeof storeState.source === "string" ? storeState.source : storeState.source?.type;
+  if (sourceType !== "pdf") return;
+  if (storeState.parseStatus === "parsing") {
+    pdfStatus.textContent = "Extracting tables from PDF...";
+    return;
+  }
+  if (storeState.parseStatus === "ready") {
+    pdfStatus.textContent = "Tables extracted. Building dashboard...";
+    return;
+  }
+  if (storeState.parseStatus === "error") {
+    pdfStatus.textContent = storeState.error || "PDF ingest failed.";
+    return;
+  }
+  if (storeState.parseStatus === "idle") {
+    pdfStatus.textContent = "";
+  }
 }
 
 function init() {
@@ -340,8 +375,8 @@ function init() {
   if (uploadPdfQuick && pdfInput) {
     uploadPdfQuick.addEventListener("click", () => pdfInput.click());
   }
-  if (modalPdfQuick && pdfInput) {
-    modalPdfQuick.addEventListener("click", () => pdfInput.click());
+  if (modalPdfQuick && (modalPdfInput || pdfInput)) {
+    modalPdfQuick.addEventListener("click", () => (modalPdfInput || pdfInput).click());
   }
   if (uploadSheetsQuick) {
     uploadSheetsQuick.addEventListener("click", () => switchTab("sheets"));
@@ -368,6 +403,25 @@ function init() {
   });
   if (modalUploadInput) {
     modalUploadInput.addEventListener("change", (event) => handleFileSelection(event.target.files[0]));
+  }
+  if (modalPdfInput) {
+    modalPdfInput.addEventListener("change", () => {
+      const file = modalPdfInput.files?.[0];
+      if (!file) return;
+      console.log("Modal PDF input change", file.name, file.size);
+      appStore.setState({
+        dataset: null,
+        source: { type: "pdf", name: file.name },
+        parseStatus: "parsing",
+        error: null,
+        view: "upload",
+      });
+      setParseStatus("parsing");
+      setUiMode("loading");
+      renderPdfStatusFromStore();
+      handlePdfUpload(file);
+      modalPdfInput.value = "";
+    });
   }
 
   [loadSample, loadSampleInline].forEach((button) => {
@@ -481,6 +535,17 @@ function init() {
     pdfInput.addEventListener("change", () => {
       const file = pdfInput.files?.[0];
       if (!file) return;
+      console.log("PDF input change", file.name, file.size);
+      appStore.setState({
+        dataset: null,
+        source: { type: "pdf", name: file.name },
+        parseStatus: "parsing",
+        error: null,
+        view: "upload",
+      });
+      setParseStatus("parsing");
+      setUiMode("loading");
+      renderPdfStatusFromStore();
       if (pdfMeta) {
         const sizeKb = Math.round(file.size / 1024);
         pdfMeta.textContent = `${file.name} · ${sizeKb} KB`;
@@ -504,6 +569,7 @@ function init() {
   auditActionHandlers();
   setUiMode("empty");
   setParseStatus("idle");
+  renderPdfStatusFromStore();
   updateAnalysisHeaderState(false);
   syncUploadAnalysisState();
   console.log("handlers wired");
@@ -840,6 +906,13 @@ function handleFileSelection(file) {
   console.log("UPLOAD file selected", file.name, file.size);
   console.log("file selected", file.name);
   clearMessages();
+  appStore.setState({
+    dataset: null,
+    source: { type: "csv", name: file.name },
+    parseStatus: "parsing",
+    error: null,
+    view: "upload",
+  });
   setUiMode("loading");
   setParseStatus("parsing");
   setStatus("Reading file");
@@ -1429,7 +1502,7 @@ async function handleApiFetch() {
     return;
   }
   console.log("API selected", base, endpoint);
-  appStore.setState({ source: "api", parseStatus: "parsing", error: null });
+  appStore.setState({ source: { type: "api", name: `${base}/${endpoint}` }, parseStatus: "parsing", error: null });
   console.log("API parseStatus -> parsing");
   const url = `${base.replace(/\/$/, "")}/${endpoint.replace(/^\//, "")}`;
   const authType = apiAuthType?.value || "none";
@@ -1449,7 +1522,7 @@ async function handleApiFetch() {
     const response = await fetch(url, { headers });
     if (!response.ok) {
       apiStatus.textContent = `Request failed: ${response.status}`;
-      appStore.setState({ dataset: null, source: "api", parseStatus: "error", error: `Request failed: ${response.status}` });
+      appStore.setState({ dataset: null, source: { type: "api", name: `${base}/${endpoint}` }, parseStatus: "error", error: `Request failed: ${response.status}` });
       console.log("STORE setState parseStatus", appStore.getState().parseStatus);
       showError("API request failed.", `Details: ${response.status}`);
       return;
@@ -1457,7 +1530,7 @@ async function handleApiFetch() {
     const json = await response.json();
     if (!Array.isArray(json) || !json.length || typeof json[0] !== "object") {
       apiStatus.textContent = "Expected a JSON array of objects.";
-      appStore.setState({ dataset: null, source: "api", parseStatus: "error", error: "Expected a JSON array of objects." });
+      appStore.setState({ dataset: null, source: { type: "api", name: `${base}/${endpoint}` }, parseStatus: "error", error: "Expected a JSON array of objects." });
       console.log("STORE setState parseStatus", appStore.getState().parseStatus);
       showError("API payload must be a JSON array of objects.");
       return;
@@ -1469,7 +1542,7 @@ async function handleApiFetch() {
     switchTab("upload");
   } catch (error) {
     apiStatus.textContent = "Network error while fetching API data.";
-    appStore.setState({ dataset: null, source: "api", parseStatus: "error", error: error.message || "Network error" });
+    appStore.setState({ dataset: null, source: { type: "api", name: `${base}/${endpoint}` }, parseStatus: "error", error: error.message || "Network error" });
     console.log("STORE setState parseStatus", appStore.getState().parseStatus);
     showError("API request failed.", `Details: ${error.message}`);
   }
@@ -1618,7 +1691,7 @@ async function loadSheetData() {
   const range = sheetsRangeInput?.value?.trim() || "A1:Z1000";
   clearMessages();
   console.log("SHEET selected", input);
-  appStore.setState({ source: "sheet", parseStatus: "parsing", error: null });
+  appStore.setState({ source: { type: "sheet", name: input || "Google Sheet" }, parseStatus: "parsing", error: null });
   console.log("SHEET parseStatus -> parsing");
   setUiMode("loading");
   setParseStatus("parsing");
@@ -1633,21 +1706,21 @@ async function loadSheetData() {
       });
       if (response.status === 401 || response.status === 403) {
         updateGoogleStatus(false);
-        appStore.setState({ dataset: null, source: "sheet", parseStatus: "error", error: "Permission denied or token expired. Reconnect Google." });
+        appStore.setState({ dataset: null, source: { type: "sheet", name: input || "Google Sheet" }, parseStatus: "error", error: "Permission denied or token expired. Reconnect Google." });
         console.log("STORE setState parseStatus", appStore.getState().parseStatus);
         showError("Permission denied or token expired. Reconnect Google.");
         return;
       }
       if (!response.ok) {
         const body = await response.text();
-        appStore.setState({ dataset: null, source: "sheet", parseStatus: "error", error: body || "Google Sheets read failed." });
+        appStore.setState({ dataset: null, source: { type: "sheet", name: input || "Google Sheet" }, parseStatus: "error", error: body || "Google Sheets read failed." });
         console.log("STORE setState parseStatus", appStore.getState().parseStatus);
         showError("Google Sheets read failed.", `Details: ${body}`);
         return;
       }
       const payload = await response.json();
       if (!payload?.values || !payload.values.length) {
-        appStore.setState({ dataset: null, source: "sheet", parseStatus: "error", error: "No rows returned from Google Sheets." });
+        appStore.setState({ dataset: null, source: { type: "sheet", name: input || "Google Sheet" }, parseStatus: "error", error: "No rows returned from Google Sheets." });
         console.log("STORE setState parseStatus", appStore.getState().parseStatus);
         showError("No rows returned from Google Sheets.");
         return;
@@ -1663,7 +1736,7 @@ async function loadSheetData() {
 
     const normalizedUrl = normalizeSheetsUrl(input);
     if (!normalizedUrl) {
-      appStore.setState({ dataset: null, source: "sheet", parseStatus: "error", error: "Paste a Google Sheets link first." });
+      appStore.setState({ dataset: null, source: { type: "sheet", name: input || "Google Sheet" }, parseStatus: "error", error: "Paste a Google Sheets link first." });
       console.log("STORE setState parseStatus", appStore.getState().parseStatus);
       showError("Paste a Google Sheets link first.");
       return;
@@ -1689,11 +1762,11 @@ async function loadSheetData() {
     }
     const detail = error?.message || String(error);
     if (detail.includes("Failed to fetch")) {
-      appStore.setState({ dataset: null, source: "sheet", parseStatus: "error", error: "This sheet is likely private. Publish it or share a public CSV export link." });
+      appStore.setState({ dataset: null, source: { type: "sheet", name: input || "Google Sheet" }, parseStatus: "error", error: "This sheet is likely private. Publish it or share a public CSV export link." });
       console.log("STORE setState parseStatus", appStore.getState().parseStatus);
       showError("This sheet is likely private. Publish it or share a public CSV export link.");
     } else {
-      appStore.setState({ dataset: null, source: "sheet", parseStatus: "error", error: detail });
+      appStore.setState({ dataset: null, source: { type: "sheet", name: input || "Google Sheet" }, parseStatus: "error", error: detail });
       console.log("STORE setState parseStatus", appStore.getState().parseStatus);
       showError("Google Sheets CSV could not be loaded. Check the link and sharing settings.", `Details: ${detail}`);
     }
@@ -1708,11 +1781,11 @@ function valuesToCsv(values) {
 async function handlePdfUpload(file) {
   if (!file) return;
   console.log("PDF selected", file.name, file.size);
-  appStore.setState({ source: "pdf", parseStatus: "parsing", error: null });
+  appStore.setState({ source: { type: "pdf", name: file.name }, parseStatus: "parsing", error: null });
   console.log("PDF parseStatus -> parsing");
   setUiMode("loading");
   setParseStatus("parsing");
-  if (pdfStatus) pdfStatus.textContent = "Extracting table data from PDF...";
+  renderPdfStatusFromStore();
   try {
     if (!window.pdfjsLib) {
       showError("PDF parser not available. Please refresh and try again.");
@@ -1754,7 +1827,7 @@ async function handlePdfUpload(file) {
       const msg = "No structured tables detected in this PDF. Try a report PDF with selectable tables or export as CSV.";
       appStore.setState({
         dataset: null,
-        source: "pdf",
+        source: { type: "pdf", name: file.name },
         parseStatus: "error",
         error: msg,
       });
@@ -1772,19 +1845,18 @@ async function handlePdfUpload(file) {
       extractedTableKind: selectedTable?.kind || "generic",
     });
     console.log("STORE setState parseStatus", appStore.getState().parseStatus);
-    if (pdfStatus) pdfStatus.textContent = "PDF parsed. Generating dashboard...";
     switchTab("upload");
   } catch (error) {
     const msg = "No structured tables detected in this PDF. Try a report PDF with selectable tables or export as CSV.";
     appStore.setState({
       dataset: null,
-      source: "pdf",
+      source: { type: "pdf", name: file.name },
       parseStatus: "error",
       error: error?.message || msg,
     });
     console.log("STORE setState parseStatus", appStore.getState().parseStatus);
     showError(msg, `Details: ${error.message}`);
-    if (pdfStatus) pdfStatus.textContent = "PDF ingestion failed";
+    renderPdfStatusFromStore();
   }
 }
 
@@ -2063,7 +2135,8 @@ function clearMessages() {
   }
 }
 
-function resetStateForNewDataset() {
+function resetStateForNewDataset(options = {}) {
+  const preserveStoreState = Boolean(options.preserveStoreState);
   destroyAllCharts();
   state.dataset = null;
   state.filteredRows = [];
@@ -2080,13 +2153,15 @@ function resetStateForNewDataset() {
   state.uiMode = "empty";
   state.parseStatus = "idle";
   state.error = null;
-  appStore.setState({
-    dataset: null,
-    source: null,
-    parseStatus: "idle",
-    error: null,
-    view: "upload",
-  });
+  if (!preserveStoreState) {
+    appStore.setState({
+      dataset: null,
+      source: null,
+      parseStatus: "idle",
+      error: null,
+      view: "upload",
+    });
+  }
   updateAnalysisHeaderState(false);
   syncUploadAnalysisState();
   renderDebugUploadStatus();
@@ -2299,7 +2374,7 @@ function renderDashboardRenderer({ dataset, mode }) {
   state.uiMode = dataset?.rows?.length ? "ready" : "empty";
   appStore.setState({
     dataset,
-    source: dataset?.meta?.sourceType || null,
+    source: dataset?.meta?.sourceType ? { type: dataset.meta.sourceType, name: dataset.meta?.name || null } : null,
     parseStatus: dataset?.rows?.length ? "ready" : appStore.getState().parseStatus,
     error: null,
     view: dataset?.rows?.length ? "analysis" : "upload",
@@ -2321,6 +2396,7 @@ function renderDashboardRenderer({ dataset, mode }) {
 }
 
 function ingestRows(rawRows, sourceMeta = {}) {
+  try {
   setStatus("Profiling columns");
   setParseStatus("parsing");
   if (!rawRows || rawRows.length === 0) {
@@ -2354,7 +2430,18 @@ function ingestRows(rawRows, sourceMeta = {}) {
     return obj;
   });
 
-  resetStateForNewDataset();
+  resetStateForNewDataset({ preserveStoreState: true });
+  appStore.setState({
+    dataset: null,
+    source: {
+      type: sourceMeta?.sourceType || "csv",
+      name: sourceMeta?.name || null,
+    },
+    parseStatus: "parsing",
+    error: null,
+    view: "upload",
+  });
+  state.uiMode = "loading";
   state.rawRows = rows;
   state.schema.columns = cleanedHeaders;
   state.schema.profiles = profileDataset(rows, cleanedHeaders);
@@ -2417,7 +2504,12 @@ function ingestRows(rawRows, sourceMeta = {}) {
   console.log("STATE dataset set", state.dataset?.rows?.length || 0);
   appStore.setState({
     dataset: state.dataset,
-    source: state.dataset?.meta?.sourceType || sourceMeta?.sourceType || null,
+    source: (state.dataset?.meta?.sourceType || sourceMeta?.sourceType)
+      ? {
+          type: state.dataset?.meta?.sourceType || sourceMeta?.sourceType,
+          name: state.dataset?.meta?.name || sourceMeta?.name || null,
+        }
+      : null,
     parseStatus: "ready",
     error: null,
     view: "analysis",
@@ -2434,6 +2526,20 @@ function ingestRows(rawRows, sourceMeta = {}) {
     statusSection.textContent = "";
   }
   console.log("dashboard rendered");
+  } catch (error) {
+    console.error("INGEST rows failed", error);
+    appStore.setState({
+      dataset: null,
+      source: {
+        type: sourceMeta?.sourceType || appStore.getState().source?.type || "csv",
+        name: sourceMeta?.name || appStore.getState().source?.name || null,
+      },
+      parseStatus: "error",
+      error: error?.message || String(error),
+      view: "upload",
+    });
+    showError("Data ingestion failed while building the dashboard.", `Details: ${error?.message || error}`);
+  }
 }
 
 function normalizeHeaders(headers) {
