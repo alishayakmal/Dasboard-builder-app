@@ -603,6 +603,12 @@ function ensureDashboardActionsToolbar() {
   if (!dashboard) return;
   const sectionHeader = dashboard.querySelector(".section-header");
   if (!sectionHeader) return;
+  const duplicates = sectionHeader.querySelectorAll("#dashboardActionsToolbar");
+  if (duplicates.length > 1) {
+    duplicates.forEach((node, index) => {
+      if (index > 0) node.remove();
+    });
+  }
 
   let toolbar = document.getElementById("dashboardActionsToolbar");
   if (!toolbar) {
@@ -1422,6 +1428,9 @@ async function handleApiFetch() {
     apiStatus.textContent = "Please enter Base URL and Endpoint to fetch data.";
     return;
   }
+  console.log("API selected", base, endpoint);
+  appStore.setState({ source: "api", parseStatus: "parsing", error: null });
+  console.log("API parseStatus -> parsing");
   const url = `${base.replace(/\/$/, "")}/${endpoint.replace(/^\//, "")}`;
   const authType = apiAuthType?.value || "none";
   const credential = apiKey?.value?.trim();
@@ -1434,24 +1443,34 @@ async function handleApiFetch() {
 
   clearMessages();
   setStatus("Fetching API data");
+  setUiMode("loading");
+  setParseStatus("parsing");
   try {
     const response = await fetch(url, { headers });
     if (!response.ok) {
       apiStatus.textContent = `Request failed: ${response.status}`;
+      appStore.setState({ dataset: null, source: "api", parseStatus: "error", error: `Request failed: ${response.status}` });
+      console.log("STORE setState parseStatus", appStore.getState().parseStatus);
       showError("API request failed.", `Details: ${response.status}`);
       return;
     }
     const json = await response.json();
     if (!Array.isArray(json) || !json.length || typeof json[0] !== "object") {
       apiStatus.textContent = "Expected a JSON array of objects.";
+      appStore.setState({ dataset: null, source: "api", parseStatus: "error", error: "Expected a JSON array of objects." });
+      console.log("STORE setState parseStatus", appStore.getState().parseStatus);
       showError("API payload must be a JSON array of objects.");
       return;
     }
+    console.log("API raw rows", json.length);
     apiStatus.textContent = "API data loaded";
     ingestJsonRows(json, { sourceType: "api", name: `${base}${endpoint}` });
+    console.log("STORE setState parseStatus", appStore.getState().parseStatus);
     switchTab("upload");
   } catch (error) {
     apiStatus.textContent = "Network error while fetching API data.";
+    appStore.setState({ dataset: null, source: "api", parseStatus: "error", error: error.message || "Network error" });
+    console.log("STORE setState parseStatus", appStore.getState().parseStatus);
     showError("API request failed.", `Details: ${error.message}`);
   }
 }
@@ -1598,7 +1617,11 @@ async function loadSheetData() {
   const input = sheetsUrlInput?.value || "";
   const range = sheetsRangeInput?.value?.trim() || "A1:Z1000";
   clearMessages();
+  console.log("SHEET selected", input);
+  appStore.setState({ source: "sheet", parseStatus: "parsing", error: null });
+  console.log("SHEET parseStatus -> parsing");
   setUiMode("loading");
+  setParseStatus("parsing");
   setStatus("Loading Google Sheet");
   try {
     const spreadsheetId = extractSheetId(input);
@@ -1610,40 +1633,54 @@ async function loadSheetData() {
       });
       if (response.status === 401 || response.status === 403) {
         updateGoogleStatus(false);
+        appStore.setState({ dataset: null, source: "sheet", parseStatus: "error", error: "Permission denied or token expired. Reconnect Google." });
+        console.log("STORE setState parseStatus", appStore.getState().parseStatus);
         showError("Permission denied or token expired. Reconnect Google.");
         return;
       }
       if (!response.ok) {
         const body = await response.text();
+        appStore.setState({ dataset: null, source: "sheet", parseStatus: "error", error: body || "Google Sheets read failed." });
+        console.log("STORE setState parseStatus", appStore.getState().parseStatus);
         showError("Google Sheets read failed.", `Details: ${body}`);
         return;
       }
       const payload = await response.json();
       if (!payload?.values || !payload.values.length) {
+        appStore.setState({ dataset: null, source: "sheet", parseStatus: "error", error: "No rows returned from Google Sheets." });
+        console.log("STORE setState parseStatus", appStore.getState().parseStatus);
         showError("No rows returned from Google Sheets.");
         return;
       }
       updateGoogleStatus(true);
+      console.log("SHEET raw rows", payload.values.length);
       const csvText = valuesToCsv(payload.values || []);
       parseCsvText(csvText, { sourceType: "sheet", name: spreadsheetId || "Google Sheet" });
+      console.log("STORE setState parseStatus", appStore.getState().parseStatus);
       switchTab("upload");
       return;
     }
 
     const normalizedUrl = normalizeSheetsUrl(input);
     if (!normalizedUrl) {
+      appStore.setState({ dataset: null, source: "sheet", parseStatus: "error", error: "Paste a Google Sheets link first." });
+      console.log("STORE setState parseStatus", appStore.getState().parseStatus);
       showError("Paste a Google Sheets link first.");
       return;
     }
     const text = await fetchSheetText(normalizedUrl);
+    console.log("SHEET csv text length", text.length);
     parseCsvText(text, { sourceType: "sheet", name: normalizedUrl });
+    console.log("STORE setState parseStatus", appStore.getState().parseStatus);
     switchTab("upload");
   } catch (error) {
     const fallback = buildSheetsFallback(normalizeSheetsUrl(input) || input);
     if (fallback) {
       try {
         const text = await fetchSheetText(fallback);
+        console.log("SHEET fallback csv text length", text.length);
         parseCsvText(text, { sourceType: "sheet", name: fallback });
+        console.log("STORE setState parseStatus", appStore.getState().parseStatus);
         switchTab("upload");
         return;
       } catch (fallbackError) {
@@ -1652,8 +1689,12 @@ async function loadSheetData() {
     }
     const detail = error?.message || String(error);
     if (detail.includes("Failed to fetch")) {
+      appStore.setState({ dataset: null, source: "sheet", parseStatus: "error", error: "This sheet is likely private. Publish it or share a public CSV export link." });
+      console.log("STORE setState parseStatus", appStore.getState().parseStatus);
       showError("This sheet is likely private. Publish it or share a public CSV export link.");
     } else {
+      appStore.setState({ dataset: null, source: "sheet", parseStatus: "error", error: detail });
+      console.log("STORE setState parseStatus", appStore.getState().parseStatus);
       showError("Google Sheets CSV could not be loaded. Check the link and sharing settings.", `Details: ${detail}`);
     }
   }
@@ -1666,7 +1707,11 @@ function valuesToCsv(values) {
 
 async function handlePdfUpload(file) {
   if (!file) return;
+  console.log("PDF selected", file.name, file.size);
+  appStore.setState({ source: "pdf", parseStatus: "parsing", error: null });
+  console.log("PDF parseStatus -> parsing");
   setUiMode("loading");
+  setParseStatus("parsing");
   if (pdfStatus) pdfStatus.textContent = "Extracting table data from PDF...";
   try {
     if (!window.pdfjsLib) {
@@ -1696,13 +1741,25 @@ async function handlePdfUpload(file) {
       const pageTables = detectPdfTablesFromRows(pageRows);
       pageAnalyses.push({ pageNum, items, rows: pageRows, tables: pageTables });
     }
+    const totalTablesFound = pageAnalyses.reduce((sum, page) => sum + ((page.tables || []).length), 0);
+    console.log("PDF tablesFound", totalTablesFound);
 
     const selectedTable = selectBestPdfFactTable(pageAnalyses);
     const fallbackRows = pageAnalyses.flatMap((page) => page.rows.map((row) => row.cells || []));
     const finalRows = selectedTable?.rows?.length ? selectedTable.rows : fallbackRows;
+    const selectedCols = finalRows?.[0]?.length || 0;
+    console.log("PDF selectedTable rows", finalRows.length, "cols", selectedCols);
 
     if (finalRows.length < 2) {
-      showError("No table like content detected. Export a CSV or use a PDF with a clear table.");
+      const msg = "No structured tables detected in this PDF. Try a report PDF with selectable tables or export as CSV.";
+      appStore.setState({
+        dataset: null,
+        source: "pdf",
+        parseStatus: "error",
+        error: msg,
+      });
+      console.log("STORE setState parseStatus", appStore.getState().parseStatus);
+      showError(msg);
       if (pdfStatus) pdfStatus.textContent = "PDF ingestion failed";
       return;
     }
@@ -1714,10 +1771,19 @@ async function handlePdfUpload(file) {
       pdfMode: "table",
       extractedTableKind: selectedTable?.kind || "generic",
     });
+    console.log("STORE setState parseStatus", appStore.getState().parseStatus);
     if (pdfStatus) pdfStatus.textContent = "PDF parsed. Generating dashboard...";
     switchTab("upload");
   } catch (error) {
-    showError("No table like content detected. Export a CSV or use a PDF with a clear table.", `Details: ${error.message}`);
+    const msg = "No structured tables detected in this PDF. Try a report PDF with selectable tables or export as CSV.";
+    appStore.setState({
+      dataset: null,
+      source: "pdf",
+      parseStatus: "error",
+      error: error?.message || msg,
+    });
+    console.log("STORE setState parseStatus", appStore.getState().parseStatus);
+    showError(msg, `Details: ${error.message}`);
     if (pdfStatus) pdfStatus.textContent = "PDF ingestion failed";
   }
 }
