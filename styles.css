@@ -2412,3 +2412,131 @@ a {
     padding: 24px;
   }
 }
+
+.chat-panel {
+  margin: 24px 0;
+  padding: 20px;
+  border-radius: 18px;
+  background: #0f172a;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  color: #e2e8f0;
+}
+
+.chat-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.chat-panel-header h3 {
+  margin: 0;
+}
+
+.chat-panel-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-panel-body textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  padding: 12px;
+  background: #0b1220;
+  color: #e2e8f0;
+  resize: vertical;
+}
+
+#chatStatus.error {
+  color: #f87171;
+}
+
+.chat-panel-controls {
+  margin-top: 12px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chat-preview {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.chat-preview-message {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.chat-preview-diff div {
+  margin-bottom: 6px;
+}
+
+.chat-activity {
+  margin-top: 16px;
+}
+
+.chat-activity-list {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: #cbd5f5;
+}
+
+.chat-activity-item {
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.drawer-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  z-index: 30;
+}
+
+.evidence-drawer {
+  position: fixed;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: min(520px, 90vw);
+  background: #0b1120;
+  border-left: 1px solid rgba(148, 163, 184, 0.2);
+  z-index: 40;
+  padding: 18px;
+  overflow-y: auto;
+  color: #e2e8f0;
+}
+
+.evidence-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.evidence-drawer-body {
+  display: grid;
+  gap: 16px;
+}
+
+.evidence-definition-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 720px) {
+  .evidence-definition-grid {
+    grid-template-columns: 1fr;
+  }
+}
