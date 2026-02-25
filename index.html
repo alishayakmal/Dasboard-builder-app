@@ -286,7 +286,7 @@
           </div>
           <div id="sampleGallery" class="sample-grid"></div>
           <div class="suggested-trends">
-            <h4>Suggested trends</h4>
+            <h4>Suggested views</h4>
             <ul id="suggestedTrends"></ul>
           </div>
         </div>
@@ -375,6 +375,30 @@
               <p id="extraSubtitle"></p>
             </div>
             <canvas id="extraChart" height="140"></canvas>
+          </div>
+        </section>
+
+        <section class="chat-panel" id="chatPanel">
+          <div class="chat-panel-header">
+            <h3>Chat to edit dashboard</h3>
+            <div class="chat-panel-actions">
+              <button id="chatUndo" class="ghost">Undo</button>
+              <button id="chatRedo" class="ghost">Redo</button>
+            </div>
+          </div>
+          <div class="chat-panel-body">
+            <textarea id="chatInput" rows="3" placeholder="Example: Show top 5 orgs by Unique Count User."></textarea>
+            <div class="chat-panel-controls">
+              <button id="chatSend" class="primary">Send</button>
+              <button id="chatApply" class="ghost" disabled>Apply</button>
+              <button id="chatCancel" class="ghost" disabled>Cancel</button>
+            </div>
+            <p id="chatStatus" class="helper-text"></p>
+          </div>
+          <div id="chatPreview" class="chat-preview hidden"></div>
+          <div class="chat-activity">
+            <h4>Activity</h4>
+            <div id="chatActivity" class="chat-activity-list"></div>
           </div>
         </section>
 
@@ -527,6 +551,15 @@
       </div>
     </div>
   </div>
+
+  <div id="evidenceScrim" class="drawer-scrim hidden" aria-hidden="true"></div>
+  <aside id="evidenceDrawer" class="evidence-drawer hidden" aria-hidden="true">
+    <div class="evidence-drawer-header">
+      <h3>Evidence</h3>
+      <button id="evidenceClose" class="ghost">Close</button>
+    </div>
+    <div id="evidenceContent" class="evidence-drawer-body"></div>
+  </aside>
 
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
