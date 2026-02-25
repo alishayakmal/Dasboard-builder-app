@@ -1,10 +1,14 @@
 const express = require("express");
+const dotenv = require("dotenv");
 const session = require("express-session");
 const cookieParser = require("cookie-parser");
 const cors = require("cors");
 const crypto = require("crypto");
 const { google } = require("googleapis");
 const { setRefreshToken, getRefreshToken, setState, consumeState } = require("./db");
+const { generateChatPlan } = require("./services/chatToChart");
+
+dotenv.config();
 
 const {
   GOOGLE_CLIENT_ID,
@@ -18,11 +22,11 @@ const {
 
 const app = express();
 
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use(
   cors({
-    origin: FRONTEND_ORIGIN,
+    origin: FRONTEND_ORIGIN || "http://localhost:3000",
     credentials: true,
   })
 );
@@ -51,6 +55,10 @@ function requireAuth(req, res, next) {
 
 app.get("/health", (req, res) => {
   res.json({ ok: true });
+});
+
+app.get("/api/health", (req, res) => {
+  res.json({ ok: true, service: "backend", timestamp: new Date().toISOString() });
 });
 
 app.get("/auth/google", async (req, res) => {
@@ -222,74 +230,43 @@ function applyToolCallsToState(state, toolCalls) {
 
 app.post("/api/chat", async (req, res) => {
   try {
-    const { message, datasetSchema, currentDashboardState } = req.body || {};
+    const { message, datasetSchema = {}, currentDashboardState = {} } = req.body || {};
     if (!message) {
       return res.status(400).json({ ok: false, error: "Missing message." });
     }
-    const toolCalls = [];
-    const chartType = parseChartType(message);
-    if (chartType) {
-      toolCalls.push({ name: "setChartType", args: { type: chartType } });
+    console.log("chat request", {
+      messageLength: String(message || "").length,
+      columns: Array.isArray(datasetSchema?.columns) ? datasetSchema.columns.length : 0,
+    });
+
+    const result = await generateChatPlan({ message, datasetSchema, currentDashboardState });
+    if (!result.ok) {
+      console.warn("chat error", result.error);
+      return res.status(400).json({ ok: false, error: result.error, detail: result.detail || "" });
     }
 
-    const aggregation = parseAggregation(message);
-    if (aggregation) {
-      toolCalls.push({ name: "setAggregation", args: { agg: aggregation } });
-    }
-
-    const topN = parseTopN(message);
-    if (topN) {
-      toolCalls.push({ name: "setTopN", args: { n: topN } });
-    }
-
-    const byMatch = message.match(/by\s+([^.;]+)/i);
-    if (byMatch) {
-      const byHint = byMatch[1];
-      const field = resolveFieldFromMessage(byHint, datasetSchema, ["org", "name", "company"]);
-      if (field) toolCalls.push({ name: "setDimension", args: { field } });
-    }
-
-    if (/metric|by\s+/i.test(message)) {
-      const metricField = resolveFieldFromMessage(message, datasetSchema, ["count", "unique", "total"]);
-      if (metricField && /top\s+\d+/i.test(message)) {
-        toolCalls.push({ name: "setMetric", args: { field: metricField } });
-      }
-    }
-
-    const filter = parseFilter(message);
-    if (filter) {
-      const field = resolveFieldFromMessage(filter.fieldHint, datasetSchema, ["org", "name", "company"]);
-      if (field) {
-        toolCalls.push({ name: "applyFilter", args: { field, operator: "==", value: filter.value } });
-      }
-    }
-
-    if (!toolCalls.length) {
-      return res.status(200).json({
-        ok: false,
-        error: "I could not map that request to a supported chart action. Try rephrasing.",
-      });
-    }
-
-    const nextState = applyToolCallsToState(currentDashboardState || {}, toolCalls);
-    const proposedDiff = {
-      before: currentDashboardState || {},
-      after: nextState,
-    };
-
+    console.log("chat response", { model: result.model || "unknown", toolCalls: result.toolCalls.length });
     return res.json({
       ok: true,
-      toolCalls,
-      assistantMessage: "Here is a preview of the requested chart updates.",
-      proposedDiff,
-      notes: "Actions are returned as validated tool calls.",
+      toolCalls: result.toolCalls,
+      assistantMessage: result.assistantMessage,
+      proposedDiff: result.proposedDiff,
+      notes: result.notes || "",
     });
   } catch (error) {
-    return res.status(500).json({ ok: false, error: error.message });
+    return res.status(500).json({ ok: false, error: "Server error", detail: error.message });
   }
 });
 
-const port = process.env.PORT || 8787;
+app.use((err, req, res, next) => {
+  res.status(500).json({
+    ok: false,
+    error: "Server error",
+    detail: String(err && err.message ? err.message : err),
+  });
+});
+
+const port = process.env.PORT || 5050;
 app.listen(port, () => {
   console.log(`Backend listening on ${port}`);
 });
