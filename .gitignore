@@ -4,6 +4,7 @@ Thumbs.db
 
 # Ignore local env files
 .env
+backend/.env
 
 # Ignore node_modules if ever added
 node_modules/
