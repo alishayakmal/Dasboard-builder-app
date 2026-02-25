@@ -10,9 +10,11 @@
   "dependencies": {
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
     "express": "^4.19.2",
     "express-session": "^1.17.3",
     "googleapis": "^133.0.0",
+    "openai": "^4.78.1",
     "sqlite3": "^5.1.7"
   }
 }
