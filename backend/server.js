@@ -135,6 +135,160 @@ app.get("/api/sheets/read", requireAuth, async (req, res) => {
   }
 });
 
+function normalizeMessage(message) {
+  return String(message || "").toLowerCase();
+}
+
+function resolveFieldFromMessage(message, schema, fallbackKeywords = []) {
+  const columns = Array.isArray(schema?.columns) ? schema.columns.map((col) => col?.name).filter(Boolean) : [];
+  const lower = normalizeMessage(message);
+  let match = columns.find((name) => lower.includes(name.toLowerCase()));
+  if (match) return match;
+
+  const tokens = lower.split(/[\s,]+/).filter(Boolean);
+  let best = null;
+  let bestScore = 0;
+  columns.forEach((name) => {
+    const nameLower = name.toLowerCase();
+    let score = 0;
+    tokens.forEach((token) => {
+      if (token.length < 3) return;
+      if (nameLower.includes(token)) score += 1;
+    });
+    fallbackKeywords.forEach((token) => {
+      if (nameLower.includes(token)) score += 2;
+    });
+    if (score > bestScore) {
+      bestScore = score;
+      best = name;
+    }
+  });
+  return best;
+}
+
+function parseTopN(message) {
+  const match = message.match(/top\s+(\d+)/i);
+  if (!match) return null;
+  const n = Number(match[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function parseAggregation(message) {
+  const lower = normalizeMessage(message);
+  if (lower.includes("average") || lower.includes("avg")) return "avg";
+  if (lower.includes("sum")) return "sum";
+  if (lower.includes("count distinct")) return "count_distinct";
+  if (lower.includes("count")) return "count";
+  return null;
+}
+
+function parseChartType(message) {
+  const lower = normalizeMessage(message);
+  if (lower.includes("bar chart") || lower.includes("bar")) return "bar";
+  if (lower.includes("line chart") || lower.includes("line")) return "line";
+  return null;
+}
+
+function parseFilter(message) {
+  const match = message.match(/filter\s+(.+?)\s+to\s+(.+)/i);
+  if (!match) return null;
+  return { fieldHint: match[1], value: match[2] };
+}
+
+function applyToolCallsToState(state, toolCalls) {
+  let next = { ...state };
+  toolCalls.forEach((call) => {
+    const args = call.args || {};
+    if (call.name === "setMetric") next.selectedMetric = args.field;
+    if (call.name === "setDimension") next.selectedDimension = args.field;
+    if (call.name === "setChartType") next.chartType = args.type;
+    if (call.name === "setAggregation") next.aggregation = args.agg;
+    if (call.name === "setTopN") next.topN = args.n;
+    if (call.name === "setSort") next.sort = { field: args.field, direction: args.direction };
+    if (call.name === "applyFilter") {
+      const filters = Array.isArray(next.filters) ? [...next.filters] : [];
+      const idx = filters.findIndex((f) => f.field === args.field);
+      const nextFilter = { field: args.field, operator: args.operator, value: args.value };
+      if (idx >= 0) filters[idx] = nextFilter;
+      else filters.push(nextFilter);
+      next.filters = filters;
+    }
+    if (call.name === "clearFilter") {
+      next.filters = (next.filters || []).filter((f) => f.field !== args.field);
+    }
+  });
+  return next;
+}
+
+app.post("/api/chat", async (req, res) => {
+  try {
+    const { message, datasetSchema, currentDashboardState } = req.body || {};
+    if (!message) {
+      return res.status(400).json({ ok: false, error: "Missing message." });
+    }
+    const toolCalls = [];
+    const chartType = parseChartType(message);
+    if (chartType) {
+      toolCalls.push({ name: "setChartType", args: { type: chartType } });
+    }
+
+    const aggregation = parseAggregation(message);
+    if (aggregation) {
+      toolCalls.push({ name: "setAggregation", args: { agg: aggregation } });
+    }
+
+    const topN = parseTopN(message);
+    if (topN) {
+      toolCalls.push({ name: "setTopN", args: { n: topN } });
+    }
+
+    const byMatch = message.match(/by\s+([^.;]+)/i);
+    if (byMatch) {
+      const byHint = byMatch[1];
+      const field = resolveFieldFromMessage(byHint, datasetSchema, ["org", "name", "company"]);
+      if (field) toolCalls.push({ name: "setDimension", args: { field } });
+    }
+
+    if (/metric|by\s+/i.test(message)) {
+      const metricField = resolveFieldFromMessage(message, datasetSchema, ["count", "unique", "total"]);
+      if (metricField && /top\s+\d+/i.test(message)) {
+        toolCalls.push({ name: "setMetric", args: { field: metricField } });
+      }
+    }
+
+    const filter = parseFilter(message);
+    if (filter) {
+      const field = resolveFieldFromMessage(filter.fieldHint, datasetSchema, ["org", "name", "company"]);
+      if (field) {
+        toolCalls.push({ name: "applyFilter", args: { field, operator: "==", value: filter.value } });
+      }
+    }
+
+    if (!toolCalls.length) {
+      return res.status(200).json({
+        ok: false,
+        error: "I could not map that request to a supported chart action. Try rephrasing.",
+      });
+    }
+
+    const nextState = applyToolCallsToState(currentDashboardState || {}, toolCalls);
+    const proposedDiff = {
+      before: currentDashboardState || {},
+      after: nextState,
+    };
+
+    return res.json({
+      ok: true,
+      toolCalls,
+      assistantMessage: "Here is a preview of the requested chart updates.",
+      proposedDiff,
+      notes: "Actions are returned as validated tool calls.",
+    });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 const port = process.env.PORT || 8787;
 app.listen(port, () => {
   console.log(`Backend listening on ${port}`);
