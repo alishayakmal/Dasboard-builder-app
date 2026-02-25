@@ -823,10 +823,6 @@ function switchTab(tabName) {
   const isSourceTab = ["upload", "sheets", "api", "pdf"].includes(tabName);
   if (isSourceTab && hasUserDataLoaded() && state.uiMode === "ready") {
     resetStateForNewDataset();
-    tabName = "upload";
-  }
-  if (isSourceTab && !hasUserDataLoaded()) {
-    tabName = "upload";
   }
   tabButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === tabName);
