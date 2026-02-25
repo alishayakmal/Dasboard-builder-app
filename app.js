@@ -1101,7 +1101,15 @@ async function handleChatSend() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const data = await response.json();
+    const text = await response.text();
+    let data = null;
+    try {
+      data = JSON.parse(text);
+    } catch (error) {
+      console.error("Chat response not JSON:", text.slice(0, 200));
+      setChatStatus("Backend did not return JSON. Check proxy and backend status.", "error");
+      return;
+    }
     if (!response.ok || data?.ok === false) {
       setChatStatus(data?.error || "Chat request failed.", "error");
       return;
