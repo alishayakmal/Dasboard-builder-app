@@ -359,110 +359,114 @@
               <button id="downloadInsights" class="ghost" data-action="download-insights">Download insights</button>
               <button id="exportSheets" class="ghost" data-action="export-sheets">Export to Google Sheets</button>
             </div>
+            <label class="helper-check" for="includeDiagnosticsExport">
+              <input type="checkbox" id="includeDiagnosticsExport" />
+              <span>Include diagnostics in export</span>
+            </label>
             <p id="exportStatus" class="helper-text"></p>
           </div>
         </section>
 
         <section class="charts">
           <div class="data-summary-panel" id="dataSummaryPanel"></div>
-          <div class="chart-card dashCard">
+          <div class="chart-card dashCard execCard">
             <div class="chart-header">
               <h3 id="trendTitle">Trend</h3>
               <p id="trendSubtitle"></p>
             </div>
-            <div class="dashCardBody">
-              <div class="chartWrap">
+            <div class="dashCardBody execCardBody noScroll cardBody">
+              <div class="trendChartWrap chartWrap">
                 <div id="trendEmptyState" class="trend-empty hidden"></div>
                 <canvas id="trendChart" height="140"></canvas>
               </div>
             </div>
           </div>
-          <div class="chart-card dashCard">
+          <div class="chart-card dashCard execCard">
             <div class="chart-header">
               <h3 id="barTitle">Breakdown</h3>
               <p id="barSubtitle"></p>
             </div>
-            <div class="dashCardBody">
+            <div class="dashCardBody execCardBody">
               <div class="chartWrap">
                 <canvas id="barChart" height="140"></canvas>
               </div>
             </div>
           </div>
-          <div class="chart-card dashCard">
-            <div class="chart-header">
-              <h3 id="extraTitle">Analysis</h3>
-              <p id="extraSubtitle"></p>
-            </div>
-            <div class="dashCardBody">
-              <div class="chartWrap">
-                <canvas id="extraChart" height="140"></canvas>
-              </div>
-            </div>
-          </div>
         </section>
 
-        <section class="heatmap-card" id="comparisonSection">
-          <div class="chart-header">
-            <h3>Metric Comparison</h3>
-            <p>Pick a primary metric and compare drivers, trends, and segments.</p>
-            <p id="comparisonNote" class="helper-text"></p>
-          </div>
-          <div class="comparison-controls">
-            <div class="control-group">
-              <label for="primaryMetricSelect">Primary Metric</label>
-              <select id="primaryMetricSelect"></select>
-            </div>
-            <div class="control-group">
-              <label for="compareMetricSelect">Compare Against (up to 5)</label>
-              <select id="compareMetricSelect" multiple size="4"></select>
-            </div>
-          </div>
-          <div class="heatmap-wrapper">
-            <canvas id="comparisonTrendChart"></canvas>
-          </div>
-          <div class="comparison-grid">
-            <div class="comparison-card">
-              <h4>Drivers and relationships</h4>
-              <ul id="driversList"></ul>
-            </div>
-            <div class="comparison-card">
-              <h4>Segment view</h4>
-              <div class="heatmap-wrapper small">
-                <canvas id="segmentChart"></canvas>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="insights-card dashCard">
+        <section class="insights-card dashCard execCard">
           <div class="chart-header">
             <h3>Insights</h3>
             <p>What changed, what stands out, and where to look next.</p>
           </div>
-          <div class="dashCardBody">
+          <div class="dashCardBody execCardBody">
             <ul id="insightsList"></ul>
           </div>
         </section>
 
-        <section class="table-card dashCard">
-          <div class="table-header">
-            <h3>Data Profile</h3>
-            <p>Column schema, quality, and quick stats.</p>
-          </div>
-          <div class="table-wrap dashCardBody">
-            <table id="profileTable"></table>
-          </div>
-        </section>
+        <details id="diagnosticsSection" class="diagnostics-accordion">
+          <summary>Dashboard diagnostics (schema and sample rows)</summary>
+          <div class="diagnostics-content">
+            <p class="diagnostics-subtitle">Use this section to validate fields, missingness, and sample records.</p>
+            <div class="diagnostics-flow">
+              <section class="table-card dashCard execCard">
+                <div class="table-header">
+                  <h3>Data Profile</h3>
+                  <p>Column schema, quality, and quick stats.</p>
+                  <p id="profileSummaryLine" class="helper-text"></p>
+                </div>
+                <div class="execCardBody cardBody">
+                  <div class="table-wrap tableWrap">
+                    <table id="profileTable"></table>
+                  </div>
+                </div>
+              </section>
 
-        <section class="table-card dashCard">
-          <div class="table-header">
-            <h3>Data Preview</h3>
-            <p>Click any column to sort. Showing up to 50 rows.</p>
+              <section class="table-card dashCard execCard corrCard">
+                <div class="table-header">
+                  <h3 id="diagCorrTitle">Correlation analysis</h3>
+                  <p id="diagCorrSubtitle">r=— • n=—</p>
+                </div>
+                <div class="execCardBody cardBody">
+                  <div id="diagCorrExplain" class="diag-corr-explain helper-text"></div>
+                  <p id="diagCorrTakeaway" class="helper-text"></p>
+                  <p id="diagCorrCaution" class="helper-text"></p>
+                  <div class="diagnostics-corr-controls">
+                    <div class="control-group">
+                      <label for="diagCorrX">X metric</label>
+                      <select id="diagCorrX"></select>
+                    </div>
+                    <div class="control-group">
+                      <label for="diagCorrY">Y metric</label>
+                      <select id="diagCorrY"></select>
+                    </div>
+                  </div>
+                  <p id="diagCorrSummary" class="helper-text"></p>
+                  <div class="chartWrap diagnostics-corr-chart correlationChartWrap corrChartWrap">
+                    <canvas id="diagCorrChart" height="180"></canvas>
+                  </div>
+                </div>
+              </section>
+
+              <section class="table-card dashCard execCard">
+                <div class="table-header">
+                  <h3>Data Preview</h3>
+                  <p>Click any column to sort. Showing up to 50 rows.</p>
+                  <label class="helper-check" for="previewCompactToggle">
+                    <input type="checkbox" id="previewCompactToggle" checked />
+                    <span>Compact view (6-8 key columns)</span>
+                  </label>
+                </div>
+                <div class="execCardBody">
+                  <div class="table-wrap tableWrap">
+                    <table id="dataTable"></table>
+                  </div>
+                </div>
+              </section>
+            </div>
+
           </div>
-          <div class="table-wrap dashCardBody">
-            <table id="dataTable"></table>
-          </div>
-        </section>
+        </details>
       </section>
     </main>
   </main>
