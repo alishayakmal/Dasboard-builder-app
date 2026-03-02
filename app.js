@@ -4479,22 +4479,27 @@ function renderCharts(rows) {
   }
 
   let dimension = state.selectedDimension || chooseBestDimension(state.schema.profiles, state.schema.categoricals || []) || state.dateColumn;
-  let breakdown = null;
   if (dimension) {
     state.selectedDimension = dimension;
     if (dimensionSelect.value !== dimension) dimensionSelect.value = dimension;
-    breakdown = aggregateByCategory(rows, dimension, metric, state.topN, metricType);
+    const breakdown = buildTopCategoriesWithOther(rows, dimension, metric, metricType, 8);
     barTitle.textContent = "Performance details";
     barSubtitle.textContent = `Dimension: ${dimension}`;
-    barChartInstance = createBarChart("barChart", breakdown.labels, breakdown.values, metricType, breakdown.counts);
+    const hasMeasuredValues = (breakdown.values || []).some((value) => Number(value) > 0);
+    if (!breakdown.labels.length || !hasMeasuredValues) {
+      setChartCardEmptyState("barChart", "No measurable activity for selected dimension.");
+    } else {
+      setChartCardEmptyState("barChart", "");
+      const barCanvas = document.getElementById("barChart");
+      if (barCanvas) barCanvas.style.height = "240px";
+      barChartInstance = createHorizontalBarChart("barChart", breakdown.labels, breakdown.values, metricType, breakdown.counts);
+    }
   } else {
+    barTitle.textContent = "Performance details";
+    barSubtitle.textContent = "Dimension unavailable";
+    setChartCardEmptyState("barChart", "Dimension unavailable in dataset.");
     state.selectedDimension = null;
     if (dimensionSelect) dimensionSelect.value = "";
-    const labels = rows.map((_, index) => index + 1);
-    const values = rows.map((row) => parseNumber(row[metric]) ?? 0);
-    barTitle.textContent = "Performance details";
-    barSubtitle.textContent = "No category column detected";
-    barChartInstance = createBarChart("barChart", labels, values, metricType);
   }
 
   const correlationPair = findStrongestCorrelation(rows, state.schema.numeric);
@@ -4848,6 +4853,77 @@ function aggregateByCategory(rows, dimension, metric, topN, metricType, aggregat
     counts: entries.map((item) => item.count),
   };
 }
+
+function buildTopCategoriesWithOther(rows, dimension, metric, metricType, topN = 8) {
+  const totals = new Map();
+  const counts = new Map();
+  (rows || []).forEach((row) => {
+    const key = row?.[dimension] ? String(row[dimension]).trim() : "Unknown";
+    const metricValue = parseNumber(row?.[metric]);
+    if (metricValue === null) return;
+    totals.set(key, (totals.get(key) || 0) + metricValue);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+
+  const sorted = Array.from(totals.entries())
+    .map(([label, total]) => {
+      const count = counts.get(label) || 0;
+      return {
+        label,
+        total,
+        count,
+        value: metricType?.kind === "rate" ? (count ? total / count : 0) : total,
+      };
+    })
+    .sort((a, b) => b.value - a.value);
+
+  const head = sorted.slice(0, topN);
+  const tail = sorted.slice(topN);
+  if (tail.length) {
+    const otherTotal = tail.reduce((sum, item) => sum + item.total, 0);
+    const otherCount = tail.reduce((sum, item) => sum + item.count, 0);
+    head.push({
+      label: "Other",
+      total: otherTotal,
+      count: otherCount,
+      value: metricType?.kind === "rate" ? (otherCount ? otherTotal / otherCount : 0) : otherTotal,
+    });
+  }
+
+  return {
+    labels: head.map((item) => item.label),
+    values: head.map((item) => item.value),
+    counts: head.map((item) => item.count),
+  };
+}
+
+function truncateLabel(text, max = 22) {
+  const value = String(text || "");
+  if (value.length <= max) return value;
+  return `${value.slice(0, Math.max(0, max - 1))}\u2026`;
+}
+
+function setChartCardEmptyState(canvasId, message = "") {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const card = canvas.closest(".chart-card");
+  if (!card) return;
+  let messageEl = card.querySelector(".card-empty-message");
+  const text = String(message || "").trim();
+  if (!text) {
+    if (messageEl) messageEl.remove();
+    canvas.classList.remove("hidden");
+    return;
+  }
+  if (!messageEl) {
+    messageEl = document.createElement("div");
+    messageEl.className = "card-empty-message";
+    card.appendChild(messageEl);
+  }
+  messageEl.textContent = text;
+  canvas.classList.add("hidden");
+}
+
 function createLineChart(canvasId, labels, values, metricType, counts = []) {
   const ctx = document.getElementById(canvasId);
   return new Chart(ctx, {
@@ -4944,6 +5020,86 @@ function createBarChart(canvasId, labels, values, metricType, counts = []) {
               },
             }
           : { beginAtZero: true },
+      },
+    },
+    plugins: [ChartDataLabels],
+  });
+}
+
+function createHorizontalBarChart(canvasId, labels, values, metricType, counts = []) {
+  const ctx = document.getElementById(canvasId);
+  const fullLabels = labels.map((label) => String(label || ""));
+  const displayLabels = fullLabels.map((label) => truncateLabel(label, 22));
+  return new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: displayLabels,
+      datasets: [
+        {
+          label: "Total",
+          data: values,
+          backgroundColor: "#8b5cf6",
+          borderRadius: 8,
+          barThickness: 14,
+          maxBarThickness: 16,
+        },
+      ],
+    },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      maintainAspectRatio: false,
+      layout: { padding: { right: 28 } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (items) => {
+              const index = items?.[0]?.dataIndex ?? 0;
+              return fullLabels[index] || displayLabels[index] || "";
+            },
+            label: (context) => {
+              const n = counts?.[context.dataIndex] ?? null;
+              const valueLabel = formatMetricValue(context.parsed.x, metricType);
+              return n ? `${valueLabel} (n=${n})` : valueLabel;
+            },
+          },
+        },
+        datalabels: {
+          color: "#ffffff",
+          anchor: "end",
+          align: "right",
+          offset: 4,
+          formatter: (value) => formatMetricValue(value, metricType),
+          clamp: true,
+          clip: false,
+        },
+      },
+      scales: {
+        y: {
+          ticks: {
+            autoSkip: false,
+            maxRotation: 0,
+            minRotation: 0,
+          },
+        },
+        x: metricType?.kind === "rate"
+          ? {
+              min: 0,
+              max: 1,
+              ticks: {
+                maxRotation: 0,
+                minRotation: 0,
+                callback: (value) => `${(Number(value) * 100).toFixed(0)}%`,
+              },
+            }
+          : {
+              beginAtZero: true,
+              ticks: {
+                maxRotation: 0,
+                minRotation: 0,
+              },
+            },
       },
     },
     plugins: [ChartDataLabels],
