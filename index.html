@@ -245,6 +245,36 @@
             </label>
             <div id="pdfStatus" class="helper-text">PDFs must include visible table rows and columns.</div>
             <div id="pdfMeta" class="helper-text"></div>
+            <section id="pdfReviewPanel" class="hidden pdf-review-panel">
+              <div id="pdfReviewBanner" class="helper-text hidden"></div>
+              <div id="pdfQualitySummary" class="helper-text"></div>
+              <div id="pdfDetectedSchema" class="helper-text"></div>
+              <div id="pdfGenericWarning" class="helper-text hidden"></div>
+              <div class="tableWrap">
+                <table id="pdfPreviewTable"></table>
+              </div>
+              <div id="pdfRawPreview" class="helper-text"></div>
+              <div id="pdfMappingPanel" class="hidden">
+                <p class="helper-text">Low confidence detected. Map fields manually to continue.</p>
+                <div class="diagnostics-corr-controls">
+                  <div class="control-group">
+                    <label for="pdfMapMetric">Primary metric</label>
+                    <select id="pdfMapMetric"></select>
+                  </div>
+                  <div class="control-group">
+                    <label for="pdfMapDimension">Breakdown dimension</label>
+                    <select id="pdfMapDimension"></select>
+                  </div>
+                  <div class="control-group">
+                    <label for="pdfMapDate">Date field (optional)</label>
+                    <select id="pdfMapDate"></select>
+                  </div>
+                </div>
+              </div>
+              <div class="sheets-actions">
+                <button id="pdfUseTable" class="primary">Use this table</button>
+              </div>
+            </section>
           </div>
         </div>
       </section>
