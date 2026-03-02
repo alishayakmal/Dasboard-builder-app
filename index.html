@@ -158,13 +158,6 @@
           <button class="tab-button" data-tab="samples" data-action="tab-samples">Samples</button>
         </div>
         <div class="app-toolbar">
-          <label class="toolbar-field">
-            <span>Industry</span>
-            <select id="industrySelect" disabled>
-              <option value="All">All</option>
-            </select>
-            <span id="industryHelper" class="helper-text"></span>
-          </label>
           <button id="downloadPdf" class="primary" data-action="export-pdf">Export PDF</button>
           <button id="signOutButton" class="ghost" data-action="signout">Sign out</button>
         </div>
@@ -208,7 +201,7 @@
                   <ul class="state-list compact">
                     <li>Finds date/month/period columns for trend analysis</li>
                     <li>Profiles data quality before analysis</li>
-                    <li>Exports filtered CSV, insights and PDF after analysis</li>
+                    <li>Exports CSV, insights and PDF after analysis</li>
                   </ul>
                 </details>
               </div>
@@ -359,18 +352,10 @@
               <option value="general">General</option>
             </select>
           </div>
-          <div class="control-group">
-            <label for="dateStart">Date start</label>
-            <input type="date" id="dateStart" />
-          </div>
-          <div class="control-group">
-            <label for="dateEnd">Date end</label>
-            <input type="date" id="dateEnd" />
-          </div>
           <div class="control-group control-actions">
             <label>Actions</label>
             <div class="control-buttons">
-              <button id="exportCsv" class="ghost" data-action="export-csv">Export filtered CSV</button>
+              <button id="exportCsv" class="ghost" data-action="export-csv">Export CSV</button>
               <button id="downloadInsights" class="ghost" data-action="download-insights">Download insights</button>
               <button id="exportSheets" class="ghost" data-action="export-sheets">Export to Google Sheets</button>
             </div>
@@ -379,12 +364,13 @@
         </section>
 
         <section class="charts">
-          <div class="filter-badge" id="filterBadge">Filtered to: All</div>
+          <div class="data-summary-panel" id="dataSummaryPanel"></div>
           <div class="chart-card">
             <div class="chart-header">
               <h3 id="trendTitle">Trend</h3>
               <p id="trendSubtitle"></p>
             </div>
+            <div id="trendEmptyState" class="trend-empty hidden"></div>
             <canvas id="trendChart" height="140"></canvas>
           </div>
           <div class="chart-card">
