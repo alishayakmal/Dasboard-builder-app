@@ -109,6 +109,13 @@ p {
   flex-wrap: wrap;
   justify-content: space-between;
   flex: 1;
+  pointer-events: auto;
+}
+
+.app-header-actions .header-tabs,
+.app-header-actions .tab-button,
+.app-toolbar button {
+  pointer-events: auto;
 }
 
 .brand {
