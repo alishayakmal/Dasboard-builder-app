@@ -225,6 +225,7 @@ const percentFormatter = new Intl.NumberFormat("en-US", {
 
 const MAX_HEATMAP_ROWS = 8;
 const MAX_HEATMAP_COLS = 6;
+const PDF_RECONSTRUCTION_CONFIDENCE_THRESHOLD = 0.7;
 const compactNumberFormatter = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
 const compactCurrencyFormatter = new Intl.NumberFormat("en-US", {
   notation: "compact",
@@ -2876,9 +2877,27 @@ async function handlePdfUpload(file) {
           width: item.width || 0,
           height: item.height || 0,
         }));
-      const pageRows = reconstructPdfPageRows(items);
-      const pageTables = detectPdfTablesFromRows(pageRows);
-      pageAnalyses.push({ pageNum, items, rows: pageRows, tables: pageTables });
+      const pageReconstruction = reconstructPdfPageRows(items);
+      const confidenceScore = Number(pageReconstruction?.confidence || 0);
+      const accepted = confidenceScore >= PDF_RECONSTRUCTION_CONFIDENCE_THRESHOLD;
+      console.log(`[PDF] page=${pageNum} reconstruction confidence=${confidenceScore.toFixed(3)} accepted=${accepted}`);
+      if (accepted) {
+        console.log(`[PDF] page=${pageNum} numericColumns=${(pageReconstruction.numericColumns || []).join(",") || "none"}`);
+      }
+      const pageRows = accepted ? (pageReconstruction.rows || []) : [];
+      const pageTables = accepted ? detectPdfTablesFromRows(pageRows) : [];
+      pageAnalyses.push({
+        pageNum,
+        items,
+        rows: pageRows,
+        tables: pageTables,
+        reconstruction: {
+          confidence: confidenceScore,
+          accepted,
+          numericColumns: pageReconstruction.numericColumns || [],
+          anchors: pageReconstruction.anchors || [],
+        },
+      });
     }
     const totalTablesFound = pageAnalyses.reduce((sum, page) => sum + ((page.tables || []).length), 0);
     console.log("PDF tablesFound", totalTablesFound);
@@ -3011,55 +3030,119 @@ function extractPdfKeyValueRows(pageAnalyses) {
 }
 
 function reconstructPdfPageRows(items) {
-  const yTolerance = 3;
+  const tokens = (items || [])
+    .map((item) => ({
+      text: String(item?.text || "").trim(),
+      x: Number(item?.x || 0),
+      y: Number(item?.y || 0),
+      width: Math.max(0, Number(item?.width || 0)),
+      height: Math.max(0, Number(item?.height || 0)),
+    }))
+    .filter((item) => item.text);
+  if (!tokens.length) {
+    return { rows: [], confidence: 0, numericColumns: [], anchors: [] };
+  }
+
+  const avgHeight = tokens.reduce((sum, t) => sum + (t.height || 0), 0) / Math.max(tokens.length, 1);
+  const yTolerance = Math.max(2.2, Math.min(6, avgHeight * 0.45 || 3.2));
+  const rowBands = clusterPdfTokensByY(tokens, yTolerance);
+  if (!rowBands.length) {
+    return { rows: [], confidence: 0, numericColumns: [], anchors: [] };
+  }
+
+  const xAnchors = buildPdfColumnAnchors(rowBands);
+  if (!xAnchors.length) {
+    return { rows: [], confidence: 0, numericColumns: [], anchors: [] };
+  }
+
+  const matrixRows = rowBands.map((row) => {
+    const cells = Array.from({ length: xAnchors.length }, () => "");
+    row.items.forEach((item) => {
+      const centerX = item.x + (item.width / 2);
+      const idx = nearestAnchorIndex(centerX, xAnchors);
+      if (idx < 0) return;
+      cells[idx] = cells[idx] ? `${cells[idx]} ${item.text}`.trim() : item.text;
+    });
+    return { y: row.y, cells: cells.map((cell) => String(cell || "").trim()) };
+  });
+
+  const compactRows = compactPdfMatrixColumns(matrixRows);
+  const usableRows = compactRows.filter((row) => row.cells.filter(Boolean).length >= 2);
+  const numericProfile = inferPdfNumericColumns(usableRows);
+  const confidence = scorePdfReconstruction({
+    rows: usableRows,
+    anchors: xAnchors,
+    numericProfile,
+    tokenCount: tokens.length,
+  });
+
+  return {
+    rows: usableRows,
+    confidence,
+    numericColumns: numericProfile.indices,
+    anchors: xAnchors,
+  };
+}
+
+function clusterPdfTokensByY(items, yTolerance) {
   const rows = [];
-  const sortedItems = [...(items || [])].sort((a, b) => {
+  const sorted = [...(items || [])].sort((a, b) => {
     const yDiff = b.y - a.y;
     if (Math.abs(yDiff) > yTolerance) return yDiff;
     return a.x - b.x;
   });
 
-  sortedItems.forEach((item) => {
+  sorted.forEach((item) => {
     let target = rows.find((row) => Math.abs(row.y - item.y) <= yTolerance);
     if (!target) {
       target = { y: item.y, items: [] };
       rows.push(target);
     }
     target.items.push(item);
+    const itemCount = target.items.length;
+    target.y = ((target.y * (itemCount - 1)) + item.y) / itemCount;
   });
 
+  rows.forEach((row) => row.items.sort((a, b) => a.x - b.x));
   rows.sort((a, b) => b.y - a.y);
-  const xAnchors = buildPdfColumnAnchors(rows);
-
-  return rows.map((row) => {
-    const cells = Array.from({ length: xAnchors.length }, () => "");
-    row.items
-      .sort((a, b) => a.x - b.x)
-      .forEach((item) => {
-        const idx = nearestAnchorIndex(item.x, xAnchors);
-        if (idx < 0) return;
-        cells[idx] = cells[idx] ? `${cells[idx]} ${item.text}`.trim() : item.text;
-      });
-    const compact = cells.map((cell) => String(cell || "").trim());
-    return { y: row.y, cells: compact };
-  }).filter((row) => row.cells.filter(Boolean).length >= 2);
+  return rows.filter((row) => (row.items || []).length >= 2);
 }
 
 function buildPdfColumnAnchors(rows) {
   const xs = [];
   (rows || []).forEach((row) => {
     (row.items || []).forEach((item) => {
-      if (item.x != null) xs.push(item.x);
+      const centerX = item.x + ((item.width || 0) / 2);
+      if (Number.isFinite(centerX)) xs.push(centerX);
     });
   });
+  if (!xs.length) return [];
   xs.sort((a, b) => a - b);
-  const anchors = [];
-  const tolerance = 14;
+
+  const stepDiffs = [];
+  for (let i = 1; i < xs.length; i += 1) {
+    const diff = xs[i] - xs[i - 1];
+    if (diff > 0) stepDiffs.push(diff);
+  }
+  stepDiffs.sort((a, b) => a - b);
+  const medianDiff = stepDiffs.length ? stepDiffs[Math.floor(stepDiffs.length / 2)] : 12;
+  const tolerance = Math.max(8, Math.min(24, medianDiff * 0.9));
+
+  const clusters = [];
   xs.forEach((x) => {
-    const last = anchors[anchors.length - 1];
-    if (!last || Math.abs(last - x) > tolerance) anchors.push(x);
+    const last = clusters[clusters.length - 1];
+    if (!last || Math.abs(last.mean - x) > tolerance) {
+      clusters.push({ mean: x, values: [x] });
+      return;
+    }
+    last.values.push(x);
+    last.mean = last.values.reduce((sum, value) => sum + value, 0) / last.values.length;
   });
-  return anchors.slice(0, 18);
+
+  return clusters
+    .map((cluster) => cluster.mean)
+    .sort((a, b) => a - b)
+    .slice(0, 24);
 }
 
 function nearestAnchorIndex(x, anchors) {
@@ -3074,6 +3157,79 @@ function nearestAnchorIndex(x, anchors) {
     }
   });
   return bestIdx;
+}
+
+function compactPdfMatrixColumns(rows) {
+  if (!Array.isArray(rows) || !rows.length) return [];
+  const width = Math.max(...rows.map((row) => (row.cells || []).length), 0);
+  if (!width) return rows;
+  const keepIndices = [];
+  for (let idx = 0; idx < width; idx += 1) {
+    const hasContent = rows.some((row) => String(row?.cells?.[idx] || "").trim() !== "");
+    if (hasContent) keepIndices.push(idx);
+  }
+  return rows.map((row) => ({
+    y: row.y,
+    cells: keepIndices.map((idx) => String(row?.cells?.[idx] || "").trim()),
+  }));
+}
+
+function inferPdfNumericColumns(rows) {
+  if (!Array.isArray(rows) || !rows.length) return { indices: [], ratios: [] };
+  const width = Math.max(...rows.map((row) => (row.cells || []).length), 0);
+  const ratios = [];
+  for (let idx = 0; idx < width; idx += 1) {
+    let nonEmpty = 0;
+    let numeric = 0;
+    rows.forEach((row) => {
+      const value = String(row?.cells?.[idx] || "").trim();
+      if (!value) return;
+      nonEmpty += 1;
+      if (parseNumber(value) !== null) numeric += 1;
+    });
+    ratios.push(nonEmpty ? numeric / nonEmpty : 0);
+  }
+  const indices = ratios
+    .map((ratio, idx) => ({ ratio, idx }))
+    .filter((entry) => entry.ratio >= 0.6)
+    .map((entry) => entry.idx);
+  return { indices, ratios };
+}
+
+function scorePdfReconstruction({ rows, anchors, numericProfile, tokenCount }) {
+  if (!Array.isArray(rows) || rows.length < 2 || !anchors?.length) return 0;
+  const width = Math.max(...rows.map((row) => (row.cells || []).length), 0);
+  if (!width) return 0;
+
+  const totalCells = rows.length * width;
+  let filledCells = 0;
+  const rowFillRatios = rows.map((row) => {
+    const filled = (row.cells || []).filter((cell) => String(cell || "").trim() !== "").length;
+    filledCells += filled;
+    return filled / Math.max(width, 1);
+  });
+  const fillDensity = totalCells ? filledCells / totalCells : 0;
+  const avgRowFill = rowFillRatios.reduce((sum, ratio) => sum + ratio, 0) / Math.max(rowFillRatios.length, 1);
+  const rowVariance = rowFillRatios.reduce((sum, ratio) => sum + Math.pow(ratio - avgRowFill, 2), 0) / Math.max(rowFillRatios.length, 1);
+  const rowStability = 1 - Math.min(1, rowVariance * 6);
+  const numericStrength = (() => {
+    const ratios = numericProfile?.ratios || [];
+    if (!ratios.length) return 0;
+    const ranked = [...ratios].sort((a, b) => b - a);
+    const top2 = ranked.slice(0, 2);
+    return top2.reduce((sum, value) => sum + value, 0) / Math.max(top2.length, 1);
+  })();
+  const anchorEfficiency = Math.min(1, width / Math.max(anchors.length, 1));
+  const tokenCoverage = Math.min(1, filledCells / Math.max(tokenCount, 1));
+
+  const confidence =
+    (fillDensity * 0.32) +
+    (rowStability * 0.2) +
+    (numericStrength * 0.2) +
+    (anchorEfficiency * 0.12) +
+    (tokenCoverage * 0.16);
+
+  return Math.max(0, Math.min(1, confidence));
 }
 
 function detectPdfTablesFromRows(pageRows) {
