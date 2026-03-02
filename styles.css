@@ -1837,6 +1837,18 @@ button:disabled {
   padding: 12px;
 }
 
+.card-empty-message {
+  min-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--text-secondary);
+  border: 1px dashed rgba(148, 163, 184, 0.2);
+  border-radius: 12px;
+  padding: 12px;
+}
+
 .unified-dashboard-shell {
   display: grid;
   gap: 18px;
