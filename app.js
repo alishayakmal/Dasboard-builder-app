@@ -106,6 +106,13 @@ const apiEndpoint = document.getElementById("apiEndpoint");
 const testApiButton = document.getElementById("testApi");
 const apiStatus = document.getElementById("apiStatus");
 const sampleGallery = document.getElementById("sampleGallery");
+const sampleKpiGrid = document.getElementById("sampleKpiGrid");
+const sampleTrendMetric = document.getElementById("sampleTrendMetric");
+const sampleTrendBreakdown = document.getElementById("sampleTrendBreakdown");
+const sampleTrendChart = document.getElementById("sampleTrendChart");
+const sampleInsightsRoot = document.getElementById("sampleInsightsRoot");
+const sampleDimensionSelect = document.getElementById("sampleDimensionSelect");
+const sampleBreakdownChart = document.getElementById("sampleBreakdownChart");
 const suggestedTrends = document.getElementById("suggestedTrends");
 const chatPanel = document.getElementById("chatPanel");
 const chatInput = document.getElementById("chatInput");
@@ -167,7 +174,8 @@ const signupFormState = {
 const USERS_KEY = "shay_users";
 const SESSION_KEY = "shay_session";
 
-const samplePath = "data-sample.csv";
+const DEMO_CSV_URL = new URL("./data-sample.csv", document.baseURI).toString();
+const LOCAL_PATH_ERROR_MESSAGE = "Local file paths are not accessible in the browser. Please upload the file or host it in the repo.";
 // Use the deployed Apps Script Web App URL ending in /exec (not the editor URL).
 const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbznq6aHhsHA6uiQg_AoJ6PG-WioCqriL_Z82SutiX1VeoI1TstpdqYvNPfahI8ZhwjsEQ/exec";
 const GOOGLE_CLIENT_ID = "611908111462-d5mfvb991hgbfvinop8hgeec3li7rqbp.apps.googleusercontent.com";
@@ -262,6 +270,23 @@ const state = {
   uiMode: "empty", // empty | loading | ready | error
   parseStatus: "idle",
   error: null,
+};
+
+const landingDemoState = {
+  rows: [],
+  columns: [],
+  profiles: {},
+  numericColumns: [],
+  categoricalColumns: [],
+  dateColumn: null,
+  selectedMetric: null,
+  selectedBreakdown: "overall",
+  selectedDimension: null,
+  breakdownMap: {
+    plan: null,
+    channel: null,
+  },
+  kpiCards: [],
 };
 
 const appStore = (() => {
@@ -597,7 +622,9 @@ function init() {
   }
 
   updateSignInButton();
+  wireNoLocalPathValidation();
   renderSampleGallery();
+  renderLandingDemoPreview();
   handleRoute();
   updateGoogleStatus(false);
   checkWebhookHealth();
@@ -1096,7 +1123,8 @@ async function handleChatSend() {
     currentDashboardState: state.chartState,
   };
   try {
-    const response = await fetch("/api/chat", {
+    const chatApiUrl = new URL("./api/chat", document.baseURI).toString();
+    const response = await fetch(chatApiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -1198,11 +1226,9 @@ function loadFixtureCsv() {
 }
 
 function applyBrandAssets() {
-  const path = window.location.pathname || "/";
-  const base = path.endsWith("/") ? path : path.replace(/\/[^/]*$/, "/");
-  const logoSrc = `${base}Brand/logo.png`;
-  const logo192 = `${base}Brand/logo-192.png`;
-  const logo512 = `${base}Brand/logo-512.png`;
+  const logoSrc = new URL("./Brand/logo.png", document.baseURI).toString();
+  const logo192 = new URL("./Brand/logo-192.png", document.baseURI).toString();
+  const logo512 = new URL("./Brand/logo-512.png", document.baseURI).toString();
 
   document.querySelectorAll(".logo-img").forEach((img) => {
     img.src = logoSrc;
@@ -1866,6 +1892,7 @@ async function handleApiFetch() {
     apiStatus.textContent = "Please enter Base URL and Endpoint to fetch data.";
     return;
   }
+  if (!validateRemoteInput(base, "api") || !validateRemoteInput(endpoint, "api")) return;
   console.log("API selected", base, endpoint);
   appStore.setState({ source: { type: "api", name: `${base}/${endpoint}` }, parseStatus: "parsing", error: null });
   console.log("API parseStatus -> parsing");
@@ -1978,6 +2005,561 @@ function renderSampleGallery() {
   });
 }
 
+function wireNoLocalPathValidation() {
+  const validatePastedPath = (event) => {
+    const target = event?.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
+    if (target.type === "file") return;
+    const pasted = event?.clipboardData?.getData("text") || "";
+    if (!isLikelyLocalWindowsPath(pasted)) return;
+    target.setCustomValidity(LOCAL_PATH_ERROR_MESSAGE);
+    if (typeof target.reportValidity === "function") target.reportValidity();
+    showLocalPathMessageForInput(target);
+  };
+  document.addEventListener("paste", validatePastedPath);
+  document.addEventListener("input", (event) => {
+    const target = event?.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
+    if (target.validationMessage === LOCAL_PATH_ERROR_MESSAGE && !isLikelyLocalWindowsPath(target.value)) {
+      target.setCustomValidity("");
+    }
+  });
+}
+
+function isLikelyLocalWindowsPath(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  return /^[a-zA-Z]:[\\/]/.test(text) || /^\\\\/.test(text) || /^file:\/\/\/[a-zA-Z]:\//i.test(text);
+}
+
+function showLocalPathMessageForInput(input) {
+  if (input === sheetsUrlInput) {
+    if (sheetsHelper) sheetsHelper.textContent = LOCAL_PATH_ERROR_MESSAGE;
+    return;
+  }
+  if (input === apiBaseUrl || input === apiEndpoint) {
+    if (apiStatus) apiStatus.textContent = LOCAL_PATH_ERROR_MESSAGE;
+    return;
+  }
+  setStatus(LOCAL_PATH_ERROR_MESSAGE);
+}
+
+function validateRemoteInput(value, context = "global") {
+  if (!isLikelyLocalWindowsPath(value)) return true;
+  if (context === "sheets") {
+    if (sheetsHelper) sheetsHelper.textContent = LOCAL_PATH_ERROR_MESSAGE;
+  } else if (context === "api") {
+    if (apiStatus) apiStatus.textContent = LOCAL_PATH_ERROR_MESSAGE;
+  } else {
+    setStatus(LOCAL_PATH_ERROR_MESSAGE);
+  }
+  return false;
+}
+
+async function renderLandingDemoPreview() {
+  if (!sampleKpiGrid || !sampleTrendChart || !sampleInsightsRoot || !sampleBreakdownChart) return;
+  sampleKpiGrid.innerHTML = "<div class=\"helper-text\">Loading demo KPIs...</div>";
+  sampleTrendChart.innerHTML = "<div class=\"helper-text\">Loading demo trend...</div>";
+  sampleInsightsRoot.innerHTML = "<div class=\"helper-text\">Loading insight...</div>";
+  sampleBreakdownChart.innerHTML = "<div class=\"helper-text\">Loading breakdown...</div>";
+
+  try {
+    const response = await fetch(DEMO_CSV_URL);
+    if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+    const text = await response.text();
+    const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+    if (parsed.errors?.length) {
+      throw new Error(parsed.errors[0]?.message || "CSV parse error");
+    }
+    const columns = parsed.meta?.fields || [];
+    const rows = (parsed.data || [])
+      .filter((row) => row && typeof row === "object")
+      .map((row) => {
+        const next = {};
+        columns.forEach((col) => {
+          next[col] = row[col];
+        });
+        return next;
+      });
+    if (!rows.length || !columns.length) throw new Error("Demo CSV has no rows.");
+
+    const profiles = profileDataset(rows, columns);
+    const { numericCandidates, dimensionCandidates, dateCandidates } = buildSchemaCandidates(columns, profiles);
+    const dateDetection = detectDateFieldFromProfiles(rows, profiles);
+
+    landingDemoState.rows = rows;
+    landingDemoState.columns = columns;
+    landingDemoState.profiles = profiles;
+    landingDemoState.numericColumns = (numericCandidates || []).length
+      ? numericCandidates
+      : columns.filter((col) => profiles[col]?.type === "numeric");
+    landingDemoState.categoricalColumns = (dimensionCandidates || []).length
+      ? dimensionCandidates
+      : columns.filter((col) => profiles[col]?.type === "categorical");
+    landingDemoState.dateColumn = dateDetection?.field || dateCandidates?.[0] || null;
+    landingDemoState.kpiCards = buildLandingKpiCards();
+    landingDemoState.selectedMetric = landingDemoState.kpiCards[0]?.metric || landingDemoState.numericColumns[0] || null;
+    landingDemoState.selectedBreakdown = "overall";
+    landingDemoState.breakdownMap = {
+      plan: chooseLandingDimensionByHint(["plan", "tier", "segment"]),
+      channel: chooseLandingDimensionByHint(["channel", "source", "campaign"]),
+    };
+    landingDemoState.selectedDimension = chooseLandingDimensionByHint(["region", "plan", "channel"])
+      || landingDemoState.categoricalColumns[0]
+      || null;
+
+    hydrateLandingDemoControls();
+    renderLandingKpis();
+    renderLandingTrend();
+    renderLandingInsightAndBreakdown();
+  } catch (error) {
+    const message = `Demo preview unavailable: ${error?.message || "unknown error"}`;
+    sampleKpiGrid.innerHTML = `<div class="helper-text">${escapeHtml(message)}</div>`;
+    sampleTrendChart.innerHTML = `<div class="helper-text">${escapeHtml(message)}</div>`;
+    sampleInsightsRoot.innerHTML = `<div class="helper-text">${escapeHtml(message)}</div>`;
+    sampleBreakdownChart.innerHTML = `<div class="helper-text">${escapeHtml(message)}</div>`;
+  }
+}
+
+function hydrateLandingDemoControls() {
+  if (sampleTrendMetric) {
+    sampleTrendMetric.innerHTML = "";
+    const metrics = Array.from(new Set([
+      ...landingDemoState.kpiCards.map((card) => card.metric).filter(Boolean),
+      ...(landingDemoState.numericColumns || []),
+    ]));
+    metrics.forEach((metric) => {
+      const option = document.createElement("option");
+      option.value = metric;
+      option.textContent = formatMetricLabel(metric);
+      sampleTrendMetric.appendChild(option);
+    });
+    if (metrics.length) sampleTrendMetric.value = landingDemoState.selectedMetric || metrics[0];
+    sampleTrendMetric.onchange = () => {
+      landingDemoState.selectedMetric = sampleTrendMetric.value;
+      renderLandingTrend();
+      renderLandingInsightAndBreakdown();
+    };
+  }
+
+  if (sampleTrendBreakdown) {
+    const planOption = sampleTrendBreakdown.querySelector("option[value='plan']");
+    const channelOption = sampleTrendBreakdown.querySelector("option[value='channel']");
+    if (planOption) {
+      const mappedPlan = landingDemoState.breakdownMap.plan;
+      planOption.disabled = !mappedPlan;
+      planOption.textContent = mappedPlan ? `By ${formatMetricLabel(mappedPlan)}` : "By plan (not available)";
+    }
+    if (channelOption) {
+      const mappedChannel = landingDemoState.breakdownMap.channel;
+      channelOption.disabled = !mappedChannel;
+      channelOption.textContent = mappedChannel ? `By ${formatMetricLabel(mappedChannel)}` : "By channel (not available)";
+    }
+    if (
+      sampleTrendBreakdown.value !== "overall"
+      && !landingDemoState.breakdownMap[sampleTrendBreakdown.value]
+    ) {
+      sampleTrendBreakdown.value = "overall";
+    }
+    landingDemoState.selectedBreakdown = sampleTrendBreakdown.value || "overall";
+    sampleTrendBreakdown.onchange = () => {
+      landingDemoState.selectedBreakdown = sampleTrendBreakdown.value || "overall";
+      renderLandingTrend();
+    };
+  }
+
+  if (sampleDimensionSelect) {
+    sampleDimensionSelect.innerHTML = "";
+    const dimensions = (landingDemoState.categoricalColumns || []).slice(0, 6);
+    dimensions.forEach((dimension) => {
+      const option = document.createElement("option");
+      option.value = dimension;
+      option.textContent = formatMetricLabel(dimension);
+      sampleDimensionSelect.appendChild(option);
+    });
+    if (dimensions.length) {
+      sampleDimensionSelect.value = landingDemoState.selectedDimension || dimensions[0];
+      landingDemoState.selectedDimension = sampleDimensionSelect.value;
+    }
+    sampleDimensionSelect.onchange = () => {
+      landingDemoState.selectedDimension = sampleDimensionSelect.value;
+      renderLandingInsightAndBreakdown();
+    };
+  }
+}
+
+function chooseLandingDimensionByHint(hints) {
+  return (landingDemoState.categoricalColumns || []).find((col) => {
+    const lower = String(col || "").toLowerCase();
+    return hints.some((hint) => lower.includes(hint));
+  }) || null;
+}
+
+function buildLandingKpiCards() {
+  const targets = [
+    { label: "Revenue", hints: ["revenue", "sales", "gmv", "arr", "mrr", "amount"], fallbackKind: "currency" },
+    { label: "Retention", hints: ["retention", "returnrate", "rate", "percent", "ratio", "churn"], fallbackKind: "rate" },
+    { label: "Active users", hints: ["activeusers", "active_users", "users", "sessions", "visitors", "orders"], fallbackKind: "count" },
+    { label: "Pipeline", hints: ["pipeline", "opportunity", "forecast", "backlog", "bookings"], fallbackKind: "currency" },
+  ];
+  const available = [...(landingDemoState.numericColumns || [])];
+  const chosen = [];
+  targets.forEach((target) => {
+    const metric = pickLandingMetric(target, available, chosen);
+    chosen.push(metric);
+  });
+  return targets.map((target, index) => {
+    const metric = chosen[index] || null;
+    const metricValues = metric ? landingDemoState.rows.map((row) => parseNumber(row[metric])).filter((value) => value !== null) : [];
+    const inferredType = metric ? inferMetricType(metric, metricValues) : { kind: target.fallbackKind };
+    const needsLabelSuffix = metric && !target.hints.some((hint) => metric.toLowerCase().includes(hint));
+    return {
+      label: needsLabelSuffix ? `${target.label} (${formatMetricLabel(metric)})` : target.label,
+      metric,
+      metricType: inferredType,
+    };
+  });
+}
+
+function pickLandingMetric(target, available, reserved) {
+  const candidates = (available || []).filter((metric) => !reserved.includes(metric));
+  if (!candidates.length) return null;
+  const ranked = candidates
+    .map((metric) => {
+      const lower = metric.toLowerCase().replace(/[^a-z0-9]/g, "");
+      let score = 0;
+      target.hints.forEach((hint) => {
+        if (lower.includes(hint)) score += hint.length;
+      });
+      const profile = landingDemoState.profiles?.[metric];
+      if (target.fallbackKind === "rate" && profile?.max !== null && profile?.max <= 1.25) score += 3;
+      if (target.fallbackKind === "currency" && /revenue|sales|amount|cost|price|pipeline/.test(lower)) score += 2;
+      return { metric, score };
+    })
+    .sort((a, b) => b.score - a.score);
+  return ranked[0]?.metric || candidates[0];
+}
+
+function getLandingCurrentAndPriorRows(windowDays = 30) {
+  const rows = landingDemoState.rows || [];
+  const dateColumn = landingDemoState.dateColumn;
+  if (!dateColumn) return { currentRows: rows, priorRows: [] };
+  const datedRows = rows
+    .map((row) => ({ row, date: parseDate(row[dateColumn]) }))
+    .filter((entry) => entry.date)
+    .sort((a, b) => a.date - b.date);
+  if (!datedRows.length) return { currentRows: rows, priorRows: [] };
+  const end = datedRows[datedRows.length - 1].date;
+  const currentStart = new Date(end);
+  currentStart.setUTCDate(currentStart.getUTCDate() - (windowDays - 1));
+  const priorEnd = new Date(currentStart);
+  priorEnd.setUTCDate(priorEnd.getUTCDate() - 1);
+  const priorStart = new Date(priorEnd);
+  priorStart.setUTCDate(priorStart.getUTCDate() - (windowDays - 1));
+  const currentRows = datedRows
+    .filter((entry) => entry.date >= currentStart && entry.date <= end)
+    .map((entry) => entry.row);
+  const priorRows = datedRows
+    .filter((entry) => entry.date >= priorStart && entry.date <= priorEnd)
+    .map((entry) => entry.row);
+  return { currentRows, priorRows };
+}
+
+function aggregateLandingMetric(rows, metric, metricType) {
+  if (!metric) return 0;
+  const values = (rows || []).map((row) => parseNumber(row[metric])).filter((value) => value !== null);
+  if (!values.length) return 0;
+  if (metricType?.kind === "rate") {
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+  }
+  return values.reduce((sum, value) => sum + value, 0);
+}
+
+function buildLandingKpiSparkline(metric, metricType) {
+  const monthly = buildLandingMonthlySeries(metric, null);
+  const values = monthly.values || [];
+  if (!values.length || values.every((value) => value === 0)) {
+    return "<div class=\"helper-text kpi-sparkline-empty\">No time based trend available for this metric.</div>";
+  }
+  const width = 240;
+  const height = 50;
+  const padX = 4;
+  const padY = 4;
+  const minY = Math.min(...values, 0);
+  const maxY = Math.max(...values, 0);
+  const scaleX = (index) => padX + (index / Math.max(values.length - 1, 1)) * (width - padX * 2);
+  const scaleY = (value) => (height - padY) - ((value - minY) / Math.max(maxY - minY, 1)) * (height - padY * 2);
+  const path = values.map((value, index) => `${index === 0 ? "M" : "L"}${scaleX(index)},${scaleY(value)}`).join(" ");
+  const points = values.map((value, index) => {
+    const x = scaleX(index);
+    const label = monthly.labels[index] || "";
+    return `<circle cx="${x}" cy="${scaleY(value)}" r="4" fill="transparent"><title>${label}: ${formatMetricValue(value, metricType)}</title></circle>`;
+  }).join("");
+  return `
+    <svg class="kpi-sparkline" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" aria-label="${escapeHtml(metric)} sparkline">
+      <path d="${path}" fill="none" stroke="rgba(96,165,250,0.95)" stroke-width="1.8"></path>
+      ${points}
+    </svg>
+  `;
+}
+
+function renderLandingKpis() {
+  if (!sampleKpiGrid) return;
+  const { currentRows, priorRows } = getLandingCurrentAndPriorRows();
+  sampleKpiGrid.innerHTML = "";
+  landingDemoState.kpiCards.forEach((cardDef) => {
+    const value = aggregateLandingMetric(currentRows, cardDef.metric, cardDef.metricType);
+    const priorValue = aggregateLandingMetric(priorRows, cardDef.metric, cardDef.metricType);
+    const rawDelta = value - priorValue;
+    const direction = rawDelta > 0 ? "up" : rawDelta < 0 ? "down" : "flat";
+    const deltaText = cardDef.metricType?.kind === "rate"
+      ? `${rawDelta >= 0 ? "+" : ""}${(rawDelta * 100).toFixed(1)} pp`
+      : `${rawDelta >= 0 ? "+" : ""}${((priorValue ? rawDelta / Math.abs(priorValue) : 0) * 100).toFixed(1)}%`;
+    const sparkline = landingDemoState.dateColumn
+      ? buildLandingKpiSparkline(cardDef.metric, cardDef.metricType)
+      : "<div class=\"helper-text kpi-sparkline-empty\">No time based trend available for this metric.</div>";
+    const card = document.createElement("div");
+    card.className = "kpi-pill";
+    card.innerHTML = `
+      <span>${escapeHtml(cardDef.label)}</span>
+      <strong>${formatMetricValue(value, cardDef.metricType)}</strong>
+      <em class="kpi-delta ${direction}">${direction === "up" ? "▲" : direction === "down" ? "▼" : "•"} ${deltaText}</em>
+      <div class="kpi-mini-trend">${sparkline}</div>
+      <div class="kpi-sparkline-caption">Daily trend last 30 days compared to prior 30 days</div>
+      <small class="kpi-caption">Last 30 days vs prior 30 days</small>
+    `;
+    sampleKpiGrid.appendChild(card);
+  });
+}
+
+function getLandingMonthKey(dateValue) {
+  const year = dateValue.getUTCFullYear();
+  const month = String(dateValue.getUTCMonth() + 1).padStart(2, "0");
+  return `${year}-${month}-01`;
+}
+
+function buildLandingRecentMonthKeys(rows, dateColumn, count = 12) {
+  const monthKeys = (rows || [])
+    .map((row) => parseDate(row[dateColumn]))
+    .filter(Boolean)
+    .map((dateValue) => getLandingMonthKey(dateValue))
+    .sort();
+  if (!monthKeys.length) return [];
+  const latest = monthKeys[monthKeys.length - 1];
+  const latestDate = new Date(`${latest}T00:00:00Z`);
+  const keys = [];
+  for (let offset = count - 1; offset >= 0; offset -= 1) {
+    const monthDate = new Date(Date.UTC(latestDate.getUTCFullYear(), latestDate.getUTCMonth() - offset, 1));
+    keys.push(getLandingMonthKey(monthDate));
+  }
+  return keys;
+}
+
+function buildLandingMonthlySeries(metric, breakdownColumn = null) {
+  const rows = landingDemoState.rows || [];
+  const dateColumn = landingDemoState.dateColumn;
+  if (!dateColumn) return { labels: [], groups: [], values: [] };
+  const monthKeys = buildLandingRecentMonthKeys(rows, dateColumn, 12);
+  if (!monthKeys.length) return { labels: [], groups: [], values: [] };
+  const grouped = new Map();
+  rows.forEach((row) => {
+    const dateValue = parseDate(row[dateColumn]);
+    if (!dateValue) return;
+    const monthKey = getLandingMonthKey(dateValue);
+    if (!monthKeys.includes(monthKey)) return;
+    const group = breakdownColumn ? String(row[breakdownColumn] || "Unknown") : "Overall";
+    const key = `${group}::${monthKey}`;
+    const metricValue = parseNumber(row[metric]);
+    if (metricValue === null) return;
+    grouped.set(key, (grouped.get(key) || 0) + metricValue);
+  });
+
+  const metricValues = rows.map((row) => parseNumber(row[metric])).filter((value) => value !== null);
+  const metricType = inferMetricType(metric, metricValues);
+  const groups = breakdownColumn
+    ? Array.from(new Set(rows.map((row) => String(row[breakdownColumn] || "Unknown")))).slice(0, 5)
+    : ["Overall"];
+
+  const series = groups.map((group) => ({
+    group,
+    values: monthKeys.map((monthKey) => {
+      const total = grouped.get(`${group}::${monthKey}`) || 0;
+      if (metricType.kind === "rate") {
+        const monthRows = rows.filter((row) => {
+          const dateValue = parseDate(row[dateColumn]);
+          if (!dateValue || getLandingMonthKey(dateValue) !== monthKey) return false;
+          if (!breakdownColumn) return true;
+          return String(row[breakdownColumn] || "Unknown") === group;
+        });
+        const numeric = monthRows.map((row) => parseNumber(row[metric])).filter((value) => value !== null);
+        return numeric.length ? numeric.reduce((sum, value) => sum + value, 0) / numeric.length : 0;
+      }
+      return total;
+    }),
+  }));
+
+  return {
+    labels: monthKeys.map((monthKey) => new Date(`${monthKey}T00:00:00Z`).toLocaleDateString("en-US", { month: "short" })),
+    rawMonthKeys: monthKeys,
+    groups: series,
+    values: series[0]?.values || [],
+  };
+}
+
+function renderLandingTrend() {
+  if (!sampleTrendChart) return;
+  const metric = landingDemoState.selectedMetric;
+  if (!metric) {
+    sampleTrendChart.innerHTML = "<div class=\"helper-text\">No numeric metric found in demo CSV.</div>";
+    return;
+  }
+  if (!landingDemoState.dateColumn) {
+    sampleTrendChart.innerHTML = `
+      <div class="helper-text" style="min-height:220px;display:flex;align-items:center;justify-content:center;">
+        No date column found in the demo CSV. Add a date field to render month over month trend.
+      </div>
+    `;
+    return;
+  }
+
+  const breakdownField = landingDemoState.selectedBreakdown === "overall"
+    ? null
+    : landingDemoState.breakdownMap[landingDemoState.selectedBreakdown] || null;
+  const series = buildLandingMonthlySeries(metric, breakdownField);
+  const allValues = series.groups.flatMap((group) => group.values);
+  if (!allValues.length) {
+    sampleTrendChart.innerHTML = "<div class=\"helper-text\">No trend data available.</div>";
+    return;
+  }
+  const width = 680;
+  const height = 240;
+  const left = 30;
+  const right = 16;
+  const top = 16;
+  const bottom = 26;
+  const maxY = Math.max(...allValues, 0);
+  const minY = Math.min(...allValues, 0);
+  const scaleX = (index) => left + (index / Math.max(series.labels.length - 1, 1)) * (width - left - right);
+  const scaleY = (value) => (height - bottom) - ((value - minY) / Math.max(maxY - minY, 1)) * (height - top - bottom);
+  const colors = ["#60a5fa", "#34d399", "#f59e0b", "#f472b6", "#a78bfa"];
+  const grid = [0.25, 0.5, 0.75].map((ratio) => {
+    const y = top + ratio * (height - top - bottom);
+    return `<line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}" stroke="rgba(255,255,255,0.08)" stroke-width="1"></line>`;
+  }).join("");
+  const lines = series.groups.map((group, index) => {
+    const color = colors[index % colors.length];
+    const path = group.values.map((value, pointIndex) => `${pointIndex === 0 ? "M" : "L"}${scaleX(pointIndex)},${scaleY(value)}`).join(" ");
+    return `<path d="${path}" fill="none" stroke="${color}" stroke-width="1.8"></path>`;
+  }).join("");
+  const ticks = series.labels.map((label, index) => `
+    <text x="${scaleX(index)}" y="${height - 8}" fill="rgba(255,255,255,0.6)" font-size="10" text-anchor="middle">${label}</text>
+  `).join("");
+  const legends = series.groups.map((group, index) => `
+    <span class="trend-legend-item">
+      <span class="trend-legend-swatch" style="background:${colors[index % colors.length]}"></span>
+      <span>${escapeHtml(group.group)}</span>
+    </span>
+  `).join("");
+  sampleTrendChart.innerHTML = `
+    <div class="trend-legend">${legends}</div>
+    <svg class="trend-line" viewBox="0 0 ${width} ${height}" aria-label="Monthly trend chart">
+      ${grid}
+      ${lines}
+      ${ticks}
+    </svg>
+  `;
+}
+
+function computeLandingBreakdown(metric, dimension) {
+  if (!metric || !dimension) return [];
+  const values = new Map();
+  const counts = new Map();
+  (landingDemoState.rows || []).forEach((row) => {
+    const key = String(row[dimension] || "Unknown");
+    const metricValue = parseNumber(row[metric]);
+    if (metricValue === null) return;
+    values.set(key, (values.get(key) || 0) + metricValue);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  const metricType = inferMetricType(metric, (landingDemoState.rows || []).map((row) => parseNumber(row[metric])).filter((value) => value !== null));
+  return Array.from(values.entries())
+    .map(([key, total]) => ({
+      key,
+      value: metricType.kind === "rate" ? total / Math.max(counts.get(key) || 1, 1) : total,
+      count: counts.get(key) || 0,
+    }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 8);
+}
+
+function renderLandingInsightAndBreakdown() {
+  const metric = landingDemoState.selectedMetric;
+  const dimension = landingDemoState.selectedDimension;
+  if (!metric || !dimension) {
+    if (sampleInsightsRoot) sampleInsightsRoot.innerHTML = "<div class=\"helper-text\">No categorical dimension found in demo CSV.</div>";
+    if (sampleBreakdownChart) sampleBreakdownChart.innerHTML = "<div class=\"helper-text\">No categorical dimension found in demo CSV.</div>";
+    return;
+  }
+
+  const breakdown = computeLandingBreakdown(metric, dimension);
+  if (!breakdown.length) {
+    if (sampleInsightsRoot) sampleInsightsRoot.innerHTML = "<div class=\"helper-text\">No breakdown data available.</div>";
+    if (sampleBreakdownChart) sampleBreakdownChart.innerHTML = "<div class=\"helper-text\">No breakdown data available.</div>";
+    return;
+  }
+
+  const metricType = inferMetricType(metric, (landingDemoState.rows || []).map((row) => parseNumber(row[metric])).filter((value) => value !== null));
+  const top = breakdown[0];
+  const bottom = breakdown[breakdown.length - 1];
+  const delta = top.value - bottom.value;
+  const deltaLabel = metricType.kind === "rate"
+    ? `${(delta * 100).toFixed(1)} pp`
+    : formatMetricValue(delta, metricType);
+  const confidenceLevel = breakdown.length >= 3 && Math.abs(delta) > 0 ? "high" : "medium";
+  const confidenceWhy = confidenceLevel === "high"
+    ? "Clear separation between top and bottom segments across enough samples."
+    : "Directional difference is visible, but segment count or spread is limited.";
+  const driverDimension = (landingDemoState.categoricalColumns || []).find((col) => col !== dimension);
+  const driverText = driverDimension
+    ? `Driver candidate: ${formatMetricLabel(driverDimension)} appears to concentrate in ${top.key}.`
+    : `Driver candidate: Segment mix likely favors ${top.key}.`;
+  if (sampleInsightsRoot) {
+    sampleInsightsRoot.innerHTML = `
+      <div class="insight-card">
+        <div class="insight-header">
+          <span class="severity ${confidenceLevel} confidence-pill" tabindex="0" aria-label="Confidence details">
+            Confidence: ${confidenceLevel === "high" ? "High" : "Medium"}
+            <span class="confidence-tooltip" role="tooltip">${escapeHtml(confidenceWhy)}</span>
+          </span>
+        </div>
+        <h4>${escapeHtml(formatMetricLabel(metric))} delta is largest between ${escapeHtml(top.key)} and ${escapeHtml(bottom.key)}</h4>
+        <div class="insight-metric">
+          <span>Delta</span>
+          <strong>${escapeHtml(deltaLabel)}</strong>
+        </div>
+        <p class="insight-meta">${escapeHtml(driverText)}</p>
+        <p class="insight-meta">Action: Replicate the top segment playbook for lower-performing segments and monitor uplift over the next cycle.</p>
+        <p class="insight-meta subtle">Compared by ${escapeHtml(formatMetricLabel(dimension))} with n=${top.count}/${bottom.count}.</p>
+      </div>
+    `;
+  }
+
+  if (sampleBreakdownChart) {
+    const max = Math.max(...breakdown.map((item) => item.value), 1);
+    sampleBreakdownChart.innerHTML = `
+      <div class="bar-chart">
+        ${breakdown.map((item) => `
+          <div class="bar-row">
+            <span>${escapeHtml(item.key)}</span>
+            <div class="bar"><div class="bar-fill" style="width:${(item.value / max) * 100}%"></div></div>
+            <strong>${escapeHtml(formatMetricValue(item.value, metricType))}</strong>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  }
+}
+
 async function loadSampleFile(sample) {
   clearMessages();
   setUiMode("loading");
@@ -2049,6 +2631,9 @@ function buildSheetsFallback(url) {
 }
 
 async function fetchSheetText(url) {
+  if (!validateRemoteInput(url, "sheets")) {
+    throw new Error(LOCAL_PATH_ERROR_MESSAGE);
+  }
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
   return response.text();
@@ -2056,6 +2641,7 @@ async function fetchSheetText(url) {
 
 async function loadSheetData() {
   const input = sheetsUrlInput?.value || "";
+  if (!validateRemoteInput(input, "sheets")) return;
   const range = sheetsRangeInput?.value?.trim() || "A1:Z1000";
   clearMessages();
   const correlationId = createIngestCorrelationId("sheets");
@@ -2591,6 +3177,7 @@ function testApiConnection() {
     apiStatus.textContent = "Please enter Base URL and Endpoint to validate.";
     return;
   }
+  if (!validateRemoteInput(base, "api") || !validateRemoteInput(endpoint, "api")) return;
   apiStatus.textContent = "Coming next: API connections will be supported in a future update.";
 }
 
