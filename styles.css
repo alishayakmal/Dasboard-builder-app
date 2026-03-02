@@ -1307,16 +1307,13 @@ button:disabled {
 }
 
 @media print {
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
   body {
     background: #ffffff;
     color: #000000;
     height: auto !important;
     overflow: visible !important;
-  }
-
-  * {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
   }
 
   button,
@@ -1352,6 +1349,19 @@ button:disabled {
 
   .dashCardBody {
     overflow: visible !important;
+  }
+
+  .execCard {
+    height: auto !important;
+  }
+
+  .execCardBody {
+    overflow: visible !important;
+  }
+
+  .tableWrap {
+    overflow: visible !important;
+    height: auto !important;
   }
 
   .chartWrap {
@@ -1603,7 +1613,7 @@ button:disabled {
 }
 
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 .dashboard {
@@ -1753,7 +1763,7 @@ button:disabled {
 
 .heatmap-wrapper {
   height: clamp(260px, 35vh, 420px);
-  overflow: auto;
+  overflow: hidden;
 }
 
 .heatmap-wrapper canvas {
@@ -1764,52 +1774,6 @@ button:disabled {
 
 .heatmap-wrapper.small {
   height: clamp(220px, 30vh, 320px);
-}
-
-.comparison-controls {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-  margin: 12px 0 16px;
-}
-
-.comparison-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 12px;
-  margin-top: 14px;
-}
-
-.comparison-narrative {
-  display: grid;
-  gap: 6px;
-  margin: 8px 0 12px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: rgba(15, 23, 42, 0.45);
-}
-
-.comparison-narrative-headline,
-.comparison-narrative-action {
-  margin: 0;
-  font-size: 13px;
-}
-
-.comparison-narrative-headline {
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.comparison-narrative-action {
-  color: var(--text-secondary);
-}
-
-.comparison-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 12px;
 }
 
 .data-summary-panel {
@@ -1849,7 +1813,38 @@ button:disabled {
 .dashCardBody {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
+}
+
+.dashCardBody.noScroll {
+  overflow: hidden;
+}
+
+.execCard {
+  height: 420px;
+  display: flex;
+  flex-direction: column;
+}
+
+.execCard .chart-header {
+  flex: 0 0 auto;
+}
+
+.execCardBody {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cardBody {
+  flex: 1;
+  min-height: 0;
+}
+
+.tableWrap {
+  height: 100%;
+  overflow: auto;
+  border-radius: 12px;
 }
 
 .chartWrap {
@@ -1858,16 +1853,107 @@ button:disabled {
   max-height: 320px;
 }
 
+.execCard .chartWrap {
+  height: 300px;
+  max-height: 300px;
+}
+
+.dashCardBody.noScroll .chartWrap {
+  height: 350px;
+  max-height: 350px;
+}
+
+.execCardBody.noScroll .chartWrap {
+  height: 300px;
+  max-height: 300px;
+}
+
 .chartWrap canvas {
   width: 100% !important;
   height: 100% !important;
   display: block;
 }
 
+.trendChartWrap {
+  position: relative;
+  height: 320px;
+  width: 100%;
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 16px;
+  padding: 12px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.execCard .trendChartWrap,
+.execCardBody.noScroll .trendChartWrap {
+  height: 320px;
+  max-height: 320px;
+}
+
+.trendChartWrap canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+.trendChartWrap .trend-empty {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
 .chartWrap .trend-empty,
 .chartWrap .card-empty-message {
   height: 100%;
   min-height: 0;
+}
+
+.heatmapCaption {
+  margin-bottom: 8px;
+}
+
+.heatmapLegend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.heatmapLegendBar {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(139, 92, 246, 0.2), rgba(139, 92, 246, 0.95));
+}
+
+.heatmapGrid {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+}
+
+.heatmapCell {
+  height: var(--hm-cell-h, 34px);
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  font-size: 10px;
+  line-height: 1.25;
+  text-align: center;
+  color: #f8fafc;
+  font-variant-numeric: tabular-nums;
+}
+
+.heatmapCell.heatmapHead {
+  background: rgba(15, 23, 42, 0.65);
+  color: var(--text-secondary);
+  font-weight: 600;
 }
 
 .trend-empty {
@@ -1880,6 +1966,40 @@ button:disabled {
   border: 1px dashed rgba(148, 163, 184, 0.2);
   border-radius: 12px;
   padding: 12px;
+}
+
+.trend-empty.trend-rich {
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  overflow: hidden;
+}
+
+.hmHeader {
+  flex: 0 0 auto;
+}
+
+.hmLegend {
+  flex: 0 0 auto;
+  margin-bottom: 6px;
+}
+
+.hmGridWrap {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.hmFooter {
+  flex: 0 0 auto;
+  margin-top: 12px;
+}
+
+.trend-drilldown {
+  margin-top: 0;
 }
 
 .card-empty-message {
@@ -1902,9 +2022,32 @@ button:disabled {
   overflow: visible;
 }
 
+.exportMode .execCard {
+  height: auto;
+}
+
+.exportMode .execCardBody {
+  overflow: visible;
+}
+
+.exportMode .tableWrap {
+  max-height: none;
+  overflow: visible;
+}
+
 .exportMode .chartWrap {
   height: 240px;
   max-height: 240px;
+}
+
+.exportMode .trend-drilldown {
+  display: none;
+}
+
+@media print {
+  .trend-drilldown {
+    display: none !important;
+  }
 }
 
 .unified-dashboard-shell {
@@ -2434,6 +2577,104 @@ button:disabled {
   overflow-x: auto;
 }
 
+.helper-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.helper-check input {
+  margin: 0;
+}
+
+.diagnostics-accordion {
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.5);
+  padding: 10px 12px;
+  opacity: 0.88;
+}
+
+.diagnostics-accordion > summary {
+  cursor: pointer;
+  color: var(--text-primary);
+  font-weight: 600;
+  user-select: none;
+}
+
+.diagnostics-content {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.diagnostics-flow {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.diagnostics-corr-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.diag-corr-explain {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.55);
+  line-height: 1.45;
+}
+
+.diagnostics-corr-chart,
+.correlationChartWrap,
+.corrChartWrap {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: 360px;
+  max-height: 360px;
+  padding-bottom: 16px;
+  overflow: hidden;
+}
+
+.correlationChartWrap canvas,
+.corrChartWrap canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+}
+
+.corrCard {
+  display: flex;
+  flex-direction: column;
+}
+
+.corrCard .cardBody,
+.corrCard .execCardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow: visible;
+}
+
+.diagnostics-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  opacity: 0.9;
+}
+
 #dataTable {
   width: 100%;
   border-collapse: collapse;
@@ -2488,6 +2729,8 @@ a {
     flex-direction: column;
     align-items: flex-start;
   }
+
+  .diagnostics-flow { grid-template-columns: 1fr; }
 
   .controls {
     width: 100%;
@@ -2620,6 +2863,26 @@ a {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.evidence-formula {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.evidence-callout {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: rgba(120, 53, 15, 0.25);
+  color: #fde68a;
+  font-size: 12px;
 }
 
 @media (max-width: 720px) {
