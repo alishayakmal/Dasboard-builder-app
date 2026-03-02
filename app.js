@@ -1814,34 +1814,39 @@ async function handleExportPdf() {
   }
 
   showToast("Preparing PDF...");
-  const canvas = await window.html2canvas(target, { scale: 2, backgroundColor: "#ffffff" });
-  const imgData = canvas.toDataURL("image/png");
-  const pdf = new window.jspdf.jsPDF("p", "pt", "a4");
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 24;
-  const imgWidth = pageWidth - margin * 2;
-  const imgHeight = (canvas.height * imgWidth) / canvas.width;
+  document.body.classList.add("exportMode");
+  try {
+    const canvas = await window.html2canvas(target, { scale: 2, backgroundColor: "#ffffff" });
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new window.jspdf.jsPDF("p", "pt", "a4");
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 24;
+    const imgWidth = pageWidth - margin * 2;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
 
-  pdf.setFontSize(14);
-  pdf.text("Shay Analytics AI Report", margin, margin);
-  pdf.setFontSize(10);
-  pdf.text(new Date().toLocaleString(), margin, margin + 14);
+    pdf.setFontSize(14);
+    pdf.text("Shay Analytics AI Report", margin, margin);
+    pdf.setFontSize(10);
+    pdf.text(new Date().toLocaleString(), margin, margin + 14);
 
-  let position = margin + 24;
-  let remainingHeight = imgHeight;
+    let position = margin + 24;
+    let remainingHeight = imgHeight;
 
-  while (remainingHeight > 0) {
-    pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
-    remainingHeight -= pageHeight - margin * 2;
-    if (remainingHeight > 0) {
-      pdf.addPage();
-      position = margin - (imgHeight - remainingHeight) + margin * 2;
+    while (remainingHeight > 0) {
+      pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
+      remainingHeight -= pageHeight - margin * 2;
+      if (remainingHeight > 0) {
+        pdf.addPage();
+        position = margin - (imgHeight - remainingHeight) + margin * 2;
+      }
     }
-  }
 
-  const dateStamp = new Date().toISOString().slice(0, 10);
-  pdf.save(`shalytics-report-${dateStamp}.pdf`);
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    pdf.save(`shalytics-report-${dateStamp}.pdf`);
+  } finally {
+    document.body.classList.remove("exportMode");
+  }
 }
 
 async function handleApiFetch() {
@@ -4484,16 +4489,14 @@ function renderCharts(rows) {
     if (dimensionSelect.value !== dimension) dimensionSelect.value = dimension;
     const breakdown = buildTopCategoriesWithOther(rows, dimension, metric, metricType, 8);
     barTitle.textContent = "Performance details";
-    barSubtitle.textContent = `Dimension: ${dimension}`;
-    const hasMeasuredValues = (breakdown.values || []).some((value) => Number(value) > 0);
-    if (!breakdown.labels.length || !hasMeasuredValues) {
-      setChartCardEmptyState("barChart", "No measurable activity for selected dimension.");
-    } else {
-      setChartCardEmptyState("barChart", "");
-      const barCanvas = document.getElementById("barChart");
-      if (barCanvas) barCanvas.style.height = "240px";
-      barChartInstance = createHorizontalBarChart("barChart", breakdown.labels, breakdown.values, metricType, breakdown.counts);
-    }
+      barSubtitle.textContent = `Dimension: ${dimension}`;
+      const hasMeasuredValues = (breakdown.values || []).some((value) => Number(value) > 0);
+      if (!breakdown.labels.length || !hasMeasuredValues) {
+        setChartCardEmptyState("barChart", "No measurable activity for selected dimension.");
+      } else {
+        setChartCardEmptyState("barChart", "");
+        barChartInstance = createHorizontalBarChart("barChart", breakdown.labels, breakdown.values, metricType, breakdown.counts);
+      }
   } else {
     barTitle.textContent = "Performance details";
     barSubtitle.textContent = "Dimension unavailable";
@@ -4908,7 +4911,8 @@ function setChartCardEmptyState(canvasId, message = "") {
   if (!canvas) return;
   const card = canvas.closest(".chart-card");
   if (!card) return;
-  let messageEl = card.querySelector(".card-empty-message");
+  const container = canvas.closest(".chartWrap") || card;
+  let messageEl = container.querySelector(".card-empty-message");
   const text = String(message || "").trim();
   if (!text) {
     if (messageEl) messageEl.remove();
@@ -4918,7 +4922,7 @@ function setChartCardEmptyState(canvasId, message = "") {
   if (!messageEl) {
     messageEl = document.createElement("div");
     messageEl.className = "card-empty-message";
-    card.appendChild(messageEl);
+    container.appendChild(messageEl);
   }
   messageEl.textContent = text;
   canvas.classList.add("hidden");
@@ -4945,6 +4949,7 @@ function createLineChart(canvasId, labels, values, metricType, counts = []) {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -4990,6 +4995,7 @@ function createBarChart(canvasId, labels, values, metricType, counts = []) {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
         tooltip: {
@@ -5120,6 +5126,7 @@ function createScatterChart(canvasId, points) {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
         x: { beginAtZero: true },
@@ -5133,7 +5140,11 @@ function createHistogram(canvasId, values, metricType) {
   const ctx = document.getElementById(canvasId);
   const bins = 10;
   if (!values.length) {
-    return new Chart(ctx, { type: "bar", data: { labels: [], datasets: [] } });
+    return new Chart(ctx, {
+      type: "bar",
+      data: { labels: [], datasets: [] },
+      options: { responsive: true, maintainAspectRatio: false },
+    });
   }
   const min = metricType?.kind === "rate" ? 0 : Math.min(...values);
   const max = metricType?.kind === "rate" ? 1 : Math.max(...values);
