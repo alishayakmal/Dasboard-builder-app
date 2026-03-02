@@ -365,27 +365,39 @@
 
         <section class="charts">
           <div class="data-summary-panel" id="dataSummaryPanel"></div>
-          <div class="chart-card">
+          <div class="chart-card dashCard">
             <div class="chart-header">
               <h3 id="trendTitle">Trend</h3>
               <p id="trendSubtitle"></p>
             </div>
-            <div id="trendEmptyState" class="trend-empty hidden"></div>
-            <canvas id="trendChart" height="140"></canvas>
+            <div class="dashCardBody">
+              <div class="chartWrap">
+                <div id="trendEmptyState" class="trend-empty hidden"></div>
+                <canvas id="trendChart" height="140"></canvas>
+              </div>
+            </div>
           </div>
-          <div class="chart-card">
+          <div class="chart-card dashCard">
             <div class="chart-header">
               <h3 id="barTitle">Breakdown</h3>
               <p id="barSubtitle"></p>
             </div>
-            <canvas id="barChart" height="140"></canvas>
+            <div class="dashCardBody">
+              <div class="chartWrap">
+                <canvas id="barChart" height="140"></canvas>
+              </div>
+            </div>
           </div>
-          <div class="chart-card">
+          <div class="chart-card dashCard">
             <div class="chart-header">
               <h3 id="extraTitle">Analysis</h3>
               <p id="extraSubtitle"></p>
             </div>
-            <canvas id="extraChart" height="140"></canvas>
+            <div class="dashCardBody">
+              <div class="chartWrap">
+                <canvas id="extraChart" height="140"></canvas>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -422,30 +434,32 @@
           </div>
         </section>
 
-        <section class="insights-card">
+        <section class="insights-card dashCard">
           <div class="chart-header">
             <h3>Insights</h3>
             <p>What changed, what stands out, and where to look next.</p>
           </div>
-          <ul id="insightsList"></ul>
+          <div class="dashCardBody">
+            <ul id="insightsList"></ul>
+          </div>
         </section>
 
-        <section class="table-card">
+        <section class="table-card dashCard">
           <div class="table-header">
             <h3>Data Profile</h3>
             <p>Column schema, quality, and quick stats.</p>
           </div>
-          <div class="table-wrap">
+          <div class="table-wrap dashCardBody">
             <table id="profileTable"></table>
           </div>
         </section>
 
-        <section class="table-card">
+        <section class="table-card dashCard">
           <div class="table-header">
             <h3>Data Preview</h3>
             <p>Click any column to sort. Showing up to 50 rows.</p>
           </div>
-          <div class="table-wrap">
+          <div class="table-wrap dashCardBody">
             <table id="dataTable"></table>
           </div>
         </section>
