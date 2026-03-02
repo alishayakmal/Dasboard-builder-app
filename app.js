@@ -37,6 +37,18 @@ const googleStatus = document.getElementById("googleStatus");
 const pdfInput = document.getElementById("pdfInput");
 const pdfStatus = document.getElementById("pdfStatus");
 const pdfMeta = document.getElementById("pdfMeta");
+const pdfReviewPanel = document.getElementById("pdfReviewPanel");
+const pdfReviewBanner = document.getElementById("pdfReviewBanner");
+const pdfQualitySummary = document.getElementById("pdfQualitySummary");
+const pdfDetectedSchema = document.getElementById("pdfDetectedSchema");
+const pdfGenericWarning = document.getElementById("pdfGenericWarning");
+const pdfPreviewTable = document.getElementById("pdfPreviewTable");
+const pdfRawPreview = document.getElementById("pdfRawPreview");
+const pdfMappingPanel = document.getElementById("pdfMappingPanel");
+const pdfMapMetric = document.getElementById("pdfMapMetric");
+const pdfMapDimension = document.getElementById("pdfMapDimension");
+const pdfMapDate = document.getElementById("pdfMapDate");
+const pdfUseTableButton = document.getElementById("pdfUseTable");
 const exportSheetsButton = document.getElementById("exportSheets");
 const downloadPdfButton = document.getElementById("downloadPdf");
 const includeDiagnosticsExport = document.getElementById("includeDiagnosticsExport");
@@ -169,6 +181,7 @@ let signupSubmitting = false;
 let signupMode = "signup";
 let currentUserProfile = null;
 let diagnosticsOpenBeforePrint = null;
+let pendingPdfReview = null;
 const signupFormState = {
   fullName: "",
   email: "",
@@ -658,6 +671,9 @@ function init() {
       }
       handlePdfUpload(file);
     });
+  }
+  if (pdfUseTableButton) {
+    pdfUseTableButton.addEventListener("click", handlePdfUseTableConfirm);
   }
 
   updateSignInButton();
@@ -2878,8 +2894,243 @@ function valuesToCsv(values) {
   return values.map((row) => row.map(csvEscape).join(",")).join("\n");
 }
 
+function inferPdfColumnTypeSummary(rows) {
+  if (!Array.isArray(rows) || rows.length < 2) return {};
+  const headers = rows[0] || [];
+  const dataRows = rows.slice(1);
+  const asObjects = dataRows.map((row) => {
+    const obj = {};
+    headers.forEach((header, idx) => {
+      obj[header] = row?.[idx] ?? "";
+    });
+    return obj;
+  });
+  const profiles = profileDataset(asObjects, headers);
+  const summary = {};
+  headers.forEach((header) => {
+    summary[header] = profiles?.[header]?.type || "categorical";
+  });
+  return summary;
+}
+
+function computePdfParseQuality(rows) {
+  const allRows = Array.isArray(rows) ? rows : [];
+  const headers = allRows[0] || [];
+  const dataRows = allRows.slice(1);
+  const headerCount = headers.length || 1;
+  const nonEmptyHeaders = headers.filter((header) => String(header || "").trim() !== "");
+  const nonGenericHeaders = nonEmptyHeaders.filter((header) => !isGenericColumnName(header));
+  const headerConfidence = nonEmptyHeaders.length
+    ? nonGenericHeaders.length / nonEmptyHeaders.length
+    : 0;
+
+  const stableRows = dataRows.filter((row) => Array.isArray(row) && row.length === headerCount).length;
+  const rowConfidence = dataRows.length ? stableRows / dataRows.length : 0;
+
+  const typeSummary = inferPdfColumnTypeSummary(allRows);
+  const typeConsistency = headers.map((header, idx) => {
+    const values = dataRows.map((row) => row?.[idx]);
+    const nonEmpty = values.filter((value) => String(value ?? "").trim() !== "");
+    if (!nonEmpty.length) return 0;
+    const numericRate = nonEmpty.filter((value) => parseNumber(value) !== null).length / nonEmpty.length;
+    const dateRate = nonEmpty.filter((value) => parseDate(value) !== null).length / nonEmpty.length;
+    const dominant = Math.max(numericRate, dateRate, 1 - Math.max(numericRate, dateRate));
+    return dominant;
+  });
+  const typeConfidence = typeConsistency.length
+    ? typeConsistency.reduce((sum, value) => sum + value, 0) / typeConsistency.length
+    : 0;
+
+  return {
+    headerConfidence,
+    typeConfidence,
+    rowConfidence,
+    typeSummary,
+    genericHeaders: headers.filter((header) => isGenericColumnName(header)),
+  };
+}
+
+function renderPdfPreviewTable(rows) {
+  if (!pdfPreviewTable) return;
+  const allRows = Array.isArray(rows) ? rows : [];
+  const headers = allRows[0] || [];
+  const sampleRows = allRows.slice(1, 11);
+  pdfPreviewTable.innerHTML = "";
+  if (!headers.length) return;
+  const thead = document.createElement("thead");
+  const headTr = document.createElement("tr");
+  headers.forEach((header) => {
+    const th = document.createElement("th");
+    th.textContent = String(header || "");
+    headTr.appendChild(th);
+  });
+  thead.appendChild(headTr);
+  const tbody = document.createElement("tbody");
+  sampleRows.forEach((row) => {
+    const tr = document.createElement("tr");
+    headers.forEach((_, idx) => {
+      const td = document.createElement("td");
+      td.textContent = String(row?.[idx] ?? "");
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  pdfPreviewTable.appendChild(thead);
+  pdfPreviewTable.appendChild(tbody);
+}
+
+function populatePdfMappingOptions(candidate) {
+  if (!pdfMapMetric || !pdfMapDimension || !pdfMapDate) return;
+  const rows = candidate?.rows || [];
+  const headers = rows[0] || [];
+  const dataRows = rows.slice(1);
+  const asObjects = dataRows.map((row) => {
+    const obj = {};
+    headers.forEach((header, idx) => {
+      obj[header] = row?.[idx] ?? "";
+    });
+    return obj;
+  });
+  const profiles = profileDataset(asObjects, headers);
+  const { numericCandidates, dimensionCandidates, dateCandidates } = buildSchemaCandidates(headers, profiles);
+  const safeNumeric = Array.from(new Set(numericCandidates || []));
+  const safeDimensions = Array.from(new Set(dimensionCandidates || []));
+  const safeDates = Array.from(new Set(dateCandidates || []));
+
+  const fillSelect = (selectEl, options, placeholder) => {
+    selectEl.innerHTML = "";
+    const blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = placeholder;
+    selectEl.appendChild(blank);
+    options.forEach((value) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      selectEl.appendChild(option);
+    });
+  };
+
+  fillSelect(pdfMapMetric, safeNumeric, "Select metric");
+  fillSelect(pdfMapDimension, safeDimensions, "Select dimension");
+  fillSelect(pdfMapDate, safeDates, "No date field");
+  pdfMapMetric.value = pickNonGenericColumn(safeNumeric, "") || "";
+  pdfMapDimension.value = pickNonGenericColumn(safeDimensions, "") || "";
+  pdfMapDate.value = pickNonGenericColumn(safeDates, "") || "";
+}
+
+function showPdfReviewUI(candidate) {
+  if (!pdfReviewPanel) return;
+  pendingPdfReview = candidate || null;
+  pdfReviewPanel.classList.remove("hidden");
+
+  const quality = candidate?.quality || { headerConfidence: 0, typeConfidence: 0, rowConfidence: 0, typeSummary: {}, genericHeaders: [] };
+  const gated = Boolean(candidate?.gated);
+  if (pdfReviewBanner) {
+    if (gated) {
+      pdfReviewBanner.textContent = "PDF table extraction failed. Export as CSV for accurate analysis.";
+      pdfReviewBanner.classList.remove("hidden");
+      pdfReviewBanner.classList.add("error");
+    } else {
+      pdfReviewBanner.textContent = "Review detected table and click Use this table.";
+      pdfReviewBanner.classList.remove("hidden");
+      pdfReviewBanner.classList.remove("error");
+    }
+  }
+
+  if (pdfQualitySummary) {
+    pdfQualitySummary.textContent = `Header confidence ${(quality.headerConfidence * 100).toFixed(0)}% · Type confidence ${(quality.typeConfidence * 100).toFixed(0)}% · Row confidence ${(quality.rowConfidence * 100).toFixed(0)}%`;
+  }
+  if (pdfDetectedSchema) {
+    const schemaText = Object.entries(quality.typeSummary || {})
+      .map(([column, type]) => `${column}: ${type}`)
+      .join(" · ");
+    pdfDetectedSchema.textContent = schemaText ? `Detected columns/types: ${schemaText}` : "Detected columns/types unavailable.";
+  }
+  if (pdfGenericWarning) {
+    const genericColumns = quality.genericHeaders || [];
+    if (genericColumns.length) {
+      pdfGenericWarning.textContent = `Warning: generic column names detected (${genericColumns.join(", ")}).`;
+      pdfGenericWarning.classList.remove("hidden");
+    } else {
+      pdfGenericWarning.textContent = "";
+      pdfGenericWarning.classList.add("hidden");
+    }
+  }
+  if (pdfRawPreview) {
+    const rawLines = (candidate?.rawAttemptRows || [])
+      .slice(0, 8)
+      .map((row) => Array.isArray(row) ? row.join(" | ") : String(row || ""))
+      .join(" \n ");
+    pdfRawPreview.textContent = rawLines ? `Raw extraction preview: ${rawLines}` : "";
+  }
+  renderPdfPreviewTable(candidate?.rows || []);
+  if (pdfMappingPanel) {
+    pdfMappingPanel.classList.toggle("hidden", !gated);
+  }
+  if (gated) {
+    populatePdfMappingOptions(candidate);
+  }
+}
+
+function applyPdfMappedSelections(mapping = {}) {
+  const metric = mapping?.metric || null;
+  const dimension = mapping?.dimension || null;
+  const dateField = mapping?.dateField || null;
+  if (metric) state.selections.primaryMetric = metric;
+  if (dimension) state.selectedDimension = dimension;
+  if (dateField) state.dateColumn = dateField;
+  syncChartStateDirect({
+    selectedMetric: state.selections.primaryMetric,
+    selectedDimension: state.selectedDimension,
+    timeField: state.dateColumn,
+  });
+  applyFiltersAndRender();
+}
+
+function handlePdfUseTableConfirm() {
+  if (!pendingPdfReview || !pendingPdfReview.rows?.length) return;
+  const candidate = pendingPdfReview;
+  const gated = Boolean(candidate.gated);
+  let mapped = null;
+  if (gated) {
+    const metric = String(pdfMapMetric?.value || "").trim();
+    const dimension = String(pdfMapDimension?.value || "").trim();
+    const dateField = String(pdfMapDate?.value || "").trim();
+    if (!metric || !dimension) {
+      if (pdfReviewBanner) {
+        pdfReviewBanner.textContent = "Select primary metric and breakdown dimension before continuing.";
+        pdfReviewBanner.classList.remove("hidden");
+        pdfReviewBanner.classList.add("error");
+      }
+      return;
+    }
+    mapped = { metric, dimension, dateField: dateField || null };
+  }
+
+  ingestDataset({
+    source: "pdf",
+    rows: candidate.rows,
+    meta: {
+      sourceType: "pdf",
+      name: candidate.fileName || "PDF upload",
+      pdfMode: "table",
+      extractedTableKind: candidate.kind || "generic",
+      parseQuality: candidate.quality,
+      qualityGateBypassedViaMapping: gated,
+    },
+  });
+  if (mapped) {
+    applyPdfMappedSelections(mapped);
+  }
+  pendingPdfReview = null;
+  if (pdfReviewPanel) pdfReviewPanel.classList.add("hidden");
+}
+
 async function handlePdfUpload(file) {
   if (!file) return;
+  pendingPdfReview = null;
+  if (pdfReviewPanel) pdfReviewPanel.classList.add("hidden");
   const correlationId = createIngestCorrelationId("pdf");
   console.log(`[INGEST ${correlationId}] PDF selected`, file.name, file.size);
   appStore.setState({ source: { type: "pdf", name: file.name }, parseStatus: "parsing", error: null });
@@ -2980,17 +3231,6 @@ async function handlePdfUpload(file) {
       normalizedRows.unshift(headerInference.headers);
     }
     const parsedRowsSample = normalizedRows.slice(0, 3);
-    ingestDataset({
-      source: "pdf",
-      rows: normalizedRows,
-      meta: {
-        sourceType: "pdf",
-        name: file?.name || "PDF upload",
-        pdfMode: "table",
-        extractedTableKind: selectedTable?.kind || "generic",
-        correlationId,
-      },
-    });
     const headersForDebug = normalizedRows[0] || [];
     const profilesForDebug = profileDataset(normalizedRows.slice(1).map((row) => {
       const obj = {};
@@ -3006,6 +3246,29 @@ async function handlePdfUpload(file) {
       dimensionCandidates,
       parsedRowsSample,
     });
+    const parseQuality = computePdfParseQuality(normalizedRows);
+    const gated = parseQuality.headerConfidence < 0.6 || parseQuality.rowConfidence < 0.7;
+    console.log("[PDF] parseQuality", {
+      headerConfidence: Number(parseQuality.headerConfidence.toFixed(3)),
+      typeConfidence: Number(parseQuality.typeConfidence.toFixed(3)),
+      rowConfidence: Number(parseQuality.rowConfidence.toFixed(3)),
+      gated,
+    });
+    if (pdfStatus) {
+      pdfStatus.textContent = gated
+        ? "PDF extraction quality is low. Review mapping before continuing."
+        : "Review extracted table and click Use this table.";
+    }
+    showPdfReviewUI({
+      rows: normalizedRows,
+      quality: parseQuality,
+      gated,
+      kind: selectedTable?.kind || "generic",
+      fileName: file?.name || "PDF upload",
+      rawAttemptRows: finalRows.slice(0, 10),
+    });
+    setUiMode("empty");
+    setParseStatus("idle");
     console.log("STORE setState parseStatus", appStore.getState().parseStatus);
   } catch (error) {
     const msg = error?.message || "PDF ingestion failed.";
@@ -3533,6 +3796,8 @@ function resetStateForNewDataset(options = {}) {
   if (diagCorrExplain) diagCorrExplain.textContent = "";
   if (diagCorrTakeaway) diagCorrTakeaway.textContent = "";
   if (diagCorrCaution) diagCorrCaution.textContent = "";
+  pendingPdfReview = null;
+  if (pdfReviewPanel) pdfReviewPanel.classList.add("hidden");
 }
 
 function destroyAllCharts() {
@@ -4365,6 +4630,7 @@ function ensureMetrics(schema, rows) {
 
 function chooseBestDimension(profile, categoricalColumns) {
   const filtered = categoricalColumns
+    .filter((col) => !isGenericColumnName(col))
     .filter((col) => profile[col].uniqueCount > 1)
     .filter((col) => profile[col].uniqueCount <= 20)
     .sort((a, b) => profile[a].uniqueCount - profile[b].uniqueCount);
@@ -4373,7 +4639,7 @@ function chooseBestDimension(profile, categoricalColumns) {
 
 function chooseCategoryColumn(rows, profiles) {
   const columns = state.schema.columns?.length ? state.schema.columns : Object.keys(profiles || {});
-  const categoricals = columns.filter((col) => profiles[col]?.type === "categorical");
+  const categoricals = columns.filter((col) => profiles[col]?.type === "categorical" && !isGenericColumnName(col));
   const within = categoricals.filter((col) => profiles[col]?.uniqueCount >= 2 && profiles[col]?.uniqueCount <= 25);
   if (within.length) return within[0];
   const sorted = categoricals
@@ -4434,8 +4700,26 @@ function chooseBestDateColumn(profiles) {
   return candidates.length ? candidates[0][0] : null;
 }
 
+function isGenericColumnName(name) {
+  const value = String(name || "").trim().toLowerCase();
+  if (!value) return true;
+  if (/^column[_\s-]?\d+$/.test(value)) return true;
+  if (/^unknown(?:[_\s-]?\d+)?$/.test(value)) return true;
+  return false;
+}
+
+function pickNonGenericColumn(columns = [], fallback = null) {
+  const list = Array.isArray(columns) ? columns : [];
+  const safe = list.find((col) => !isGenericColumnName(col));
+  return safe || fallback;
+}
+
 function initControls(recommendedMetrics) {
   metricSelect.innerHTML = "";
+  const metricPlaceholder = document.createElement("option");
+  metricPlaceholder.value = "";
+  metricPlaceholder.textContent = "Select primary metric";
+  metricSelect.appendChild(metricPlaceholder);
   const allMetrics = Array.from(new Set([...(recommendedMetrics || []), ...(state.schema.numeric || [])]));
   (allMetrics || []).forEach((metric) => {
     const option = document.createElement("option");
@@ -4444,12 +4728,18 @@ function initControls(recommendedMetrics) {
     metricSelect.appendChild(option);
   });
   if (!state.selections.primaryMetric || !allMetrics.includes(state.selections.primaryMetric)) {
-    state.selections.primaryMetric = allMetrics[0] || null;
+    state.selections.primaryMetric = pickNonGenericColumn(allMetrics, null);
+  } else if (isGenericColumnName(state.selections.primaryMetric)) {
+    state.selections.primaryMetric = pickNonGenericColumn(allMetrics, null);
   }
   state.selectedMetric = state.selections.primaryMetric;
   metricSelect.value = state.selections.primaryMetric || "";
 
   dimensionSelect.innerHTML = "";
+  const dimPlaceholder = document.createElement("option");
+  dimPlaceholder.value = "";
+  dimPlaceholder.textContent = "Select breakdown dimension";
+  dimensionSelect.appendChild(dimPlaceholder);
   const dimensions = state.schema.categoricals?.length ? state.schema.categoricals : [];
   if (state.schema.dates[0]) dimensions.push(state.schema.dates[0]);
   const uniqueDimensions = Array.from(new Set(dimensions));
@@ -4459,8 +4749,12 @@ function initControls(recommendedMetrics) {
     option.textContent = dim;
     dimensionSelect.appendChild(option);
   });
-  state.selectedDimension = state.selectedDimension || uniqueDimensions[0] || state.schema.dates[0] || null;
-  dimensionSelect.value = state.selectedDimension;
+  if (!state.selectedDimension || !uniqueDimensions.includes(state.selectedDimension)) {
+    state.selectedDimension = pickNonGenericColumn(uniqueDimensions, null);
+  } else if (isGenericColumnName(state.selectedDimension)) {
+    state.selectedDimension = pickNonGenericColumn(uniqueDimensions, null);
+  }
+  dimensionSelect.value = state.selectedDimension || "";
 
   domainSelect.value = state.domainAuto ? "auto" : state.domain;
 }
@@ -4502,12 +4796,21 @@ function applyFiltersAndRender() {
   syncChartStateDirect({ timeField: state.dateColumn });
   ensureMetrics(state.schema, scopedRows);
   if (!state.selections.primaryMetric || !state.schema.numeric.includes(state.selections.primaryMetric)) {
-    state.selections.primaryMetric = state.schema.numeric[0] || null;
+    state.selections.primaryMetric = pickNonGenericColumn(state.schema.numeric, null);
+  } else if (isGenericColumnName(state.selections.primaryMetric)) {
+    state.selections.primaryMetric = pickNonGenericColumn(state.schema.numeric, null);
   }
   state.selectedMetric = state.selections.primaryMetric;
   state.selections.compareMetrics = (state.selections.compareMetrics || []).filter((m) => state.schema.numeric.includes(m));
-  if (!state.selectedDimension) {
-    state.selectedDimension = dimensionCandidates[0] || chooseBestDimension(state.schema.profiles, state.schema.categoricals) || state.schema.dates[0] || null;
+  if (!state.selectedDimension || !state.schema.columns.includes(state.selectedDimension)) {
+    const recommendedDimension = pickNonGenericColumn(dimensionCandidates, null)
+      || pickNonGenericColumn(state.schema.categoricals || [], null)
+      || chooseBestDimension(state.schema.profiles, state.schema.categoricals)
+      || state.schema.dates[0]
+      || null;
+    state.selectedDimension = recommendedDimension;
+  } else if (isGenericColumnName(state.selectedDimension)) {
+    state.selectedDimension = pickNonGenericColumn(dimensionCandidates, null);
   }
   syncChartStateDirect({
     selectedMetric: state.selections.primaryMetric,
@@ -5103,6 +5406,15 @@ function renderCharts(rows) {
   if (barChartInstance) barChartInstance.destroy();
 
   const metric = state.selections.primaryMetric || chooseTopNumericByVariance(state.schema.profiles, state.schema.numeric || []);
+  if (!metric || isGenericColumnName(metric)) {
+    barTitle.textContent = "Performance details";
+    barSubtitle.textContent = "Awaiting metric selection";
+    trendTitle.textContent = "Trend";
+    trendSubtitle.textContent = "Awaiting metric selection";
+    renderTrendEmptyState("Select a non-generic primary metric to render charts.");
+    setChartCardEmptyState("barChart", "Select a non-generic primary metric to render breakdown.");
+    return;
+  }
   state.selections.primaryMetric = metric;
   state.selectedMetric = metric;
   const metricValues = rows.map((row) => parseNumber(row[metric])).filter((value) => value !== null);
@@ -7276,7 +7588,13 @@ function findAlternateCategory(categories, industryColumn) {
 }
 
 function chooseTopNumericByVariance(profile, numericColumns, limit = 1) {
-  const sorted = [...(numericColumns || [])].sort((a, b) => (profile[b]?.std || 0) - (profile[a]?.std || 0));
+  const sorted = [...(numericColumns || [])]
+    .sort((a, b) => (profile[b]?.std || 0) - (profile[a]?.std || 0))
+    .sort((a, b) => {
+      const aGeneric = isGenericColumnName(a) ? 1 : 0;
+      const bGeneric = isGenericColumnName(b) ? 1 : 0;
+      return aGeneric - bGeneric;
+    });
   if (limit === 1) return sorted[0];
   return sorted.slice(0, limit);
 }
