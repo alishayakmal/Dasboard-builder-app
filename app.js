@@ -130,7 +130,7 @@ const evidenceDrawer = document.getElementById("evidenceDrawer");
 const evidenceCloseButton = document.getElementById("evidenceClose");
 const evidenceContent = document.getElementById("evidenceContent");
 const evidenceScrim = document.getElementById("evidenceScrim");
-const headerTabsContainer = document.querySelector(".header-tabs");
+const topNav = document.querySelector(".topNav");
 
 let dashboardStateModule = null;
 let chartActionsModule = null;
@@ -439,8 +439,8 @@ function init() {
       switchTab(button.dataset.tab);
     });
   });
-  if (headerTabsContainer) {
-    headerTabsContainer.addEventListener("click", handleHeaderNavClick);
+  if (topNav) {
+    topNav.addEventListener("click", handleTopNavClick);
   }
 
   if (uploadTrigger && uploadInput) {
@@ -1373,61 +1373,95 @@ function loadSampleGallery() {
   switchTab("samples");
 }
 
-function handleHeaderNavClick(event) {
-  const navButton = event.target?.closest?.("[data-nav]");
-  if (!navButton || (headerTabsContainer && !headerTabsContainer.contains(navButton))) return;
-  const navKey = String(navButton.dataset.nav || "").trim().toLowerCase();
-  if (!navKey) return;
-  console.log(`[HeaderNav] clicked: ${navKey}`);
+function handleTopNavClick(event) {
+  const button = event.target?.closest?.("[data-action]");
+  if (!button || (topNav && !topNav.contains(button))) return;
+  const action = String(button.dataset.action || "").trim().toLowerCase();
+  if (!["sheets", "api", "pdf", "samples"].includes(action)) return;
+  console.log("NAV CLICK", action);
+  handleNav(action);
+}
 
-  if (navKey === "sheets") {
+function handleNav(action) {
+  if (action === "sheets") {
     const panel = document.getElementById("sheetsPanel");
-    if (!panel) {
-      console.error("[HeaderNav] Missing #sheetsPanel. Cannot route to Google Sheets.");
+    if (panel) {
+      switchTab("sheets");
       return;
     }
-    switchTab("sheets");
+    console.error("[TopNav] Missing #sheetsPanel. Opening fallback modal.");
+    openTopNavFallbackModal("Google Sheets", "Google Sheets panel is unavailable in this layout.");
     return;
   }
 
-  if (navKey === "api") {
+  if (action === "api") {
     const panel = document.getElementById("apiPanel");
-    if (!panel) {
-      console.error("[HeaderNav] Missing #apiPanel. Cannot route to API connect.");
+    if (panel) {
+      switchTab("api");
       return;
     }
-    switchTab("api");
+    console.error("[TopNav] Missing #apiPanel. Opening fallback modal.");
+    openTopNavFallbackModal("Connect API", "API connect panel is unavailable in this layout.");
     return;
   }
 
-  if (navKey === "pdf") {
-    if (!pdfInput) {
-      console.error("[HeaderNav] Missing #pdfInput. Cannot trigger PDF upload.");
-      return;
-    }
+  if (action === "pdf") {
     const panel = document.getElementById("pdfPanel");
     if (!panel) {
-      console.error("[HeaderNav] Missing #pdfPanel. Cannot route to PDF panel.");
+      console.error("[TopNav] Missing #pdfPanel. Opening fallback modal.");
+      openTopNavFallbackModal("Upload PDF", "PDF upload panel is unavailable in this layout.");
       return;
     }
     switchTab("pdf");
+    if (!pdfInput) {
+      console.error("[TopNav] Missing #pdfInput. Cannot trigger upload.");
+      return;
+    }
     pdfInput.click();
     return;
   }
 
-  if (navKey === "samples") {
+  if (action === "samples") {
     const panel = document.getElementById("samplesPanel");
     if (!panel) {
-      console.error("[HeaderNav] Missing #samplesPanel. Cannot route to Samples.");
+      console.error("[TopNav] Missing #samplesPanel. Opening fallback modal.");
+      openTopNavFallbackModal("Samples", "Samples panel is unavailable in this layout.");
       return;
     }
     renderSampleGallery();
     switchTab("samples");
     loadFixtureCsv();
-    return;
   }
+}
 
-  console.error(`[HeaderNav] Unknown nav target: ${navKey}`);
+function openTopNavFallbackModal(title, message) {
+  const existing = document.getElementById("topNavFallbackModal");
+  if (existing) existing.remove();
+  const modal = document.createElement("div");
+  modal.id = "topNavFallbackModal";
+  modal.className = "modal";
+  modal.setAttribute("aria-hidden", "false");
+  modal.innerHTML = `
+    <div class="modal-card">
+      <div class="modal-brand">
+        <img class="logo-img" src="Brand/logo.png" alt="Shay Analytics AI" />
+        <span>${escapeHtml(title || "Coming soon")}</span>
+      </div>
+      <button type="button" class="modal-close" aria-label="Close">×</button>
+      <h3>${escapeHtml(title || "Coming soon")}</h3>
+      <p class="helper-text">${escapeHtml(message || "Coming soon.")}</p>
+      <div style="margin-top:12px;">
+        <button type="button" class="ghost">Close</button>
+      </div>
+    </div>
+  `;
+  const closeModal = () => modal.remove();
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal || event.target.closest(".modal-close") || event.target.closest(".ghost")) {
+      closeModal();
+    }
+  });
+  document.body.appendChild(modal);
 }
 
 function switchTab(tabName) {
@@ -1866,10 +1900,10 @@ function auditActionHandlers() {
     ["signin", handleSignInClick],
     ["view-samples", () => {}],
     ["tab-upload", () => {}],
-    ["tab-sheets", () => {}],
-    ["tab-api", () => {}],
-    ["tab-pdf", () => {}],
-    ["tab-samples", () => {}],
+    ["sheets", () => {}],
+    ["api", () => {}],
+    ["pdf", () => {}],
+    ["samples", () => {}],
     ["signout", handleSignOutClick],
     ["export-pdf", handleExportPdf],
     ["test-api", handleApiFetch],
