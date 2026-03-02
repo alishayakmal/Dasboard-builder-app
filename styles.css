@@ -118,6 +118,16 @@ p {
   pointer-events: auto;
 }
 
+.topNav,
+.topNav * {
+  pointer-events: auto;
+}
+
+.topNav {
+  position: relative;
+  z-index: 50;
+}
+
 .brand {
   display: flex;
   align-items: center;
