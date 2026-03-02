@@ -130,6 +130,7 @@ const evidenceDrawer = document.getElementById("evidenceDrawer");
 const evidenceCloseButton = document.getElementById("evidenceClose");
 const evidenceContent = document.getElementById("evidenceContent");
 const evidenceScrim = document.getElementById("evidenceScrim");
+const headerTabsContainer = document.querySelector(".header-tabs");
 
 let dashboardStateModule = null;
 let chartActionsModule = null;
@@ -432,8 +433,14 @@ function init() {
   }
 
   tabButtons.forEach((button) => {
-    button.addEventListener("click", () => switchTab(button.dataset.tab));
+    button.addEventListener("click", () => {
+      if (button.dataset.nav) return;
+      switchTab(button.dataset.tab);
+    });
   });
+  if (headerTabsContainer) {
+    headerTabsContainer.addEventListener("click", handleHeaderNavClick);
+  }
 
   if (uploadTrigger && uploadInput) {
     uploadTrigger.addEventListener("click", () => uploadInput.click());
@@ -1363,6 +1370,63 @@ function inferPdfHeaders(rawRows) {
 function loadSampleGallery() {
   renderSampleGallery();
   switchTab("samples");
+}
+
+function handleHeaderNavClick(event) {
+  const navButton = event.target?.closest?.("[data-nav]");
+  if (!navButton || (headerTabsContainer && !headerTabsContainer.contains(navButton))) return;
+  const navKey = String(navButton.dataset.nav || "").trim().toLowerCase();
+  if (!navKey) return;
+  console.log(`[HeaderNav] clicked: ${navKey}`);
+
+  if (navKey === "sheets") {
+    const panel = document.getElementById("sheetsPanel");
+    if (!panel) {
+      console.error("[HeaderNav] Missing #sheetsPanel. Cannot route to Google Sheets.");
+      return;
+    }
+    switchTab("sheets");
+    return;
+  }
+
+  if (navKey === "api") {
+    const panel = document.getElementById("apiPanel");
+    if (!panel) {
+      console.error("[HeaderNav] Missing #apiPanel. Cannot route to API connect.");
+      return;
+    }
+    switchTab("api");
+    return;
+  }
+
+  if (navKey === "pdf") {
+    if (!pdfInput) {
+      console.error("[HeaderNav] Missing #pdfInput. Cannot trigger PDF upload.");
+      return;
+    }
+    const panel = document.getElementById("pdfPanel");
+    if (!panel) {
+      console.error("[HeaderNav] Missing #pdfPanel. Cannot route to PDF panel.");
+      return;
+    }
+    switchTab("pdf");
+    pdfInput.click();
+    return;
+  }
+
+  if (navKey === "samples") {
+    const panel = document.getElementById("samplesPanel");
+    if (!panel) {
+      console.error("[HeaderNav] Missing #samplesPanel. Cannot route to Samples.");
+      return;
+    }
+    renderSampleGallery();
+    switchTab("samples");
+    loadFixtureCsv();
+    return;
+  }
+
+  console.error(`[HeaderNav] Unknown nav target: ${navKey}`);
 }
 
 function switchTab(tabName) {
