@@ -2590,6 +2590,35 @@ button:disabled {
   margin: 6px 0 0;
 }
 
+.performance-intel-card {
+  display: grid;
+  gap: 8px;
+}
+
+.intel-section h5 {
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+}
+
+.intel-bullets {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 3px;
+}
+
+.intel-evidence-toggle {
+  margin-top: 8px;
+}
+
+.insights-engine-diagnostics {
+  display: grid;
+  gap: 8px;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
