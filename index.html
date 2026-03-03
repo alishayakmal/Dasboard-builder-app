@@ -427,8 +427,8 @@
 
         <section class="insights-card dashCard execCard">
           <div class="chart-header">
-            <h3>Insights</h3>
-            <p>What changed, what stands out, and where to look next.</p>
+            <h3>Weekly Performance Intelligence</h3>
+            <p id="performanceIntelSubtitle">Detected domain: general (confidence 0.50)</p>
           </div>
           <div class="dashCardBody execCardBody">
             <ul id="insightsList"></ul>
@@ -476,6 +476,16 @@
                   <div class="chartWrap diagnostics-corr-chart correlationChartWrap corrChartWrap">
                     <canvas id="diagCorrChart" height="180"></canvas>
                   </div>
+                </div>
+              </section>
+
+              <section class="table-card dashCard execCard">
+                <div class="table-header">
+                  <h3>Insights diagnostics</h3>
+                  <p>Detected metric roles and fired performance patterns.</p>
+                </div>
+                <div class="execCardBody cardBody">
+                  <div id="insightsDiagnosticsRoot" class="insights-engine-diagnostics"></div>
                 </div>
               </section>
 
@@ -605,6 +615,7 @@
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="./src/insights_engine.js" defer></script>
   <script src="./app.js" defer></script>
 </body>
 </html>
