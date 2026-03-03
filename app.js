@@ -79,6 +79,8 @@ const trendEmptyState = document.getElementById("trendEmptyState");
 const barTitle = document.getElementById("barTitle");
 const barSubtitle = document.getElementById("barSubtitle");
 const insightsList = document.getElementById("insightsList");
+const performanceIntelSubtitle = document.getElementById("performanceIntelSubtitle");
+const insightsDiagnosticsRoot = document.getElementById("insightsDiagnosticsRoot");
 const profileTable = document.getElementById("profileTable");
 const profileSummaryLine = document.getElementById("profileSummaryLine");
 const qualityBadge = document.getElementById("qualityBadge");
@@ -3778,6 +3780,8 @@ function resetStateForNewDataset(options = {}) {
   renderDebugUploadStatus();
   if (kpiGrid) kpiGrid.innerHTML = "";
   if (insightsList) insightsList.innerHTML = "";
+  if (performanceIntelSubtitle) performanceIntelSubtitle.textContent = "Detected domain: general (confidence 0.50)";
+  if (insightsDiagnosticsRoot) insightsDiagnosticsRoot.innerHTML = "";
   if (profileTable) profileTable.innerHTML = "";
   if (table) table.innerHTML = "";
   if (chartsSection) {
@@ -6285,76 +6289,86 @@ function countDateGaps(rows, dateColumn) {
   return gaps;
 }
 function renderInsights(rows) {
+  if (!insightsList) return;
   insightsList.innerHTML = "";
-  const evidencePanel = document.getElementById("userEvidencePanel");
-  if (evidencePanel) {
-    evidencePanel.classList.add("hidden");
-    evidencePanel.innerHTML = `<div class="helper-text">Select an insight to view evidence details.</div>`;
+  if (!Array.isArray(rows) || !rows.length) return;
+  const engine = window.PerformanceInsightsEngine;
+  if (!engine || typeof engine.generatePerformanceIntelligence !== "function") {
+    return;
   }
-  const insights = buildUnifiedInsights(rows);
-  const insight = insights[0];
-  if (!insight) return;
-  const card = document.createElement("li");
-  card.className = "insight-card user-insight-card user-insight-summary-card";
-  const metricQuality = classifyNumericMetricColumn(
-    state.selections.primaryMetric,
-    state.schema.profiles[state.selections.primaryMetric],
-    rows.length
-  );
-  const warningTag = metricQuality.isIdentifierLike
-    ? `<span class="metric-warning-tag">Identifier-like metric, insights may be low quality</span>`
-    : "";
-  const whereLiftBullets = (insight.whereLiftBullets || ["No strong subgroup contributors detected."])
-    .map((item) => `<li>${escapeHtml(item)}</li>`)
-    .join("");
-  const subgroupBreakdownRows = (insight.subgroupBreakdown || []).slice(0, 12).map((row) => `
-    <li>${escapeHtml(`${row.primarySegment} × ${row.secondaryDimension}:${row.secondaryValue} | ${row.deltaLabel} | ${percentFormatter.format(row.shareOfDelta || 0)} of subgroup lift`)}</li>
-  `).join("");
-  const subgroupMarkup = `
-    <details class="insight-diagnostics">
-      <summary>View subgroup breakdown</summary>
-      <ul class="insight-mini-list">
-        ${subgroupBreakdownRows || "<li>No subgroup breakdown available.</li>"}
-      </ul>
+
+  const output = engine.generatePerformanceIntelligence(rows);
+  const domain = output?.domain?.domain || "general";
+  const domainConfidence = Number(output?.domain?.confidence || 0);
+  if (performanceIntelSubtitle) {
+    performanceIntelSubtitle.textContent = `Detected domain: ${domain} (confidence ${domainConfidence.toFixed(2)})`;
+  }
+
+  const sectionOrder = [
+    "Executive Summary",
+    "Momentum",
+    "Key Metrics",
+    "Winners",
+    "Spotlight",
+    "Scale Opportunities",
+    "Watch List",
+    "Forecast Outlook",
+    "Next Steps",
+  ];
+  const sectionsByTitle = new Map((output?.narrative?.sections || []).map((section) => [section.title, section]));
+  const listItem = document.createElement("li");
+  listItem.className = "insight-card user-insight-card performance-intel-card";
+
+  const sectionsMarkup = sectionOrder.map((title) => {
+    const section = sectionsByTitle.get(title);
+    const bullets = (section?.bullets || []).filter(Boolean);
+    if (!bullets.length) return "";
+    const bulletsHtml = bullets.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+    return `
+      <section class="intel-section">
+        <h5>${escapeHtml(title)}</h5>
+        <ul class="intel-bullets">${bulletsHtml}</ul>
+      </section>
+    `;
+  }).join("");
+
+  const rulesTriggered = output?.diagnostics?.rulesTriggered || [];
+  const roles = output?.diagnostics?.rolesDetected || {};
+  const thresholds = output?.diagnostics?.thresholds || {};
+  listItem.innerHTML = `
+    ${sectionsMarkup || "<p class=\"helper-text\">Insufficient supported patterns to compose narrative.</p>"}
+    <details class="insight-diagnostics intel-evidence-toggle">
+      <summary>Evidence</summary>
+      <div class="diagnostics-grid">
+        <div><strong>Sample size</strong><div>${escapeHtml(numberFormatter.format(output?.diagnostics?.sampleSize || rows.length))}</div></div>
+        <div><strong>Roles detected</strong><ul>
+          <li>Time: ${escapeHtml(String(roles.timeField || "none"))}</li>
+          <li>Outcome: ${escapeHtml(String(roles.primaryOutcomeMetric || "none"))}</li>
+          <li>Input: ${escapeHtml(String(roles.costInputMetric || "none"))}</li>
+          <li>Rates: ${escapeHtml((roles.rateMetrics || []).join(", ") || "none")}</li>
+          <li>Entities: ${escapeHtml((roles.entityDimensions || []).join(", ") || "none")}</li>
+        </ul></div>
+        <div><strong>Rules triggered</strong><div>${escapeHtml(rulesTriggered.join(", ") || "none")}</div></div>
+        <div><strong>Thresholds</strong><ul>
+          ${Object.entries(thresholds).map(([key, value]) => `<li>${escapeHtml(String(key))}: ${escapeHtml(String(value))}</li>`).join("") || "<li>none</li>"}
+        </ul></div>
+      </div>
     </details>
   `;
-  card.innerHTML = `
-    <div class="insight-summary-header">
-      <h4>${escapeHtml(insight.headline || insight.title || "Executive summary")}</h4>
-      ${warningTag}
-    </div>
-    <section class="insight-section">
-      <h5>Executive summary</h5>
-      <p class="insight-meta">${escapeHtml(insight.executiveSummary || insight.deltaSummary || insight.summary || "")}</p>
-    </section>
-    <section class="insight-section">
-      <h5>Impact</h5>
-      <p class="insight-meta">${escapeHtml(insight.impactSummary || "Impact framing unavailable.")}</p>
-    </section>
-    <section class="insight-section">
-      <h5>Where lift occurs</h5>
-      <ul class="insight-mini-list">${whereLiftBullets}</ul>
-    </section>
-    <section class="insight-section">
-      <h5>Stability classification</h5>
-      <p class="insight-meta">${escapeHtml(insight.stabilitySummary || "Insufficient subgroup evidence to classify stability.")}</p>
-    </section>
-    <section class="insight-section">
-      <h5>Recommended action</h5>
-      <p class="insight-meta">${escapeHtml(insight.action || "Investigate key drivers and validate with a controlled test.")}</p>
-    </section>
-    ${subgroupMarkup}
-    <button type="button" class="ghost view-evidence">View evidence</button>
-  `;
-  const button = card.querySelector(".view-evidence");
-  if (button) {
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      renderUserInsightEvidence(evidencePanel, insight);
-    });
+  insightsList.appendChild(listItem);
+
+  if (insightsDiagnosticsRoot) {
+    insightsDiagnosticsRoot.innerHTML = `
+      <div class="diagnostics-grid">
+        <div><strong>Domain</strong><div>${escapeHtml(domain)} (${domainConfidence.toFixed(2)})</div></div>
+        <div><strong>Rules fired</strong><div>${escapeHtml(rulesTriggered.join(", ") || "none")}</div></div>
+        <div><strong>Outcome metric</strong><div>${escapeHtml(String(roles.primaryOutcomeMetric || "none"))}</div></div>
+        <div><strong>Input metric</strong><div>${escapeHtml(String(roles.costInputMetric || "none"))}</div></div>
+        <div><strong>Time field</strong><div>${escapeHtml(String(roles.timeField || "none"))}</div></div>
+        <div><strong>Entity dimensions</strong><div>${escapeHtml((roles.entityDimensions || []).join(", ") || "none")}</div></div>
+      </div>
+    `;
   }
-  insightsList.appendChild(card);
 }
 
 function extractInsightBullet(insight, prefix) {
