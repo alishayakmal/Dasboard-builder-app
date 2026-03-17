@@ -210,7 +210,7 @@ button:disabled {
 
 .container {
   padding: 16px 24px 48px;
-  max-width: 1200px;
+  max-width: 1440px;
   margin: 0 auto;
 }
 
@@ -1710,7 +1710,7 @@ button:disabled {
 .controls-panel {
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: 1fr;
   padding: 16px;
   border-radius: 18px;
   border: 1px solid var(--border-color);
@@ -1756,6 +1756,22 @@ button:disabled {
   display: grid;
   gap: 18px;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  align-items: start;
+}
+
+.charts > .chart-card {
+  height: auto;
+  min-height: 640px;
+}
+
+.charts > .chart-card .dashCardBody,
+.charts > .chart-card .execCardBody {
+  overflow: visible;
+}
+
+.performance-card {
+  grid-column: 1 / -1;
+  min-height: 1380px;
 }
 
 .chart-card,
@@ -1770,7 +1786,45 @@ button:disabled {
 }
 
 .chart-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
   margin-bottom: 8px;
+}
+
+.chart-header h3 {
+  margin-bottom: 4px;
+}
+
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.chart-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 120px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.chart-filter select {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  font-size: 13px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.chart-filter select:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .heatmap-card {
@@ -1881,8 +1935,8 @@ button:disabled {
 }
 
 .execCardBody.noScroll .chartWrap {
-  height: 300px;
-  max-height: 300px;
+  height: 460px;
+  max-height: 460px;
 }
 
 .chartWrap canvas {
@@ -1891,21 +1945,50 @@ button:disabled {
   display: block;
 }
 
+.chart-scroll {
+  height: auto !important;
+  max-height: none !important;
+  min-height: 260px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 8px;
+}
+
+.execCard .chart-scroll,
+.execCardBody.noScroll .chart-scroll,
+.dashCardBody.noScroll .chart-scroll {
+  height: auto !important;
+  max-height: none !important;
+}
+
+.chart-scroll canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+.performanceCanvasWrap {
+  position: relative;
+  width: 100%;
+  min-height: 420px;
+  box-sizing: border-box;
+}
+
 .trendChartWrap {
   position: relative;
-  height: 320px;
+  height: 460px;
   width: 100%;
   border: 1px dashed rgba(255, 255, 255, 0.18);
   border-radius: 16px;
   padding: 12px;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .execCard .trendChartWrap,
 .execCardBody.noScroll .trendChartWrap {
-  height: 320px;
-  max-height: 320px;
+  height: 460px;
+  max-height: 460px;
 }
 
 .trendChartWrap canvas {
@@ -2007,16 +2090,89 @@ button:disabled {
 .hmGridWrap {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  display: flex;
+  overflow: auto;
 }
 
 .hmFooter {
   flex: 0 0 auto;
-  margin-top: 12px;
+  margin-top: 6px;
 }
 
 .trend-drilldown {
   margin-top: 0;
+}
+
+.performanceStack {
+  display: grid;
+  gap: 18px;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.supportingChartCard {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.42);
+  padding: 12px;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.supportingChartHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.supportingChartHeader h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.supportingChartHeader p {
+  margin: 4px 0 0;
+}
+
+.supportingChartCanvasWrap {
+  position: relative;
+  height: 280px;
+}
+
+.chart-filter-inline {
+  min-width: 150px;
+}
+
+.performanceSection {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.42);
+  padding: 14px;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.performanceCanvasWrap-main {
+  min-height: 620px;
+}
+
+.performanceCanvasWrap,
+.supportingChartCanvasWrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+@media (max-width: 900px) {
+  .chart-header {
+    flex-direction: column;
+  }
+
+  .chart-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 
 .card-empty-message {
@@ -2057,6 +2213,12 @@ button:disabled {
   max-height: 240px;
 }
 
+.exportMode .chart-scroll {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
 .exportMode .trend-drilldown {
   display: none;
 }
@@ -2064,6 +2226,13 @@ button:disabled {
 @media print {
   .trend-drilldown {
     display: none !important;
+  }
+
+  .chart-scroll {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding-right: 0 !important;
   }
 }
 
@@ -2126,6 +2295,11 @@ button:disabled {
   gap: 8px;
   min-width: 0;
   overflow: hidden;
+}
+
+.user-kpi-card.is-selected-metric {
+  border-color: rgba(94, 234, 212, 0.7);
+  box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.24);
 }
 
 .user-kpi-card h4 {
@@ -2593,6 +2767,16 @@ button:disabled {
 .performance-intel-card {
   display: grid;
   gap: 8px;
+}
+
+.insight-risk-banner {
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.14);
+  color: #fef3c7;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .intel-section h5 {
