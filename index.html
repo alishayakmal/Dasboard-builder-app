@@ -356,33 +356,6 @@
         </section>
 
         <section class="controls-panel">
-          <div class="control-group">
-            <label for="metricSelect">Primary metric</label>
-            <select id="metricSelect"></select>
-          </div>
-          <div class="control-group">
-            <label for="dimensionSelect">Breakdown dimension</label>
-            <select id="dimensionSelect"></select>
-          </div>
-          <div class="control-group">
-            <label for="topN">Top N</label>
-            <select id="topN">
-              <option value="5">5</option>
-              <option value="8" selected>8</option>
-              <option value="12">12</option>
-            </select>
-          </div>
-          <div class="control-group">
-            <label for="domainSelect">Domain</label>
-            <select id="domainSelect">
-              <option value="auto" selected>Auto-detect</option>
-              <option value="finance">Finance</option>
-              <option value="marketing">Marketing</option>
-              <option value="product">Product</option>
-              <option value="operations">Operations</option>
-              <option value="general">General</option>
-            </select>
-          </div>
           <div class="control-group control-actions">
             <label>Actions</label>
             <div class="control-buttons">
@@ -402,8 +375,33 @@
           <div class="data-summary-panel" id="dataSummaryPanel"></div>
           <div class="chart-card dashCard execCard">
             <div class="chart-header">
-              <h3 id="trendTitle">Trend</h3>
-              <p id="trendSubtitle"></p>
+              <div>
+                <h3 id="trendTitle">Trend</h3>
+                <p id="trendSubtitle"></p>
+              </div>
+              <div class="chart-controls">
+                <label class="chart-filter" for="metricSelect">Metric
+                  <select id="metricSelect"></select>
+                </label>
+                <label class="chart-filter" for="topN">Top N
+                  <select id="topN">
+                    <option value="all">All</option>
+                    <option value="5">5</option>
+                    <option value="8" selected>8</option>
+                    <option value="12">12</option>
+                  </select>
+                </label>
+                <label class="chart-filter" for="heatmapRowSelect">Heatmap row
+                  <select id="heatmapRowSelect">
+                    <option value="auto">Auto</option>
+                  </select>
+                </label>
+                <label class="chart-filter" for="heatmapColSelect">Heatmap column
+                  <select id="heatmapColSelect">
+                    <option value="auto">Auto</option>
+                  </select>
+                </label>
+              </div>
             </div>
             <div class="dashCardBody execCardBody noScroll cardBody">
               <div class="trendChartWrap chartWrap">
@@ -412,14 +410,84 @@
               </div>
             </div>
           </div>
-          <div class="chart-card dashCard execCard">
-            <div class="chart-header">
-              <h3 id="barTitle">Breakdown</h3>
-              <p id="barSubtitle"></p>
-            </div>
+          <div class="chart-card dashCard execCard performance-card">
             <div class="dashCardBody execCardBody">
-              <div class="chartWrap">
-                <canvas id="barChart" height="140"></canvas>
+              <div class="performanceStack">
+                <section class="performanceSection">
+                  <div class="supportingChartHeader">
+                    <div>
+                      <h3 id="barTitle">Breakdown</h3>
+                      <p id="barSubtitle"></p>
+                    </div>
+                    <label class="chart-filter chart-filter-inline" for="performanceMetricSelect">Metric
+                      <select id="performanceMetricSelect"></select>
+                    </label>
+                    <label class="chart-filter chart-filter-inline" for="dimensionSelect">Dimension
+                      <select id="dimensionSelect"></select>
+                    </label>
+                    <label class="chart-filter chart-filter-inline" for="performanceTopNSelect">Top N
+                      <select id="performanceTopNSelect">
+                        <option value="all">All</option>
+                        <option value="5">5</option>
+                        <option value="8" selected>8</option>
+                        <option value="12">12</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="performanceCanvasWrap performanceCanvasWrap-main">
+                    <canvas id="performanceDetailsChart" height="140"></canvas>
+                  </div>
+                </section>
+                <section class="supportingChartCard">
+                  <div class="supportingChartHeader">
+                    <div>
+                      <h4>Distribution Pie</h4>
+                      <p id="performanceShareSubtitle" class="helper-text"></p>
+                    </div>
+                    <label class="chart-filter chart-filter-inline" for="performancePieMetricSelect">Metric
+                      <select id="performancePieMetricSelect"></select>
+                    </label>
+                    <label class="chart-filter chart-filter-inline" for="performancePieDimensionSelect">Dimension
+                      <select id="performancePieDimensionSelect"></select>
+                    </label>
+                    <label class="chart-filter chart-filter-inline" for="performancePieTopNSelect">Top N
+                      <select id="performancePieTopNSelect">
+                        <option value="all">All</option>
+                        <option value="5">5</option>
+                        <option value="8" selected>8</option>
+                        <option value="12">12</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="supportingChartCanvasWrap">
+                    <canvas id="performanceShareChart" height="130"></canvas>
+                  </div>
+                </section>
+                <section class="supportingChartCard">
+                  <div class="supportingChartHeader">
+                    <div>
+                      <h4>Variance Waterfall</h4>
+                      <p id="performanceVolumeSubtitle" class="helper-text"></p>
+                    </div>
+                    <label class="chart-filter chart-filter-inline" for="performanceWaterfallMetricSelect">Metric
+                      <select id="performanceWaterfallMetricSelect"></select>
+                    </label>
+                    <label class="chart-filter chart-filter-inline" for="performanceWaterfallDimensionSelect">Dimension
+                      <select id="performanceWaterfallDimensionSelect"></select>
+                    </label>
+                    <label class="chart-filter chart-filter-inline" for="performanceWaterfallTopNSelect">Top N
+                      <select id="performanceWaterfallTopNSelect">
+                        <option value="all">All</option>
+                        <option value="5">5</option>
+                        <option value="8" selected>8</option>
+                        <option value="12">12</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="supportingChartCanvasWrap">
+                    <canvas id="performanceVolumeChart" height="130"></canvas>
+                  </div>
+                </section>
               </div>
             </div>
           </div>
@@ -615,7 +683,7 @@
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="./src/insights_engine.js" defer></script>
-  <script src="./app.js" defer></script>
+  <script src="./src/insights_engine.js?v=20260317c" defer></script>
+  <script src="./app.js?v=20260317c" defer></script>
 </body>
 </html>
