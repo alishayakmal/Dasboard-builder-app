@@ -2,6 +2,7 @@
 const fileInputInline = document.getElementById("fileInputInline");
 const loadSample = document.getElementById("loadSample");
 const loadSampleInline = document.getElementById("loadSampleInline");
+const BUILD_ID = "20260317c";
 const landingView = document.getElementById("landingView");
 const appView = document.getElementById("appView");
 const signInButton = document.getElementById("signInBtn");
@@ -71,6 +72,8 @@ const metricSelect = document.getElementById("metricSelect");
 const dimensionSelect = document.getElementById("dimensionSelect");
 const topNSelect = document.getElementById("topN");
 const domainSelect = document.getElementById("domainSelect");
+const heatmapRowSelect = document.getElementById("heatmapRowSelect");
+const heatmapColSelect = document.getElementById("heatmapColSelect");
 const exportCsvButton = document.getElementById("exportCsv");
 const downloadInsightsButton = document.getElementById("downloadInsights");
 const trendTitle = document.getElementById("trendTitle");
@@ -78,6 +81,16 @@ const trendSubtitle = document.getElementById("trendSubtitle");
 const trendEmptyState = document.getElementById("trendEmptyState");
 const barTitle = document.getElementById("barTitle");
 const barSubtitle = document.getElementById("barSubtitle");
+const performanceShareSubtitle = document.getElementById("performanceShareSubtitle");
+const performanceVolumeSubtitle = document.getElementById("performanceVolumeSubtitle");
+const performanceMetricSelect = document.getElementById("performanceMetricSelect");
+const performancePieMetricSelect = document.getElementById("performancePieMetricSelect");
+const performanceWaterfallMetricSelect = document.getElementById("performanceWaterfallMetricSelect");
+const performanceTopNSelect = document.getElementById("performanceTopNSelect");
+const performancePieTopNSelect = document.getElementById("performancePieTopNSelect");
+const performanceWaterfallTopNSelect = document.getElementById("performanceWaterfallTopNSelect");
+const performancePieDimensionSelect = document.getElementById("performancePieDimensionSelect");
+const performanceWaterfallDimensionSelect = document.getElementById("performanceWaterfallDimensionSelect");
 const insightsList = document.getElementById("insightsList");
 const performanceIntelSubtitle = document.getElementById("performanceIntelSubtitle");
 const insightsDiagnosticsRoot = document.getElementById("insightsDiagnosticsRoot");
@@ -168,6 +181,9 @@ window.addEventListener("unhandledrejection", (event) => {
 
 let trendChartInstance = null;
 let barChartInstance = null;
+let performanceShareChartInstance = null;
+let performanceVolumeChartInstance = null;
+let performanceChartDesiredHeight = 260;
 let diagnosticsCorrelationChartInstance = null;
 let heatmapChartInstance = null;
 let diagnosticsCorrelationResizeObserver = null;
@@ -194,34 +210,117 @@ const signupFormState = {
 const USERS_KEY = "shay_users";
 const SESSION_KEY = "shay_session";
 
-const DEMO_CSV_URL = new URL("./data-sample.csv", document.baseURI).toString();
 const LOCAL_PATH_ERROR_MESSAGE = "Local file paths are not accessible in the browser. Please upload the file or host it in the repo.";
 // Use the deployed Apps Script Web App URL ending in /exec (not the editor URL).
 const WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbznq6aHhsHA6uiQg_AoJ6PG-WioCqriL_Z82SutiX1VeoI1TstpdqYvNPfahI8ZhwjsEQ/exec";
 const GOOGLE_CLIENT_ID = "611908111462-d5mfvb991hgbfvinop8hgeec3li7rqbp.apps.googleusercontent.com";
+const SAMPLE_FILES = {
+  retail: "./samples/retail_sales.csv",
+  marketing: "./samples/marketing_performance.csv",
+  product: "./samples/product_usage.csv",
+};
+const EMBEDDED_SAMPLE_CSVS = {
+  retail: `Date,Industry,Region,Channel,Orders,Revenue,ReturnRate
+2025-01-02,Retail,North,Online,120,18450,0.03
+2025-01-03,Retail,South,Partner,88,12900,0.02
+2025-01-04,Wholesale,West,Online,140,22100,0.04
+2025-01-05,Wholesale,East,Retail,64,9100,0.01
+2025-01-06,Retail,North,Retail,78,11850,0.02
+2025-01-07,Wholesale,South,Online,156,24500,0.05
+2025-01-08,Tech,West,Partner,99,15450,0.03
+2025-01-09,Tech,East,Online,135,21300,0.02
+2025-01-10,Retail,North,Partner,110,17600,0.02
+2025-01-11,Wholesale,South,Retail,72,9900,0.01
+2025-01-12,Tech,West,Online,165,26850,0.04
+2025-01-13,Tech,East,Partner,84,12400,0.03
+2025-01-14,Retail,North,Online,142,23100,0.05
+2025-01-15,Wholesale,South,Partner,96,14800,0.02
+2025-01-16,Tech,West,Retail,70,10500,0.02
+2025-01-17,Retail,East,Online,150,23900,0.03`,
+  marketing: `Date,Campaign,Channel,Spend,Clicks,Impressions,Conversions,CTR
+2025-01-02,Spring Launch,Search,1200,3400,125,0.0368
+2025-01-03,Spring Launch,Social,980,2900,110,0.0374
+2025-01-04,Brand Awareness,Display,1550,6400,76,0.0119
+2025-01-05,Brand Awareness,Social,1110,5400,64,0.0119
+2025-01-06,Retargeting,Search,860,2500,190,0.0760
+2025-01-07,Retargeting,Social,730,2100,160,0.0762
+2025-01-08,Holiday Push,Display,1980,7200,102,0.0142
+2025-01-09,Holiday Push,Search,1420,4800,210,0.0438
+2025-01-10,Holiday Push,Social,1050,3600,175,0.0486
+2025-01-11,Retention,Email,420,900,130,0.1444
+2025-01-12,Retention,Email,460,980,140,0.1429
+2025-01-13,New Products,Search,1300,4200,220,0.0524
+2025-01-14,New Products,Social,1180,3500,190,0.0543`,
+  product: `Week,Plan,Region,ActiveUsers,Sessions,RetentionRate
+2025-01-06,Free,North,1200,3600,0.41
+2025-01-06,Pro,North,420,1400,0.58
+2025-01-06,Free,South,980,2900,0.39
+2025-01-06,Pro,South,360,1180,0.55
+2025-01-13,Free,North,1280,3720,0.43
+2025-01-13,Pro,North,450,1500,0.59
+2025-01-13,Free,South,1020,3050,0.40
+2025-01-13,Pro,South,380,1240,0.56
+2025-01-20,Free,North,1310,3800,0.44
+2025-01-20,Pro,North,470,1560,0.60
+2025-01-20,Free,South,1050,3120,0.41
+2025-01-20,Pro,South,392,1300,0.57`,
+};
+const DEMO_CSV_CANDIDATES = [
+  SAMPLE_FILES.retail,
+  "./data-sample.csv",
+];
+const EMBEDDED_DEMO_CSV = EMBEDDED_SAMPLE_CSVS.retail;
 const sampleManifest = [
   {
-    id: "sales",
+    id: "retail",
     name: "Retail Sales",
-    file: "./samples/retail-sales.csv",
+    file: SAMPLE_FILES.retail,
     description: "Daily orders, revenue, returns, and channel performance by industry.",
     columns: ["Date", "Industry", "Region", "Channel", "Orders", "Revenue", "ReturnRate"],
   },
   {
     id: "marketing",
     name: "Marketing Performance",
-    file: "./samples/marketing-performance.csv",
+    file: SAMPLE_FILES.marketing,
     description: "Campaigns with spend, clicks, impressions, and conversions.",
     columns: ["Date", "Campaign", "Channel", "Spend", "Clicks", "Impressions", "Conversions", "CTR"],
   },
   {
     id: "product",
     name: "Product Usage",
-    file: "./samples/product-usage.csv",
+    file: SAMPLE_FILES.product,
     description: "Weekly active users, sessions, and retention.",
     columns: ["Week", "Plan", "Region", "ActiveUsers", "Sessions", "RetentionRate"],
   },
 ];
+const ACTION_HANDLERS = {
+  "start-free": () => handleStartFreeClick(),
+  signin: () => handleSignInClick(),
+  "view-samples": () => {
+    if (getSignedIn()) {
+      renderSampleGallery();
+      switchTab("samples");
+      return;
+    }
+    const target = document.getElementById("samples");
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  },
+  "tab-upload": () => switchTab("upload"),
+  sheets: () => handleNav("sheets"),
+  api: () => handleNav("api"),
+  pdf: () => handleNav("pdf"),
+  samples: () => handleNav("samples"),
+  signout: () => handleSignOutClick(),
+  "export-pdf": () => handleExportPdf(),
+  "test-api": () => handleApiFetch(),
+  "load-sheet": () => loadSheetData(),
+  "login-google": () => handleLoginGoogleClick(),
+  "export-csv": () => exportCsvData(),
+  "download-insights": () => downloadInsights(),
+  "export-sheets": () => handleExportToSheets(),
+};
 
 const numberFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
@@ -291,6 +390,16 @@ const state = {
   dateColumn: null,
   dateFieldConfidence: 0,
   topN: 8,
+  heatmapRowDimension: null,
+  heatmapColumnDimension: null,
+  performanceMetric: null,
+  performancePieMetric: null,
+  performanceWaterfallMetric: null,
+  performanceTopN: 8,
+  performancePieTopN: 8,
+  performanceWaterfallTopN: 8,
+  performancePieDimension: null,
+  performanceWaterfallDimension: null,
   diagnosticsCorrelation: {
     xMetric: null,
     yMetric: null,
@@ -368,6 +477,22 @@ const appStore = (() => {
     },
   };
 })();
+
+function parseTopNSelection(value) {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw || raw === "all") return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : 8;
+}
+
+function getActiveTopNSetting() {
+  const controlValue = topNSelect ? parseTopNSelection(topNSelect.value) : undefined;
+  if (controlValue !== undefined && controlValue !== state.topN) {
+    state.topN = controlValue;
+    syncChartStateDirect({ topN: state.topN });
+  }
+  return state.topN === undefined ? 8 : state.topN;
+}
 
 function isAnalysisReady(storeState = appStore.getState()) {
   return storeState.parseStatus === "ready" && Boolean(storeState.dataset?.rows?.length);
@@ -454,9 +579,7 @@ function init() {
       switchTab(button.dataset.tab);
     });
   });
-  if (topNav) {
-    topNav.addEventListener("click", handleTopNavClick);
-  }
+  document.addEventListener("click", handleActionClick);
 
   if (uploadTrigger && uploadInput) {
     uploadTrigger.addEventListener("click", () => uploadInput.click());
@@ -526,6 +649,13 @@ function init() {
     if (!button) return;
     button.addEventListener("click", () => loadSampleGallery());
   });
+  if (sampleGallery) {
+    sampleGallery.addEventListener("click", (event) => {
+      const button = event.target?.closest?.("[data-sample]");
+      if (!button) return;
+      loadSampleDataset(button.dataset.sample);
+    });
+  }
 
   if (dropZone) {
     dropZone.addEventListener("dragover", (event) => {
@@ -571,12 +701,71 @@ function init() {
     syncChartStateDirect({ selectedDimension: dimensionSelect.value });
     applyFiltersAndRender();
   });
-
   topNSelect.addEventListener("change", () => {
-    state.topN = Number(topNSelect.value);
+    state.topN = parseTopNSelection(topNSelect.value);
     syncChartStateDirect({ topN: state.topN });
     applyFiltersAndRender();
   });
+  if (heatmapRowSelect) {
+    heatmapRowSelect.addEventListener("change", () => {
+      state.heatmapRowDimension = heatmapRowSelect.value === "auto" ? null : heatmapRowSelect.value;
+      applyFiltersAndRender();
+    });
+  }
+  if (heatmapColSelect) {
+    heatmapColSelect.addEventListener("change", () => {
+      state.heatmapColumnDimension = heatmapColSelect.value === "auto" ? null : heatmapColSelect.value;
+      applyFiltersAndRender();
+    });
+  }
+  if (performanceMetricSelect) {
+    performanceMetricSelect.addEventListener("change", () => {
+      state.performanceMetric = performanceMetricSelect.value || null;
+      applyFiltersAndRender();
+    });
+  }
+  if (performanceTopNSelect) {
+    performanceTopNSelect.addEventListener("change", () => {
+      state.performanceTopN = parseTopNSelection(performanceTopNSelect.value);
+      applyFiltersAndRender();
+    });
+  }
+  if (performancePieMetricSelect) {
+    performancePieMetricSelect.addEventListener("change", () => {
+      state.performancePieMetric = performancePieMetricSelect.value || null;
+      applyFiltersAndRender();
+    });
+  }
+  if (performancePieTopNSelect) {
+    performancePieTopNSelect.addEventListener("change", () => {
+      state.performancePieTopN = parseTopNSelection(performancePieTopNSelect.value);
+      applyFiltersAndRender();
+    });
+  }
+  if (performanceWaterfallMetricSelect) {
+    performanceWaterfallMetricSelect.addEventListener("change", () => {
+      state.performanceWaterfallMetric = performanceWaterfallMetricSelect.value || null;
+      applyFiltersAndRender();
+    });
+  }
+  if (performanceWaterfallTopNSelect) {
+    performanceWaterfallTopNSelect.addEventListener("change", () => {
+      state.performanceWaterfallTopN = parseTopNSelection(performanceWaterfallTopNSelect.value);
+      applyFiltersAndRender();
+    });
+  }
+  if (performancePieDimensionSelect) {
+    performancePieDimensionSelect.addEventListener("change", () => {
+      state.performancePieDimension = performancePieDimensionSelect.value || null;
+      applyFiltersAndRender();
+    });
+  }
+  if (performanceWaterfallDimensionSelect) {
+    performanceWaterfallDimensionSelect.addEventListener("change", () => {
+      state.performanceWaterfallDimension = performanceWaterfallDimensionSelect.value || null;
+      applyFiltersAndRender();
+    });
+  }
 
   if (previewCompactToggle) {
     previewCompactToggle.checked = state.previewCompact !== false;
@@ -608,25 +797,14 @@ function init() {
     scheduleDiagnosticsCorrelationResize();
   });
 
-  domainSelect.addEventListener("change", () => {
-    state.domainAuto = domainSelect.value === "auto";
-    state.domain = state.domainAuto ? state.inferredDomain : domainSelect.value;
-    applyFiltersAndRender();
-  });
-
-  exportCsvButton.addEventListener("click", () => exportCsvData());
-  downloadInsightsButton.addEventListener("click", () => downloadInsights());
-
-  if (testApiButton) {
-    testApiButton.addEventListener("click", handleApiFetch);
+  if (domainSelect) {
+    domainSelect.addEventListener("change", () => {
+      state.domainAuto = domainSelect.value === "auto";
+      state.domain = state.domainAuto ? state.inferredDomain : domainSelect.value;
+      applyFiltersAndRender();
+    });
   }
 
-  if (startFreeButton) startFreeButton.addEventListener("click", handleStartFreeClick);
-  if (heroStartButton) heroStartButton.addEventListener("click", handleStartFreeClick);
-  if (viewSamplesButton) viewSamplesButton.addEventListener("click", () => {
-    const target = document.getElementById("samples");
-    if (target) target.scrollIntoView({ behavior: "smooth" });
-  });
   if (closeModalButton) closeModalButton.addEventListener("click", closeModal);
   if (signupModal) signupModal.addEventListener("click", (event) => {
     if (event.target === signupModal) closeModal();
@@ -639,12 +817,6 @@ function init() {
     if (!input) return;
     input.addEventListener("input", handleSignupInputChange);
   });
-  if (signInButton) signInButton.addEventListener("click", handleSignInClick);
-  if (signOutButton) signOutButton.addEventListener("click", handleSignOutClick);
-  if (loadSheetButton) loadSheetButton.addEventListener("click", loadSheetData);
-  if (loginGoogleButton) loginGoogleButton.addEventListener("click", handleLoginGoogleClick);
-  if (exportSheetsButton) exportSheetsButton.addEventListener("click", handleExportToSheets);
-  if (downloadPdfButton) downloadPdfButton.addEventListener("click", handleExportPdf);
   if (chatSendButton) chatSendButton.addEventListener("click", handleChatSend);
   if (chatApplyButton) chatApplyButton.addEventListener("click", applyChatPreview);
   if (chatCancelButton) chatCancelButton.addEventListener("click", clearChatPreview);
@@ -933,7 +1105,17 @@ function syncUploadAnalysisState() {
   }
 
   if (hasDataset) {
-    tabPanels.forEach((panel) => panel.classList.add("hidden"));
+    const activeTab = Array.from(tabButtons || []).find((button) => button.classList.contains("active"))?.dataset?.tab || null;
+    tabPanels.forEach((panel) => {
+      const panelTab = panel.dataset.tabPanel;
+      if (panelTab === "upload") {
+        panel.classList.add("hidden");
+        return;
+      }
+      if (activeTab) {
+        panel.classList.toggle("hidden", panelTab !== activeTab);
+      }
+    });
   }
 
   const uploadTabActive = Array.from(tabButtons || []).some((button) => button.dataset.tab === "upload" && button.classList.contains("active"));
@@ -990,7 +1172,7 @@ function buildChartStateSnapshot() {
     selectedDimension: state.selectedDimension || null,
     chartType: state.chartType || "bar",
     sort: state.sort || null,
-    topN: state.topN || 8,
+    topN: state.topN ?? null,
     aggregation: state.aggregation || "sum",
     timeField: state.dateColumn || null,
   };
@@ -1021,7 +1203,7 @@ function applyChartState(nextState, options = {}) {
   state.chartType = nextState.chartType || state.chartType;
   state.aggregation = nextState.aggregation || state.aggregation;
   state.sort = nextState.sort || null;
-  state.topN = Number.isFinite(nextState.topN) ? nextState.topN : state.topN;
+  state.topN = nextState.topN === null ? null : (Number.isFinite(nextState.topN) ? nextState.topN : state.topN);
   state.dateColumn = nextState.timeField || state.dateColumn;
 
   if (metricSelect && state.selections.primaryMetric) {
@@ -1031,7 +1213,7 @@ function applyChartState(nextState, options = {}) {
     dimensionSelect.value = state.selectedDimension || "";
   }
   if (topNSelect) {
-    topNSelect.value = String(state.topN || 8);
+    topNSelect.value = state.topN === null ? "all" : String(state.topN || 8);
   }
 
   applyFiltersAndRender();
@@ -1388,16 +1570,37 @@ function inferPdfHeaders(rawRows) {
 
 function loadSampleGallery() {
   renderSampleGallery();
-  switchTab("samples");
+  if (getSignedIn()) {
+    switchTab("samples");
+    return;
+  }
+  const target = document.getElementById("samples");
+  if (target) {
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 }
 
 function handleTopNavClick(event) {
   const button = event.target?.closest?.("[data-action]");
   if (!button || (topNav && !topNav.contains(button))) return;
   const action = String(button.dataset.action || "").trim().toLowerCase();
-  if (!["sheets", "api", "pdf", "samples"].includes(action)) return;
-  console.log("NAV CLICK", action);
-  handleNav(action);
+  if (!["sheets", "api", "pdf", "samples", "tab-upload"].includes(action)) return;
+  runActionHandler(action, event, button);
+}
+
+function handleActionClick(event) {
+  const button = event.target?.closest?.("[data-action]");
+  if (!button || button.disabled) return;
+  const action = String(button.dataset.action || "").trim().toLowerCase();
+  runActionHandler(action, event, button);
+}
+
+function runActionHandler(action, event, button) {
+  const handler = ACTION_HANDLERS[action];
+  if (!handler) return false;
+  event?.preventDefault?.();
+  handler({ event, button });
+  return true;
 }
 
 function handleNav(action) {
@@ -1448,7 +1651,7 @@ function handleNav(action) {
     }
     renderSampleGallery();
     switchTab("samples");
-    loadFixtureCsv();
+    return;
   }
 }
 
@@ -1491,10 +1694,6 @@ function switchTab(tabName) {
   });
   syncUploadAnalysisState();
   focusSourceSection(tabName);
-  if (tabName === "samples" && !state.rawRows.length && !state.sampleTabAutoloaded) {
-    state.sampleTabAutoloaded = true;
-    loadFixtureCsv();
-  }
 }
 
 function focusSourceSection(tabName) {
@@ -1913,28 +2112,9 @@ function disableUnavailableButtons() {
 }
 
 function auditActionHandlers() {
-  const handlerMap = new Map([
-    ["start-free", handleStartFreeClick],
-    ["signin", handleSignInClick],
-    ["view-samples", () => {}],
-    ["tab-upload", () => {}],
-    ["sheets", () => {}],
-    ["api", () => {}],
-    ["pdf", () => {}],
-    ["samples", () => {}],
-    ["signout", handleSignOutClick],
-    ["export-pdf", handleExportPdf],
-    ["test-api", handleApiFetch],
-    ["load-sheet", loadSheetData],
-    ["login-google", handleLoginGoogleClick],
-    ["export-csv", exportCsvData],
-    ["download-insights", downloadInsights],
-    ["export-sheets", handleExportToSheets],
-  ]);
-
   document.querySelectorAll("[data-action]").forEach((button) => {
     const action = button.getAttribute("data-action");
-    if (!handlerMap.has(action) && !button.disabled) {
+    if (!ACTION_HANDLERS[action] && !button.disabled) {
       console.warn(`Missing handler for data-action="${action}"`);
     }
   });
@@ -1988,6 +2168,29 @@ async function handleExportPdf() {
   showToast("Preparing PDF...");
   document.body.classList.add("exportMode");
   const previousDiagnosticsOpen = applyDiagnosticsExportState();
+  const perfScroll = document.querySelector(".chart-scroll");
+  const perfCanvas = document.getElementById("performanceDetailsChart");
+  const perfCanvasWrap = perfCanvas?.closest(".performanceCanvasWrap");
+  const prevPerf = {
+    maxHeight: perfScroll?.style.maxHeight || "",
+    overflowY: perfScroll?.style.overflowY || "",
+    canvasHeight: perfCanvas?.style.height || "",
+    wrapHeight: perfCanvasWrap?.style.height || "",
+  };
+  if (perfScroll) {
+    perfScroll.style.maxHeight = "none";
+    perfScroll.style.overflowY = "visible";
+  }
+  if (perfCanvasWrap) {
+    perfCanvasWrap.style.height = `${Math.max(260, performanceChartDesiredHeight || 260)}px`;
+  }
+  if (perfCanvas) {
+    perfCanvas.style.height = `${Math.max(260, performanceChartDesiredHeight || 260)}px`;
+  }
+  if (barChartInstance) {
+    barChartInstance.resize();
+    barChartInstance.update("none");
+  }
   try {
     const canvas = await window.html2canvas(target, { scale: 2, backgroundColor: "#ffffff" });
     const imgData = canvas.toDataURL("image/png");
@@ -2018,6 +2221,20 @@ async function handleExportPdf() {
     const dateStamp = new Date().toISOString().slice(0, 10);
     pdf.save(`shalytics-report-${dateStamp}.pdf`);
   } finally {
+    if (perfScroll) {
+      perfScroll.style.maxHeight = prevPerf.maxHeight;
+      perfScroll.style.overflowY = prevPerf.overflowY;
+    }
+    if (perfCanvas) {
+      perfCanvas.style.height = prevPerf.canvasHeight;
+    }
+    if (perfCanvasWrap) {
+      perfCanvasWrap.style.height = prevPerf.wrapHeight;
+    }
+    if (barChartInstance) {
+      barChartInstance.resize();
+      barChartInstance.update("none");
+    }
     restoreDiagnosticsExportState(previousDiagnosticsOpen);
     document.body.classList.remove("exportMode");
   }
@@ -2147,7 +2364,6 @@ function renderSampleGallery() {
       <p class="helper-text">Columns: ${sample.columns.join(", ")}</p>
       <button class="ghost" data-sample="${sample.id}">Load sample</button>
     `;
-    card.querySelector("button").addEventListener("click", () => loadSampleFile(sample));
     sampleGallery.appendChild(card);
   });
 }
@@ -2203,6 +2419,45 @@ function validateRemoteInput(value, context = "global") {
   return false;
 }
 
+async function fetchTextFromCandidates(paths, errorLabel = "Asset load error") {
+  let lastError = null;
+  for (const path of paths) {
+    try {
+      const response = await fetch(path);
+      if (!response.ok) {
+        throw new Error(`Fetch failed: ${response.status}`);
+      }
+      return await response.text();
+    } catch (error) {
+      lastError = error;
+      console.error(`${errorLabel}:`, path, error);
+    }
+  }
+  throw lastError || new Error("All fetch attempts failed");
+}
+
+async function loadLandingDemoCsv() {
+  try {
+    return await fetchTextFromCandidates(DEMO_CSV_CANDIDATES, "Landing demo load error");
+  } catch (error) {
+    console.warn("Landing demo fetch failed, using embedded demo CSV.", error);
+    return EMBEDDED_DEMO_CSV;
+  }
+}
+
+async function loadSampleCsvText(type, sampleFile) {
+  try {
+    return await fetchTextFromCandidates([sampleFile], "Sample load error");
+  } catch (error) {
+    const fallback = EMBEDDED_SAMPLE_CSVS[type];
+    if (fallback) {
+      console.warn(`Sample fetch failed for ${type}, using embedded sample CSV.`, error);
+      return fallback;
+    }
+    throw error;
+  }
+}
+
 async function renderLandingDemoPreview() {
   if (!sampleKpiGrid || !sampleTrendChart || !sampleInsightsRoot || !sampleBreakdownChart) return;
   sampleKpiGrid.innerHTML = "<div class=\"helper-text\">Loading demo KPIs...</div>";
@@ -2211,9 +2466,7 @@ async function renderLandingDemoPreview() {
   sampleBreakdownChart.innerHTML = "<div class=\"helper-text\">Loading breakdown...</div>";
 
   try {
-    const response = await fetch(DEMO_CSV_URL);
-    if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
-    const text = await response.text();
+    const text = await loadLandingDemoCsv();
     const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
     if (parsed.errors?.length) {
       throw new Error(parsed.errors[0]?.message || "CSV parse error");
@@ -2657,11 +2910,10 @@ function renderLandingInsightAndBreakdown() {
 
   const metricType = inferMetricType(metric, (landingDemoState.rows || []).map((row) => parseNumber(row[metric])).filter((value) => value !== null));
   const top = breakdown[0];
+  const runnerUp = breakdown[1] || null;
   const bottom = breakdown[breakdown.length - 1];
   const delta = top.value - bottom.value;
-  const deltaLabel = metricType.kind === "rate"
-    ? `${(delta * 100).toFixed(1)} pp`
-    : formatMetricValue(delta, metricType);
+  const deltaLabel = formatInsightDelta(delta, metricType);
   const confidenceLevel = breakdown.length >= 3 && Math.abs(delta) > 0 ? "high" : "medium";
   const confidenceWhy = confidenceLevel === "high"
     ? "Clear separation between top and bottom segments across enough samples."
@@ -2670,23 +2922,95 @@ function renderLandingInsightAndBreakdown() {
   const driverText = driverDimension
     ? `Driver candidate: ${formatMetricLabel(driverDimension)} appears to concentrate in ${top.key}.`
     : `Driver candidate: Segment mix likely favors ${top.key}.`;
+  const sectionMarkup = buildInsightSectionsMarkup([
+    {
+      title: "Executive Summary",
+      bullets: [
+        `${top.key} is the current lead segment for ${formatMetricLabel(metric)}.`,
+        runnerUp
+          ? `The lead over ${runnerUp.key} is ${formatInsightDelta(top.value - runnerUp.value, metricType)}.`
+          : `The full spread to the lowest segment is ${deltaLabel}.`,
+      ],
+    },
+    {
+      title: "Momentum",
+      bullets: [
+        "This landing demo is a static preview, so momentum is directional rather than fully trended.",
+        `Current best segment value: ${formatMetricValue(top.value, metricType)}.`,
+      ],
+    },
+    {
+      title: "Key Metrics",
+      bullets: [
+        `Primary metric: ${formatMetricLabel(metric)}.`,
+        `Breakdown dimension: ${formatMetricLabel(dimension)}.`,
+        `Observed segment count: ${numberFormatter.format(breakdown.length)}.`,
+      ],
+    },
+    {
+      title: "Winners Spotlight",
+      bullets: [
+        `${top.key} leads at ${formatMetricValue(top.value, metricType)} (n=${numberFormatter.format(top.count || 0)}).`,
+        runnerUp
+          ? `${runnerUp.key} is the nearest benchmark at ${formatMetricValue(runnerUp.value, metricType)}.`
+          : "A second benchmark segment is not available in this preview.",
+      ],
+    },
+    {
+      title: "Scale Opportunities",
+      bullets: [
+        `Replicate what is working in ${top.key} before widening the rollout.`,
+        driverText,
+      ],
+    },
+    {
+      title: "Watch List",
+      bullets: [
+        `${bottom.key} trails the leader by ${deltaLabel}.`,
+        "Validate that segment mix and sample support are stable before making large decisions from the demo preview.",
+      ],
+    },
+    {
+      title: "Forecast Outlook",
+      bullets: [
+        "Use this preview as a directional example of the reporting pattern rather than a production forecast.",
+        `${top.key} is the segment to keep at the center of the next investigation.`,
+      ],
+    },
+    {
+      title: "Next Steps",
+      bullets: [
+        `Compare ${top.key} and ${bottom.key} across ${formatMetricLabel(driverDimension || dimension)} to isolate the driver mix.`,
+        "Load your own data or a full sample dataset to validate the pattern with stronger evidence and thresholds.",
+      ],
+    },
+  ]);
   if (sampleInsightsRoot) {
     sampleInsightsRoot.innerHTML = `
-      <div class="insight-card">
+      <div class="insight-card performance-intel-card">
         <div class="insight-header">
           <span class="severity ${confidenceLevel} confidence-pill" tabindex="0" aria-label="Confidence details">
             Confidence: ${confidenceLevel === "high" ? "High" : "Medium"}
             <span class="confidence-tooltip" role="tooltip">${escapeHtml(confidenceWhy)}</span>
           </span>
         </div>
-        <h4>${escapeHtml(formatMetricLabel(metric))} delta is largest between ${escapeHtml(top.key)} and ${escapeHtml(bottom.key)}</h4>
-        <div class="insight-metric">
-          <span>Delta</span>
-          <strong>${escapeHtml(deltaLabel)}</strong>
-        </div>
-        <p class="insight-meta">${escapeHtml(driverText)}</p>
-        <p class="insight-meta">Action: Replicate the top segment playbook for lower-performing segments and monitor uplift over the next cycle.</p>
-        <p class="insight-meta subtle">Compared by ${escapeHtml(formatMetricLabel(dimension))} with n=${top.count}/${bottom.count}.</p>
+        ${sectionMarkup}
+        <details class="insight-diagnostics intel-evidence-toggle">
+          <summary>Evidence</summary>
+          <div class="diagnostics-grid">
+            <div><strong>Sample size</strong><div>${escapeHtml(numberFormatter.format((top.count || 0) + (runnerUp?.count || 0) + (bottom.count || 0)))}</div></div>
+            <div><strong>Roles detected</strong><ul>
+              <li>Outcome: ${escapeHtml(formatMetricLabel(metric))}</li>
+              <li>Dimension: ${escapeHtml(formatMetricLabel(dimension))}</li>
+              <li>Secondary driver: ${escapeHtml(formatMetricLabel(driverDimension || "not detected"))}</li>
+            </ul></div>
+            <div><strong>Rules triggered</strong><div>segment_ranking, winner_gap_check, landing_demo_preview</div></div>
+            <div><strong>Chosen grain</strong><div>dimension_only (${escapeHtml(formatMetricLabel(dimension))})</div></div>
+            <div><strong>Why this grain</strong><div>Landing preview uses a compact cross-sectional comparison to show the decision memo structure quickly.</div></div>
+            <div><strong>Low-signal excluded</strong><div>0%</div></div>
+            <div><strong>Why low-signal threshold exists</strong><div>Low-signal groups are only excluded once they materially distort guidance; this compact preview does not apply that filter.</div></div>
+          </div>
+        </details>
       </div>
     `;
   }
@@ -2707,19 +3031,25 @@ function renderLandingInsightAndBreakdown() {
   }
 }
 
-async function loadSampleFile(sample) {
+async function loadSampleDataset(type) {
   clearMessages();
   setUiMode("loading");
   setStatus("Loading sample");
   try {
-    const response = await fetch(sample.file);
-    if (!response.ok) {
-      throw new Error(`Fetch failed: ${response.status}`);
+    const sample = sampleManifest.find((item) => item.id === type);
+    const sampleFile = SAMPLE_FILES[type];
+    if (!sample || !sampleFile) {
+      throw new Error(`Unknown sample type: ${type}`);
     }
-    const text = await response.text();
-    parseCsvText(text, { sourceType: "csv", name: sample?.name || sample?.file || "sample.csv", isSample: true });
+    const text = await loadSampleCsvText(type, sampleFile);
+    parseCsvText(text, {
+      sourceType: "csv",
+      name: sample.name || sampleFile || "sample.csv",
+      isSample: true,
+    });
   } catch (error) {
-    showError("Sample CSV could not be loaded. Check your connection or file path.", `Details: ${error.message}`);
+    console.error("Sample load error:", error);
+    showError("Sample CSV could not be loaded.", `Details: ${error.message}`);
   }
 }
 
@@ -3805,11 +4135,13 @@ function resetStateForNewDataset(options = {}) {
 }
 
 function destroyAllCharts() {
-  [trendChartInstance, barChartInstance, diagnosticsCorrelationChartInstance, heatmapChartInstance]
+  [trendChartInstance, barChartInstance, performanceShareChartInstance, performanceVolumeChartInstance, diagnosticsCorrelationChartInstance, heatmapChartInstance]
     .filter(Boolean)
     .forEach((chart) => chart.destroy());
   trendChartInstance = null;
   barChartInstance = null;
+  performanceShareChartInstance = null;
+  performanceVolumeChartInstance = null;
   diagnosticsCorrelationChartInstance = null;
   heatmapChartInstance = null;
 }
@@ -4718,49 +5050,125 @@ function pickNonGenericColumn(columns = [], fallback = null) {
   return safe || fallback;
 }
 
-function initControls(recommendedMetrics) {
-  metricSelect.innerHTML = "";
-  const metricPlaceholder = document.createElement("option");
-  metricPlaceholder.value = "";
-  metricPlaceholder.textContent = "Select primary metric";
-  metricSelect.appendChild(metricPlaceholder);
-  const allMetrics = Array.from(new Set([...(recommendedMetrics || []), ...(state.schema.numeric || [])]));
-  (allMetrics || []).forEach((metric) => {
-    const option = document.createElement("option");
-    option.value = metric;
-    option.textContent = formatMetricLabel(metric);
-    metricSelect.appendChild(option);
-  });
-  if (!state.selections.primaryMetric || !allMetrics.includes(state.selections.primaryMetric)) {
-    state.selections.primaryMetric = pickNonGenericColumn(allMetrics, null);
-  } else if (isGenericColumnName(state.selections.primaryMetric)) {
-    state.selections.primaryMetric = pickNonGenericColumn(allMetrics, null);
-  }
+function getAvailableMetrics(recommendedMetrics = []) {
+  return Array.from(new Set([...(recommendedMetrics || []), ...(state.schema.numeric || [])])).filter(Boolean);
+}
+
+function getAvailableDimensions() {
+  const dimensions = [
+    ...((state.schema.categoricals || []).filter(Boolean)),
+    ...(state.schema.dates?.[0] ? [state.schema.dates[0]] : []),
+  ];
+  return Array.from(new Set(dimensions));
+}
+
+function syncDashboardControls(recommendedMetrics = []) {
+  const allMetrics = getAvailableMetrics(recommendedMetrics);
+  const uniqueDimensions = getAvailableDimensions();
+  const syncTopNSelect = (select, selectedValue) => {
+    if (!select) return selectedValue;
+    const nextSelected = selectedValue === undefined ? 8 : selectedValue;
+    select.value = nextSelected === null ? "all" : String(nextSelected || 8);
+    return nextSelected;
+  };
+  const syncMetricSelect = (select, selectedValue, placeholderText = "Select metric") => {
+    if (!select) return selectedValue;
+    select.innerHTML = "";
+    const metricPlaceholder = document.createElement("option");
+    metricPlaceholder.value = "";
+    metricPlaceholder.textContent = placeholderText;
+    select.appendChild(metricPlaceholder);
+    (allMetrics || []).forEach((metric) => {
+      const option = document.createElement("option");
+      option.value = metric;
+      option.textContent = formatMetricLabel(metric);
+      select.appendChild(option);
+    });
+    let nextSelected = selectedValue;
+    if (!nextSelected || !allMetrics.includes(nextSelected) || isGenericColumnName(nextSelected)) {
+      nextSelected = pickNonGenericColumn(allMetrics, null);
+    }
+    select.value = nextSelected || "";
+    select.disabled = allMetrics.length === 0;
+    return nextSelected;
+  };
+  const syncDimensionSelect = (select, selectedValue, placeholderText = "Select breakdown dimension") => {
+    if (!select) return selectedValue;
+    select.innerHTML = "";
+    const dimPlaceholder = document.createElement("option");
+    dimPlaceholder.value = "";
+    dimPlaceholder.textContent = placeholderText;
+    select.appendChild(dimPlaceholder);
+    uniqueDimensions.forEach((dim) => {
+      const option = document.createElement("option");
+      option.value = dim;
+      option.textContent = formatMetricLabel(dim);
+      select.appendChild(option);
+    });
+    let nextSelected = selectedValue;
+    if (!nextSelected || !uniqueDimensions.includes(nextSelected) || isGenericColumnName(nextSelected)) {
+      nextSelected = pickNonGenericColumn(uniqueDimensions, null);
+    }
+    select.value = nextSelected || "";
+    select.disabled = uniqueDimensions.length === 0;
+    return nextSelected;
+  };
+
+  state.selections.primaryMetric = syncMetricSelect(metricSelect, state.selections.primaryMetric, "Select primary metric");
   state.selectedMetric = state.selections.primaryMetric;
-  metricSelect.value = state.selections.primaryMetric || "";
+  state.performanceMetric = syncMetricSelect(performanceMetricSelect, state.performanceMetric, "Select breakdown metric");
+  state.performancePieMetric = syncMetricSelect(performancePieMetricSelect, state.performancePieMetric, "Select pie metric");
+  state.performanceWaterfallMetric = syncMetricSelect(performanceWaterfallMetricSelect, state.performanceWaterfallMetric, "Select waterfall metric");
+  state.performanceTopN = syncTopNSelect(performanceTopNSelect, state.performanceTopN);
+  state.performancePieTopN = syncTopNSelect(performancePieTopNSelect, state.performancePieTopN);
+  state.performanceWaterfallTopN = syncTopNSelect(performanceWaterfallTopNSelect, state.performanceWaterfallTopN);
 
-  dimensionSelect.innerHTML = "";
-  const dimPlaceholder = document.createElement("option");
-  dimPlaceholder.value = "";
-  dimPlaceholder.textContent = "Select breakdown dimension";
-  dimensionSelect.appendChild(dimPlaceholder);
-  const dimensions = state.schema.categoricals?.length ? state.schema.categoricals : [];
-  if (state.schema.dates[0]) dimensions.push(state.schema.dates[0]);
-  const uniqueDimensions = Array.from(new Set(dimensions));
-  uniqueDimensions.forEach((dim) => {
-    const option = document.createElement("option");
-    option.value = dim;
-    option.textContent = dim;
-    dimensionSelect.appendChild(option);
-  });
-  if (!state.selectedDimension || !uniqueDimensions.includes(state.selectedDimension)) {
-    state.selectedDimension = pickNonGenericColumn(uniqueDimensions, null);
-  } else if (isGenericColumnName(state.selectedDimension)) {
-    state.selectedDimension = pickNonGenericColumn(uniqueDimensions, null);
+  state.selectedDimension = syncDimensionSelect(dimensionSelect, state.selectedDimension, "Select breakdown dimension");
+  state.performancePieDimension = syncDimensionSelect(performancePieDimensionSelect, state.performancePieDimension, "Select pie dimension");
+  state.performanceWaterfallDimension = syncDimensionSelect(performanceWaterfallDimensionSelect, state.performanceWaterfallDimension, "Select waterfall dimension");
+
+  if (domainSelect) {
+    domainSelect.value = state.domainAuto ? "auto" : state.domain;
   }
-  dimensionSelect.value = state.selectedDimension || "";
 
-  domainSelect.value = state.domainAuto ? "auto" : state.domain;
+  const heatmapCandidates = uniqueDimensions.filter((dim) => {
+    const unique = state.schema?.profiles?.[dim]?.uniqueCount || 0;
+    return unique >= 2 && unique <= 60;
+  });
+  const syncHeatmapSelect = (select, selectedValue, excludedValue = null) => {
+    if (!select) return;
+    const nextOptions = heatmapCandidates.filter((dim) => dim !== excludedValue);
+    select.innerHTML = "";
+    const autoOption = document.createElement("option");
+    autoOption.value = "auto";
+    autoOption.textContent = "Auto";
+    select.appendChild(autoOption);
+    nextOptions.forEach((dim) => {
+      const option = document.createElement("option");
+      option.value = dim;
+      option.textContent = formatMetricLabel(dim);
+      select.appendChild(option);
+    });
+    const validSelection = selectedValue && nextOptions.includes(selectedValue) ? selectedValue : null;
+    select.value = validSelection || "auto";
+    select.disabled = nextOptions.length < 1;
+  };
+
+  if (state.heatmapRowDimension && !heatmapCandidates.includes(state.heatmapRowDimension)) {
+    state.heatmapRowDimension = null;
+  }
+  if (state.heatmapColumnDimension && !heatmapCandidates.includes(state.heatmapColumnDimension)) {
+    state.heatmapColumnDimension = null;
+  }
+  if (state.heatmapRowDimension && state.heatmapColumnDimension && state.heatmapRowDimension === state.heatmapColumnDimension) {
+    state.heatmapColumnDimension = null;
+  }
+  syncHeatmapSelect(heatmapRowSelect, state.heatmapRowDimension, state.heatmapColumnDimension);
+  syncHeatmapSelect(heatmapColSelect, state.heatmapColumnDimension, state.heatmapRowDimension);
+}
+
+function initControls(recommendedMetrics) {
+  syncDashboardControls(recommendedMetrics);
 }
 
 function applyFiltersAndRender() {
@@ -4799,14 +5207,17 @@ function applyFiltersAndRender() {
   state.dateFieldConfidence = dateDetection.confidence;
   syncChartStateDirect({ timeField: state.dateColumn });
   ensureMetrics(state.schema, scopedRows);
-  if (!state.selections.primaryMetric || !state.schema.numeric.includes(state.selections.primaryMetric)) {
-    state.selections.primaryMetric = pickNonGenericColumn(state.schema.numeric, null);
+  const recommendedMetrics = chooseKpiMetrics(state.schema.profiles, state.schema.numeric);
+  const availableMetrics = getAvailableMetrics(recommendedMetrics);
+  const availableDimensions = getAvailableDimensions();
+  if (!state.selections.primaryMetric || !availableMetrics.includes(state.selections.primaryMetric)) {
+    state.selections.primaryMetric = pickNonGenericColumn(availableMetrics, null);
   } else if (isGenericColumnName(state.selections.primaryMetric)) {
-    state.selections.primaryMetric = pickNonGenericColumn(state.schema.numeric, null);
+    state.selections.primaryMetric = pickNonGenericColumn(availableMetrics, null);
   }
   state.selectedMetric = state.selections.primaryMetric;
   state.selections.compareMetrics = (state.selections.compareMetrics || []).filter((m) => state.schema.numeric.includes(m));
-  if (!state.selectedDimension || !state.schema.columns.includes(state.selectedDimension)) {
+  if (!state.selectedDimension || !availableDimensions.includes(state.selectedDimension)) {
     const recommendedDimension = pickNonGenericColumn(dimensionCandidates, null)
       || pickNonGenericColumn(state.schema.categoricals || [], null)
       || chooseBestDimension(state.schema.profiles, state.schema.categoricals)
@@ -4821,16 +5232,11 @@ function applyFiltersAndRender() {
     selectedDimension: state.selectedDimension,
     topN: state.topN,
   });
+  syncDashboardControls(recommendedMetrics);
 
   if (topNSelect) {
-    const uniqueCount = state.selectedDimension ? (state.schema.profiles[state.selectedDimension]?.uniqueCount || 0) : 0;
-    if (uniqueCount && uniqueCount <= 2) {
-      topNSelect.disabled = true;
-      topNSelect.title = "Top N disabled for 2-category breakdowns.";
-    } else {
-      topNSelect.disabled = false;
-      topNSelect.title = "";
-    }
+    topNSelect.disabled = false;
+    topNSelect.title = "";
   }
 
   if (datasetInlineNotice) {
@@ -4925,7 +5331,11 @@ function renderKPIs(rows) {
   console.log(`renderKPIs call #${renderKpiCallCount}`, { rows: rows.length, metric: state.selections.primaryMetric });
   kpiGrid.innerHTML = "";
   const chosenMetrics = chooseKpiMetrics(state.schema.profiles, state.schema.numeric);
-  const metrics = (chosenMetrics && chosenMetrics.length ? chosenMetrics : (state.schema.numeric || []).slice(0, 6)) || [];
+  const metrics = Array.from(new Set([
+    state.selections.primaryMetric,
+    ...(chosenMetrics || []),
+    ...((state.schema.numeric || []).slice(0, 6)),
+  ].filter(Boolean)));
 
   (metrics || []).forEach((metric) => {
     const metricLabel = formatMetricLabel(metric);
@@ -4954,6 +5364,9 @@ function renderKPIs(rows) {
 
     const card = document.createElement("div");
     card.className = "kpi-card user-kpi-card";
+    if (metric === state.selections.primaryMetric) {
+      card.classList.add("is-selected-metric");
+    }
     card.innerHTML = `
       <h4>${metricLabel}</h4>
       <div class="kpi-value">${formatMetricValue(primary, metricType)}</div>
@@ -5141,6 +5554,33 @@ function pickHeatmapDims(schema) {
   return { rowDim, colDim };
 }
 
+function resolveHeatmapDims(schema) {
+  const categorical = (schema?.categoricals || []).filter((col) => {
+    const unique = schema?.profiles?.[col]?.uniqueCount || 0;
+    return unique >= 2 && unique <= 60;
+  });
+  if (categorical.length < 2) return null;
+  const preferredRow = state.heatmapRowDimension && categorical.includes(state.heatmapRowDimension)
+    ? state.heatmapRowDimension
+    : null;
+  const preferredCol = state.heatmapColumnDimension && categorical.includes(state.heatmapColumnDimension)
+    ? state.heatmapColumnDimension
+    : null;
+  if (preferredRow && preferredCol && preferredRow !== preferredCol) {
+    return { rowDim: preferredRow, colDim: preferredCol, source: "manual" };
+  }
+  if (preferredRow) {
+    const fallbackCol = categorical.find((dim) => dim !== preferredRow) || null;
+    if (fallbackCol) return { rowDim: preferredRow, colDim: fallbackCol, source: "manual_row" };
+  }
+  if (preferredCol) {
+    const fallbackRow = categorical.find((dim) => dim !== preferredCol) || null;
+    if (fallbackRow) return { rowDim: fallbackRow, colDim: preferredCol, source: "manual_col" };
+  }
+  const autoDims = pickHeatmapDims(schema);
+  return autoDims ? { ...autoDims, source: "auto" } : null;
+}
+
 function buildCappedMatrix(rows, rowDim, colDim, metric, maxRows = MAX_HEATMAP_ROWS, maxCols = MAX_HEATMAP_COLS) {
   const metricValues = (rows || []).map((row) => parseNumber(row?.[metric])).filter((value) => value !== null);
   const metricType = inferMetricType(metric, metricValues);
@@ -5177,8 +5617,10 @@ function buildCappedMatrix(rows, rowDim, colDim, metric, maxRows = MAX_HEATMAP_R
 
   const sortedRows = Array.from(rowTotals.entries()).sort((a, b) => b[1] - a[1]).map(([key]) => key);
   const sortedCols = Array.from(colTotals.entries()).sort((a, b) => b[1] - a[1]).map(([key]) => key);
-  const topRows = sortedRows.slice(0, Math.max(1, maxRows - 1));
-  const topCols = sortedCols.slice(0, Math.max(1, maxCols - 1));
+  const requestedRowCap = maxRows === null ? sortedRows.length : Math.max(1, Number(maxRows) || MAX_HEATMAP_ROWS);
+  const requestedColCap = maxCols === null ? sortedCols.length : Math.max(1, Number(maxCols) || MAX_HEATMAP_COLS);
+  const topRows = sortedRows.slice(0, requestedRowCap);
+  const topCols = sortedCols.slice(0, requestedColCap);
   const rowSet = new Set(topRows);
   const colSet = new Set(topCols);
 
@@ -5225,6 +5667,10 @@ function buildCappedMatrix(rows, rowDim, colDim, metric, maxRows = MAX_HEATMAP_R
     colDim,
     metric,
     metricType,
+    requestedRowCap,
+    requestedColCap,
+    showingAllRows: maxRows === null,
+    showingAllCols: maxCols === null,
     cappedRows,
     cappedCols,
     cappedCells: capped.cells,
@@ -5283,7 +5729,7 @@ function renderHeatmap(matrix, container) {
   const maxValue = Math.max(...cells.map((cell) => cell.value), 0);
   const minValue = Math.min(...cells.map((cell) => cell.value), 0);
   const totalGridRows = Math.max(1, (matrix.cappedRows || []).length + 1);
-  const computedCellHeight = Math.max(20, Math.min(34, Math.floor(232 / totalGridRows)));
+  const computedCellHeight = Math.max(16, Math.min(30, Math.floor(172 / totalGridRows)));
   const scaleColor = (value) => {
     const t = (value - minValue) / Math.max(maxValue - minValue, 1);
     const alpha = 0.22 + (t * 0.72);
@@ -5303,9 +5749,15 @@ function renderHeatmap(matrix, container) {
     return `${rowHeader}${rowCells}`;
   }).join("");
 
+  const rowCapLabel = matrix.showingAllRows ? "All" : String(matrix.requestedRowCap || MAX_HEATMAP_ROWS);
+  const colCapLabel = matrix.showingAllCols ? "All" : String(matrix.requestedColCap || MAX_HEATMAP_COLS);
+  const groupingNote = matrix.showingAllRows && matrix.showingAllCols
+    ? "No remaining categories are grouped."
+    : "Remaining grouped as Other.";
   renderTrendFallbackContent(`
     <div class="hmHeader">
-      <div class="heatmapCaption helper-text">Showing Top ${MAX_HEATMAP_ROWS} rows \u00d7 Top ${MAX_HEATMAP_COLS} columns. Remaining grouped as Other.</div>
+      <div class="helper-text">Active metric: ${escapeHtml(formatMetricLabel(matrix.metric || ""))}</div>
+      <div class="heatmapCaption helper-text">Showing ${rowCapLabel === "All" ? "All" : `Top ${rowCapLabel}`} rows \u00d7 ${colCapLabel === "All" ? "All" : `Top ${colCapLabel}`} columns. ${groupingNote}</div>
     </div>
     <div class="hmLegend heatmapLegend"><span>Low</span><div class="heatmapLegendBar"></div><span>High</span></div>
     <div class="hmGridWrap">
@@ -5356,11 +5808,32 @@ function renderRankedBars(rows, dim, metric, container) {
   `);
 }
 
+function renderPerformanceSupportingCharts(breakdown, dimension) {
+  if (performanceShareChartInstance) {
+    performanceShareChartInstance.destroy();
+    performanceShareChartInstance = null;
+  }
+  if (performanceVolumeChartInstance) {
+    performanceVolumeChartInstance.destroy();
+    performanceVolumeChartInstance = null;
+  }
+  setChartCardEmptyState("performanceShareChart", "");
+  setChartCardEmptyState("performanceVolumeChart", "");
+  if (performanceShareSubtitle) performanceShareSubtitle.textContent = "";
+  if (performanceVolumeSubtitle) performanceVolumeSubtitle.textContent = "";
+}
+
 function renderTrendModule(data, selectedMetric) {
   const rows = Array.isArray(data) ? data : [];
   const metric = selectedMetric;
   const metricValues = rows.map((row) => parseNumber(row?.[metric])).filter((value) => value !== null);
   const metricType = inferMetricType(metric, metricValues);
+  if (!metricValues.length) {
+    trendTitle.textContent = "Breakdown";
+    trendSubtitle.textContent = `${formatMetricLabel(metric)} has no numeric signal`;
+    renderTrendEmptyState("Selected metric has no numeric values in this dataset.");
+    return;
+  }
   if (!rows.length) {
     trendTitle.textContent = "Trend";
     trendSubtitle.textContent = "No data available";
@@ -5387,12 +5860,14 @@ function renderTrendModule(data, selectedMetric) {
     }
   }
 
-  const heatmapDims = pickHeatmapDims(state.schema);
+  const heatmapDims = resolveHeatmapDims(state.schema);
   if (heatmapDims) {
-    const matrix = buildCappedMatrix(rows, heatmapDims.rowDim, heatmapDims.colDim, metric, MAX_HEATMAP_ROWS, MAX_HEATMAP_COLS);
+    const activeTopN = getActiveTopNSetting();
+    const heatmapCap = activeTopN === null ? null : Math.max(2, Number(activeTopN || MAX_HEATMAP_ROWS));
+    const matrix = buildCappedMatrix(rows, heatmapDims.rowDim, heatmapDims.colDim, metric, heatmapCap, heatmapCap);
     if (matrix && matrix.cappedCells.length) {
       trendTitle.textContent = "Breakdown";
-      trendSubtitle.textContent = `${formatMetricLabel(heatmapDims.rowDim)} \u00d7 ${formatMetricLabel(heatmapDims.colDim)} heatmap for ${formatMetricLabel(metric)}`;
+      trendSubtitle.textContent = `${formatMetricLabel(heatmapDims.rowDim)} \u00d7 ${formatMetricLabel(heatmapDims.colDim)} heatmap for ${formatMetricLabel(metric)}${heatmapDims.source === "auto" ? "" : " · manual selection"}`;
       renderHeatmap(matrix, trendEmptyState);
       return;
     }
@@ -5405,9 +5880,70 @@ function renderTrendModule(data, selectedMetric) {
   renderRankedBars(rows, fallbackDim, metric, trendEmptyState);
 }
 
+function renderPerformancePie(rows, metric, metricType, dimension, topN) {
+  if (performanceShareChartInstance) {
+    performanceShareChartInstance.destroy();
+    performanceShareChartInstance = null;
+  }
+  setChartCardEmptyState("performanceShareChart", "");
+  if (performanceShareSubtitle) {
+    performanceShareSubtitle.textContent = dimension
+      ? `${formatMetricLabel(metric)} distribution by ${formatMetricLabel(dimension)}`
+      : "";
+  }
+  if (!dimension) {
+    setChartCardEmptyState("performanceShareChart", "Dimension unavailable for pie chart.");
+    return;
+  }
+  const breakdown = buildPerformanceBreakdown(rows, dimension, metric, metricType, topN);
+  const labels = (breakdown?.labels || []).slice(0, 6);
+  const values = (breakdown?.values || []).slice(0, 6).map((value) => Number(value) || 0);
+  if (!labels.length || !values.some((value) => value > 0)) {
+    setChartCardEmptyState("performanceShareChart", "No pie distribution available.");
+    return;
+  }
+  performanceShareChartInstance = createDoughnutChart("performanceShareChart", labels, values, metricType);
+}
+
+function renderPerformanceWaterfall(rows, metric, metricType, dimension, topN) {
+  if (performanceVolumeChartInstance) {
+    performanceVolumeChartInstance.destroy();
+    performanceVolumeChartInstance = null;
+  }
+  setChartCardEmptyState("performanceVolumeChart", "");
+  if (performanceVolumeSubtitle) {
+    performanceVolumeSubtitle.textContent = dimension
+      ? `${formatMetricLabel(metric)} variance versus average by ${formatMetricLabel(dimension)}`
+      : "";
+  }
+  if (!dimension) {
+    setChartCardEmptyState("performanceVolumeChart", "Dimension unavailable for waterfall chart.");
+    return;
+  }
+  const breakdown = buildPerformanceBreakdown(rows, dimension, metric, metricType, topN);
+  const labels = (breakdown?.labels || []).slice(0, 6);
+  const values = (breakdown?.values || []).slice(0, 6).map((value) => Number(value) || 0);
+  if (!labels.length || !values.some((value) => value !== 0)) {
+    setChartCardEmptyState("performanceVolumeChart", "No waterfall variance available.");
+    return;
+  }
+  const average = values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1);
+  const deltas = values.map((value) => value - average);
+  if (!deltas.some((value) => Math.abs(value) > 0)) {
+    setChartCardEmptyState("performanceVolumeChart", "No meaningful variance from average.");
+    return;
+  }
+  performanceVolumeChartInstance = createWaterfallChart("performanceVolumeChart", labels, deltas, metricType);
+}
+
 function renderCharts(rows) {
   if (trendChartInstance) trendChartInstance.destroy();
   if (barChartInstance) barChartInstance.destroy();
+  if (performanceShareChartInstance) performanceShareChartInstance.destroy();
+  if (performanceVolumeChartInstance) performanceVolumeChartInstance.destroy();
+  performanceShareChartInstance = null;
+  performanceVolumeChartInstance = null;
+  const activeTopN = getActiveTopNSetting();
 
   const metric = state.selections.primaryMetric || chooseTopNumericByVariance(state.schema.profiles, state.schema.numeric || []);
   if (!metric || isGenericColumnName(metric)) {
@@ -5416,7 +5952,7 @@ function renderCharts(rows) {
     trendTitle.textContent = "Trend";
     trendSubtitle.textContent = "Awaiting metric selection";
     renderTrendEmptyState("Select a non-generic primary metric to render charts.");
-    setChartCardEmptyState("barChart", "Select a non-generic primary metric to render breakdown.");
+    setChartCardEmptyState("performanceDetailsChart", "Select a non-generic primary metric to render breakdown.");
     return;
   }
   state.selections.primaryMetric = metric;
@@ -5426,24 +5962,44 @@ function renderCharts(rows) {
 
   renderTrendModule(rows, metric);
 
+  const performanceMetric = state.performanceMetric || metric;
+  const performanceTopN = state.performanceTopN === undefined ? activeTopN : state.performanceTopN;
+  const performanceMetricValues = rows.map((row) => parseNumber(row[performanceMetric])).filter((value) => value !== null);
+  const performanceMetricType = inferMetricType(performanceMetric, performanceMetricValues);
   let dimension = state.selectedDimension || chooseBestDimension(state.schema.profiles, state.schema.categoricals || []) || state.dateColumn;
+  const pieMetric = state.performancePieMetric || performanceMetric;
+  const pieTopN = state.performancePieTopN === undefined ? activeTopN : state.performancePieTopN;
+  const pieMetricValues = rows.map((row) => parseNumber(row[pieMetric])).filter((value) => value !== null);
+  const pieMetricType = inferMetricType(pieMetric, pieMetricValues);
+  const pieDimension = state.performancePieDimension || dimension;
+  const waterfallMetric = state.performanceWaterfallMetric || performanceMetric;
+  const waterfallTopN = state.performanceWaterfallTopN === undefined ? activeTopN : state.performanceWaterfallTopN;
+  const waterfallMetricValues = rows.map((row) => parseNumber(row[waterfallMetric])).filter((value) => value !== null);
+  const waterfallMetricType = inferMetricType(waterfallMetric, waterfallMetricValues);
+  const waterfallDimension = state.performanceWaterfallDimension || dimension;
   if (dimension) {
     state.selectedDimension = dimension;
     if (dimensionSelect.value !== dimension) dimensionSelect.value = dimension;
-    const breakdown = buildTopCategoriesWithOther(rows, dimension, metric, metricType, 8);
+    const breakdown = buildPerformanceBreakdown(rows, dimension, performanceMetric, performanceMetricType, performanceTopN);
     barTitle.textContent = "Performance details";
-      barSubtitle.textContent = `Dimension: ${dimension}`;
+      barSubtitle.textContent = `${formatMetricLabel(performanceMetric)} by ${dimension} • ${performanceTopN === null ? "All categories" : `Top ${performanceTopN}`}`;
       const hasMeasuredValues = (breakdown.values || []).some((value) => Number(value) > 0);
       if (!breakdown.labels.length || !hasMeasuredValues) {
-        setChartCardEmptyState("barChart", "No measurable activity for selected dimension.");
+        setChartCardEmptyState("performanceDetailsChart", "No measurable activity for selected dimension.");
+        setChartCardEmptyState("performanceShareChart", "No pie distribution available.");
+        setChartCardEmptyState("performanceVolumeChart", "No waterfall variance available.");
       } else {
-        setChartCardEmptyState("barChart", "");
-        barChartInstance = createHorizontalBarChart("barChart", breakdown.labels, breakdown.values, metricType, breakdown.counts);
+        setChartCardEmptyState("performanceDetailsChart", "");
+        barChartInstance = createHorizontalBarChart("performanceDetailsChart", breakdown.labels, breakdown.values, performanceMetricType, breakdown.counts);
       }
+      renderPerformancePie(rows, pieMetric, pieMetricType, pieDimension, pieTopN);
+      renderPerformanceWaterfall(rows, waterfallMetric, waterfallMetricType, waterfallDimension, waterfallTopN);
   } else {
     barTitle.textContent = "Performance details";
     barSubtitle.textContent = "Dimension unavailable";
-    setChartCardEmptyState("barChart", "Dimension unavailable in dataset.");
+    setChartCardEmptyState("performanceDetailsChart", "Dimension unavailable in dataset.");
+    setChartCardEmptyState("performanceShareChart", "Dimension unavailable in dataset.");
+    setChartCardEmptyState("performanceVolumeChart", "Dimension unavailable in dataset.");
     state.selectedDimension = null;
     if (dimensionSelect) dimensionSelect.value = "";
   }
@@ -5652,11 +6208,11 @@ function sortTable(column) {
 function inferMetricType(metric, values) {
   const lower = String(metric || "").toLowerCase();
   const isCurrency = /(revenue|sales|cost|spend|profit|price|amount|gmv|mrr|arr)/i.test(lower);
-  const isRateName = /(rate|percent|ctr|cvr|roas|ratio|retention)/i.test(lower);
+  const isRateName = /(rate|percent|ctr|cvr|roas|ratio|retention)/i.test(lower) && !isCurrency;
   const isDuration = /(time|duration|seconds|secs|minutes|mins|hours)/i.test(lower);
-  const isRateRange = values.length > 0 && values.every((val) => val >= 0 && val <= 1);
+  const isRateRange = !isCurrency && values.length > 0 && values.every((val) => val >= 0 && val <= 1);
   const isRate = isRateName || isRateRange;
-  const kind = isRate ? "rate" : isCurrency ? "currency" : isDuration ? "duration" : "count";
+  const kind = isCurrency ? "currency" : isRate ? "rate" : isDuration ? "duration" : "count";
   return { isCurrency, isRate, isDuration, kind };
 }
 
@@ -5677,7 +6233,7 @@ function findRateDenominator(metric, numericColumns) {
   const lower = metric.toLowerCase();
   const mapping = [
     { pattern: /ctr|click.?through/, denoms: [/impression/] },
-    { pattern: /cvr|conversion/, denoms: [/click/, /session/, /visit/] },
+    { pattern: /cvr|conversion.?rate/, denoms: [/click/, /session/, /visit/] },
     { pattern: /return/, denoms: [/order/, /revenue/] },
     { pattern: /rate|percent|ratio/, denoms: [/order/, /click/, /impression/, /session/, /user/, /visit/] },
     { pattern: /roas/, denoms: [/spend|cost/] },
@@ -5883,10 +6439,91 @@ function buildTopCategoriesWithOther(rows, dimension, metric, metricType, topN =
   };
 }
 
+function buildPerformanceBreakdown(rows, dimension, metric, metricType, topNSetting) {
+  if (topNSetting === null) {
+    const totals = new Map();
+    const counts = new Map();
+    (rows || []).forEach((row) => {
+      const key = row?.[dimension] ? String(row[dimension]).trim() : "Unknown";
+      const metricValue = parseNumber(row?.[metric]);
+      if (metricValue === null) return;
+      totals.set(key, (totals.get(key) || 0) + metricValue);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    const sorted = Array.from(totals.entries())
+      .map(([label, total]) => {
+        const count = counts.get(label) || 0;
+        return {
+          label,
+          count,
+          value: metricType?.kind === "rate" ? (count ? total / count : 0) : total,
+        };
+      })
+      .sort((a, b) => b.value - a.value);
+    return {
+      labels: sorted.map((item) => item.label),
+      values: sorted.map((item) => item.value),
+      counts: sorted.map((item) => item.count),
+    };
+  }
+  return buildTopCategoriesWithOther(rows, dimension, metric, metricType, topNSetting || 8);
+}
+
 function truncateLabel(text, max = 22) {
   const value = String(text || "");
   if (value.length <= max) return value;
   return `${value.slice(0, Math.max(0, max - 1))}\u2026`;
+}
+
+function wrapLabelLines(text, maxCharsPerLine = 24, maxLines = 2) {
+  const raw = String(text || "").trim();
+  if (!raw) return [""];
+  if (raw.length <= maxCharsPerLine) return [raw];
+
+  const words = raw.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = "";
+
+  const pushCurrent = () => {
+    if (current) lines.push(current);
+    current = "";
+  };
+
+  words.forEach((word) => {
+    if (!current) {
+      if (word.length <= maxCharsPerLine) {
+        current = word;
+      } else {
+        for (let i = 0; i < word.length; i += maxCharsPerLine) {
+          lines.push(word.slice(i, i + maxCharsPerLine));
+          if (lines.length >= maxLines) break;
+        }
+      }
+      return;
+    }
+    const next = `${current} ${word}`;
+    if (next.length <= maxCharsPerLine) {
+      current = next;
+    } else {
+      pushCurrent();
+      if (word.length <= maxCharsPerLine) {
+        current = word;
+      } else {
+        for (let i = 0; i < word.length; i += maxCharsPerLine) {
+          lines.push(word.slice(i, i + maxCharsPerLine));
+          if (lines.length >= maxLines) break;
+        }
+      }
+    }
+  });
+
+  pushCurrent();
+  const clamped = lines.slice(0, maxLines);
+  if (lines.length > maxLines && clamped.length) {
+    const last = clamped[clamped.length - 1];
+    clamped[clamped.length - 1] = `${last.slice(0, Math.max(0, maxCharsPerLine - 1))}\u2026`;
+  }
+  return clamped.length ? clamped : [raw];
 }
 
 function setChartCardEmptyState(canvasId, message = "") {
@@ -6018,21 +6655,36 @@ function createBarChart(canvasId, labels, values, metricType, counts = []) {
 }
 
 function createHorizontalBarChart(canvasId, labels, values, metricType, counts = []) {
-  const ctx = document.getElementById(canvasId);
+  const canvas = document.getElementById(canvasId);
+  const ctx = canvas;
+  if (!canvas) return null;
+  const canvasWrap = canvas.closest(".performanceCanvasWrap");
   const fullLabels = labels.map((label) => String(label || ""));
-  const displayLabels = fullLabels.map((label) => truncateLabel(label, 22));
+  const many = fullLabels.length > 40;
+  const wrapChars = many ? 20 : 28;
+  const wrappedLabels = fullLabels.map((label) => wrapLabelLines(label, wrapChars, 2));
+  const rowHeights = wrappedLabels.map((lines) => 24 + (Math.max(1, lines.length) - 1) * 16);
+  const minHeight = 260;
+  const maxHeight = 4200;
+  const desired = Math.max(minHeight, rowHeights.reduce((sum, h) => sum + h, 0) + 24);
+  performanceChartDesiredHeight = Math.min(desired, maxHeight);
+  if (canvasWrap) {
+    canvasWrap.style.height = `${performanceChartDesiredHeight}px`;
+  }
+  canvas.style.height = `${performanceChartDesiredHeight}px`;
+  canvas.height = performanceChartDesiredHeight;
   return new Chart(ctx, {
     type: "bar",
     data: {
-      labels: displayLabels,
+      labels: fullLabels,
       datasets: [
         {
           label: "Total",
           data: values,
           backgroundColor: "#8b5cf6",
           borderRadius: 8,
-          barThickness: 14,
-          maxBarThickness: 16,
+          barThickness: many ? 8 : 12,
+          maxBarThickness: many ? 10 : 14,
         },
       ],
     },
@@ -6047,7 +6699,7 @@ function createHorizontalBarChart(canvasId, labels, values, metricType, counts =
           callbacks: {
             title: (items) => {
               const index = items?.[0]?.dataIndex ?? 0;
-              return fullLabels[index] || displayLabels[index] || "";
+              return fullLabels[index] || "";
             },
             label: (context) => {
               const n = counts?.[context.dataIndex] ?? null;
@@ -6057,13 +6709,7 @@ function createHorizontalBarChart(canvasId, labels, values, metricType, counts =
           },
         },
         datalabels: {
-          color: "#ffffff",
-          anchor: "end",
-          align: "right",
-          offset: 4,
-          formatter: (value) => formatMetricValue(value, metricType),
-          clamp: true,
-          clip: false,
+          display: false,
         },
       },
       scales: {
@@ -6072,6 +6718,12 @@ function createHorizontalBarChart(canvasId, labels, values, metricType, counts =
             autoSkip: false,
             maxRotation: 0,
             minRotation: 0,
+            font: { size: many ? 10 : 12 },
+            padding: 8,
+            callback(value) {
+              const raw = fullLabels[Number(value)] || this.getLabelForValue(value);
+              return wrapLabelLines(raw, wrapChars, 2);
+            },
           },
         },
         x: metricType?.kind === "rate"
@@ -6079,6 +6731,7 @@ function createHorizontalBarChart(canvasId, labels, values, metricType, counts =
               min: 0,
               max: 1,
               ticks: {
+                maxTicksLimit: 6,
                 maxRotation: 0,
                 minRotation: 0,
                 callback: (value) => `${(Number(value) * 100).toFixed(0)}%`,
@@ -6087,8 +6740,117 @@ function createHorizontalBarChart(canvasId, labels, values, metricType, counts =
           : {
               beginAtZero: true,
               ticks: {
+                maxTicksLimit: 6,
                 maxRotation: 0,
                 minRotation: 0,
+                callback: (value) => numberFormatter.format(Number(value) || 0),
+              },
+            },
+      },
+    },
+    plugins: [ChartDataLabels],
+  });
+}
+
+function createDoughnutChart(canvasId, labels, values, metricType) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return null;
+  const palette = ["#8b5cf6", "#22c55e", "#38bdf8", "#f59e0b", "#ef4444", "#14b8a6", "#f97316", "#a855f7"];
+  return new Chart(canvas, {
+    type: "doughnut",
+    data: {
+      labels,
+      datasets: [
+        {
+          data: values,
+          backgroundColor: labels.map((_, index) => palette[index % palette.length]),
+          borderWidth: 0,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      cutout: "58%",
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: {
+            boxWidth: 10,
+            color: "#cbd5e1",
+          },
+        },
+        tooltip: {
+          callbacks: {
+            label: (context) => {
+              const value = Number(context.parsed || 0);
+              return `${context.label}: ${formatMetricValue(value, metricType)}`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+function createWaterfallChart(canvasId, labels, deltas, metricType) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return null;
+  let running = 0;
+  const floating = deltas.map((delta) => {
+    const start = running;
+    running += delta;
+    return [Math.min(start, running), Math.max(start, running)];
+  });
+  const colors = deltas.map((delta) => (delta >= 0 ? "#22c55e" : "#ef4444"));
+  return new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        {
+          data: floating,
+          backgroundColor: colors,
+          borderRadius: 8,
+          borderSkipped: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context) => {
+              const delta = Number(deltas[context.dataIndex] || 0);
+              return `Delta vs average: ${formatMetricValue(delta, metricType)}`;
+            },
+          },
+        },
+        datalabels: { display: false },
+      },
+      scales: {
+        x: {
+          ticks: {
+            callback(value) {
+              const raw = labels[Number(value)] || this.getLabelForValue(value);
+              return truncateLabel(raw, 18);
+            },
+          },
+        },
+        y: metricType?.kind === "rate"
+          ? {
+              ticks: {
+                callback: (value) => `${(Number(value) * 100).toFixed(0)}%`,
+              },
+            }
+          : {
+              ticks: {
+                callback: (value) => compactNumberFormatter.format(Number(value) || 0),
               },
             },
       },
@@ -6288,42 +7050,82 @@ function countDateGaps(rows, dateColumn) {
   }
   return gaps;
 }
-function renderInsights(rows) {
-  if (!insightsList) return;
-  insightsList.innerHTML = "";
-  if (!Array.isArray(rows) || !rows.length) return;
-  const engine = window.PerformanceInsightsEngine;
-  if (!engine || typeof engine.generatePerformanceIntelligence !== "function") {
-    return;
-  }
 
-  const output = engine.generatePerformanceIntelligence(rows);
-  const domain = output?.domain?.domain || "general";
-  const domainConfidence = Number(output?.domain?.confidence || 0);
-  if (performanceIntelSubtitle) {
-    performanceIntelSubtitle.textContent = `Detected domain: ${domain} (confidence ${domainConfidence.toFixed(2)})`;
-  }
+function pickSecondaryInsightDimension(primaryDim) {
+  const dims = Array.isArray(state.schema?.categoricals) ? state.schema.categoricals : [];
+  const candidates = dims.filter((dim) => dim && dim !== primaryDim && isInsightDimensionCandidate(dim));
+  if (!candidates.length) return null;
+  const scored = candidates.map((dim) => {
+    const profile = state.schema?.profiles?.[dim] || {};
+    const unique = Number(profile.uniqueCount || 0);
+    const score = unique >= 2 && unique <= 20 ? 2 : unique <= 40 ? 1 : 0;
+    return { dim, score };
+  }).sort((a, b) => b.score - a.score);
+  return scored[0]?.dim || candidates[0] || null;
+}
 
-  const sectionOrder = [
-    "Executive Summary",
-    "Momentum",
-    "Key Metrics",
-    "Winners",
-    "Spotlight",
-    "Scale Opportunities",
-    "Watch List",
-    "Forecast Outlook",
-    "Next Steps",
-  ];
-  const sectionsByTitle = new Map((output?.narrative?.sections || []).map((section) => [section.title, section]));
-  const listItem = document.createElement("li");
-  listItem.className = "insight-card user-insight-card performance-intel-card";
+function formatInsightDelta(delta, metricType) {
+  return metricType?.kind === "rate"
+    ? `${((Number(delta) || 0) * 100).toFixed(1)} pp`
+    : formatMetricValue(Number(delta) || 0, metricType);
+}
 
-  const sectionsMarkup = sectionOrder.map((title) => {
-    const section = sectionsByTitle.get(title);
+function inferCostInputMetric(metricList = []) {
+  return (metricList || []).find((metric) => /cost|spend|budget|expense|cpc|cpa/i.test(String(metric || ""))) || null;
+}
+
+function isInsightDimensionCandidate(dim) {
+  if (!dim || isGenericColumnName(dim)) return false;
+  const key = String(dim || "").toLowerCase();
+  const profile = state.schema?.profiles?.[dim] || {};
+  const uniqueCount = Number(profile.uniqueCount || 0);
+  const numericRate = Number(profile.numericRate || 0);
+  const nullRate = Number(profile.nullRate || 0);
+  if (uniqueCount < 2 || uniqueCount > 40) return false;
+  if (numericRate >= 0.35 || nullRate >= 0.75) return false;
+  if (/(ctr|cvr|rate|ratio|percent|pct|cpa|cpc|cpm|ecpa|ecpc|ecpm|roas|roi|secondary|primary)/.test(key)) return false;
+  if (/(cost|spend|budget|expense|revenue|sales|clicks|impressions|conversions)/.test(key)) return false;
+  return true;
+}
+
+function buildFallbackInsightRoles(metric, dimension) {
+  return {
+    timeField: state.dateColumn || null,
+    primaryOutcomeMetric: metric || null,
+    costInputMetric: inferCostInputMetric(state.schema.numeric || []),
+    rateMetrics: (state.schema.numeric || []).filter((candidate) => /rate|ctr|cvr|retention|churn|ratio|roas/i.test(String(candidate || ""))),
+    entityDimensions: (state.schema.categoricals || []).filter(Boolean).slice(0, 4),
+    focusDimension: dimension || null,
+  };
+}
+
+function buildFallbackThresholds() {
+  return {
+    minimum_periods_for_trend: 3,
+    minimum_rows_for_driver_cut: 8,
+    directional_gap_threshold: "10%",
+    low_signal_warning_threshold: "40%",
+  };
+}
+
+function buildFallbackRuleTriggers({ hasDateField, currentValue, priorValue, driverInfo, diagnostics, lowSignalExcludedShare }) {
+  const rules = [];
+  if (hasDateField && priorValue > 0) rules.push("trend_period_comparison");
+  if (driverInfo?.topLiftShare > 0.2) rules.push("cross_dimension_driver_detected");
+  if ((diagnostics?.concentrationRisk || []).length) rules.push("winner_concentration_check");
+  if ((diagnostics?.anomalies || []).some((item) => /small|volatile|outlier/i.test(String(item || "")))) rules.push("watch_list_flagged");
+  if ((lowSignalExcludedShare || 0) > 0) rules.push("low_signal_entities_excluded");
+  if (!rules.length) rules.push("descriptive_snapshot_only");
+  return rules;
+}
+
+function buildInsightSectionsMarkup(sections = []) {
+  return (sections || []).map((section) => {
     const bullets = (section?.bullets || []).filter(Boolean);
-    if (!bullets.length) return "";
-    const bulletsHtml = bullets.map((item) => `<li>${escapeHtml(item)}</li>`).join("");
+    const title = section?.title || "";
+    const bulletsHtml = bullets.length
+      ? bullets.map((item) => `<li>${escapeHtml(item)}</li>`).join("")
+      : "<li>No supported signal available for this section.</li>";
     return `
       <section class="intel-section">
         <h5>${escapeHtml(title)}</h5>
@@ -6331,26 +7133,528 @@ function renderInsights(rows) {
       </section>
     `;
   }).join("");
+}
 
-  const rulesTriggered = output?.diagnostics?.rulesTriggered || [];
-  const roles = output?.diagnostics?.rolesDetected || {};
-  const thresholds = output?.diagnostics?.thresholds || {};
+function aggregateContributionByDimensions(rows, dims, metric, metricType) {
+  const validDims = (dims || []).filter(Boolean);
+  if (!validDims.length || !metric) return [];
+  const denominator = metricType?.kind === "rate" ? findRateDenominator(metric, state.schema.numeric || []) : null;
+  const byKey = new Map();
+  (rows || []).forEach((row) => {
+    const metricValue = parseNumber(row?.[metric]);
+    if (metricValue === null) return;
+    const weight = denominator ? Math.max(0, parseNumber(row?.[denominator]) || 0) : 1;
+    const contribution = metricType?.kind === "rate"
+      ? (denominator ? metricValue * weight : metricValue)
+      : metricValue;
+    const parts = validDims.map((dim) => String(row?.[dim] ?? "Unknown").trim() || "Unknown");
+    const key = parts.join(" | ");
+    const current = byKey.get(key) || { key, parts, contribution: 0, rowCount: 0, valueSum: 0, weightSum: 0 };
+    current.contribution += contribution;
+    current.rowCount += 1;
+    current.valueSum += metricValue;
+    current.weightSum += weight;
+    byKey.set(key, current);
+  });
+  const totalContribution = Array.from(byKey.values()).reduce((sum, item) => sum + item.contribution, 0) || 1;
+  return Array.from(byKey.values())
+    .map((item) => ({
+      ...item,
+      dims: validDims,
+      share: item.contribution / totalContribution,
+      value: metricType?.kind === "rate"
+        ? (denominator
+            ? (item.weightSum > 0 ? item.contribution / item.weightSum : 0)
+            : (item.rowCount > 0 ? item.valueSum / item.rowCount : 0))
+        : item.contribution,
+    }))
+    .sort((a, b) => b.contribution - a.contribution);
+}
+
+function buildContributionAnalysis(rows, metric, metricType, primaryDimension) {
+  const secondaryDims = selectSecondaryDimensions(rows, primaryDimension, metric, metricType, 2)
+    .filter((dim) => dim && dim !== primaryDimension);
+  const comboDefs = [
+    ...secondaryDims.map((dim) => [primaryDimension, dim]),
+    [primaryDimension],
+  ].filter((dims) => dims.filter(Boolean).length);
+
+  const analyses = comboDefs.map((dims) => {
+    const ranked = aggregateContributionByDimensions(rows, dims, metric, metricType);
+    const top = ranked[0] || null;
+    const second = ranked[1] || null;
+    const topThreeShare = ranked.slice(0, 3).reduce((sum, item) => sum + (item.share || 0), 0);
+    const isPair = dims.length >= 2;
+    const weakPair = isPair && ((top?.share || 0) < 0.03 || (top?.rowCount || 0) < 2);
+    const score = (top?.share || 0)
+      + (topThreeShare * 0.35)
+      + ((top?.rowCount || 0) >= 3 ? 0.05 : 0)
+      + (isPair ? 0.1 : 0)
+      - (weakPair ? 0.2 : 0);
+    return { dims, ranked, top, second, topThreeShare, score, isPair, weakPair };
+  }).filter((entry) => entry.top);
+
+  analyses.sort((a, b) => b.score - a.score);
+  const pairBest = analyses.find((entry) => entry.isPair && !entry.weakPair) || analyses.find((entry) => entry.isPair) || null;
+  const singleBest = analyses.find((entry) => !entry.isPair) || null;
+  const best = pairBest && singleBest
+    ? (pairBest.score >= (singleBest.score - 0.08) ? pairBest : singleBest)
+    : (pairBest || singleBest || null);
+  if (!best) {
+    return {
+      primaryDimension,
+      secondaryDims,
+      dimensions: [primaryDimension].filter(Boolean),
+      kind: "single",
+      driverLabel: "No dominant dimension combination",
+      narrative: "No single dimension combination explains enough of the metric to call out a dominant driver.",
+      topShare: 0,
+      topThreeShare: 0,
+      rows: [],
+      driverDimsLabel: formatMetricLabel(primaryDimension || "dimension"),
+      sampleSize: 0,
+    };
+  }
+
+  const topRows = (best.ranked || []).slice(0, 5).map((item) => ({
+    label: item.parts.map((part, index) => `${formatMetricLabel(best.dims[index])}=${part}`).join(" • "),
+    share: item.share || 0,
+    contribution: item.contribution,
+    value: item.value,
+    rowCount: item.rowCount || 0,
+  }));
+
+  const top = best.top;
+  const second = best.second;
+  const driverLabel = top.parts.map((part, index) => `${formatMetricLabel(best.dims[index])}=${part}`).join(" • ");
+  const driverDimsLabel = best.dims.map((dim) => formatMetricLabel(dim)).join(" + ");
+  const narrative = second
+    ? `${driverLabel} explains ${percentFormatter.format(top.share || 0)} of observed ${formatMetricLabel(metric)}, ahead of ${second.parts.map((part, index) => `${formatMetricLabel(best.dims[index])}=${part}`).join(" • ")}.`
+    : `${driverLabel} explains ${percentFormatter.format(top.share || 0)} of observed ${formatMetricLabel(metric)} and is the clearest concentration of performance in this cut.`;
+
+  return {
+    primaryDimension,
+    secondaryDims,
+    dimensions: best.dims,
+    kind: best.dims.length >= 3 ? "triple" : best.dims.length === 2 ? "pair" : "single",
+    driverLabel,
+    driverDimsLabel,
+    narrative,
+    topShare: top.share || 0,
+    topThreeShare: best.topThreeShare || 0,
+    rows: topRows,
+    sampleSize: top.rowCount || 0,
+  };
+}
+
+function formatContributionDriverLabel(dimensions, key) {
+  const dims = Array.isArray(dimensions) ? dimensions.filter(Boolean) : [];
+  const value = String(key ?? "Unknown");
+  if (!dims.length) return value;
+  const parts = value.split(" | ");
+  if (parts.length !== dims.length) return value;
+  return dims.map((dim, index) => `${formatMetricLabel(dim)}=${parts[index]}`).join(" • ");
+}
+
+function normalizeEngineContributionDrivers(engineContributionDrivers, metric, metricType, fallbackDimension, roles = null) {
+  if (!engineContributionDrivers?.topDrivers?.length) return null;
+  if (roles?.primaryOutcomeMetric && roles.primaryOutcomeMetric !== metric) return null;
+  const dimensions = Array.isArray(engineContributionDrivers.dimensions) && engineContributionDrivers.dimensions.length
+    ? engineContributionDrivers.dimensions.filter(Boolean)
+    : [fallbackDimension].filter(Boolean);
+  if (fallbackDimension && !dimensions.includes(fallbackDimension)) return null;
+  const rows = engineContributionDrivers.topDrivers.map((item) => ({
+    label: formatContributionDriverLabel(dimensions, item.key),
+    share: Number(item.share || 0),
+    contribution: Number(item.outcome || 0),
+    value: Number(item.outcome || 0),
+    rowCount: Number(item.rows || 0),
+  }));
+  const top = rows[0] || null;
+  const second = rows[1] || null;
+  const topThreeShare = rows.slice(0, 3).reduce((sum, item) => sum + Number(item.share || 0), 0);
+  const driverLabel = top?.label || "No dominant dimension combination";
+  const driverDimsLabel = dimensions.length
+    ? dimensions.map((dim) => formatMetricLabel(dim)).join(" + ")
+    : formatMetricLabel(fallbackDimension || "dimension");
+  const narrative = second
+    ? `${driverLabel} explains ${percentFormatter.format(top?.share || 0)} of observed ${formatMetricLabel(metric)}, ahead of ${second.label}.`
+    : `${driverLabel} explains ${percentFormatter.format(top?.share || 0)} of observed ${formatMetricLabel(metric)} and is the clearest concentration of performance in this cut.`;
+
+  return {
+    primaryDimension: fallbackDimension,
+    secondaryDims: dimensions.slice(1),
+    dimensions,
+    kind: engineContributionDrivers.kind || (dimensions.length >= 3 ? "triple" : dimensions.length === 2 ? "pair" : "single"),
+    driverLabel,
+    driverDimsLabel,
+    narrative,
+    topShare: Number(top?.share || 0),
+    topThreeShare,
+    rows,
+    sampleSize: Number(top?.rowCount || 0),
+    explanatoryPower: Number(engineContributionDrivers.explanatoryPower || 0),
+    weakSignal: Boolean(engineContributionDrivers.weakSignal),
+    weakSignalReason: engineContributionDrivers.weakSignalReason || null,
+  };
+}
+
+function buildPerformanceIntelReport(rows, output = null) {
+  const reportRoles = output?.diagnostics?.rolesDetected || null;
+  const metric = reportRoles?.primaryOutcomeMetric || null;
+  const chosenGrainDimension = output?.diagnostics?.grainDiagnostics?.chosenDimension || null;
+  const dimension = chosenGrainDimension && !String(chosenGrainDimension).includes("|") && isInsightDimensionCandidate(chosenGrainDimension)
+    ? chosenGrainDimension
+    : ((reportRoles?.entityDimensions || []).find((candidate) => isInsightDimensionCandidate(candidate)) || null);
+  const metricIsIdentifierLike = metric
+    ? isIdLikeColumn(metric, state.schema?.profiles?.[metric], rows.length)
+      || classifyNumericMetricColumn(metric, state.schema?.profiles?.[metric], rows.length).isIdentifierLike
+    : false;
+  if (!metric || metricIsIdentifierLike) {
+    const thresholds = { ...buildFallbackThresholds(), ...(output?.diagnostics?.thresholds || {}) };
+    const grainDiag = output?.diagnostics?.grainDiagnostics || {
+      chosenGrain: "unavailable",
+      chosenDimension: "n/a",
+      capsApplied: { top_n: "all" },
+      why: "No valid additive business metric was detected after excluding identifier-like and low-signal fields.",
+    };
+    const roles = reportRoles || buildFallbackInsightRoles(null, dimension);
+    return {
+      domain: output?.domain?.domain || state.inferredDomain || "general",
+      domainConfidence: Number(output?.domain?.confidence || 0),
+      metric: null,
+      dimension: dimension || null,
+      metricType: { kind: "count" },
+      roles,
+      rulesTriggered: Array.from(new Set([...(output?.diagnostics?.rulesTriggered || []), "no_valid_outcome_metric"])),
+      thresholds,
+      grainDiag,
+      lowSignalExcludedShare: 0,
+      lowSignalFiltered: false,
+      driverDiagnostics: {
+        granularity: "unavailable",
+        dimensions: [],
+        topShare: 0,
+        shareGap: 0,
+        weakSignal: true,
+        weakSignalReason: "no_valid_outcome_metric",
+        explanatoryPower: 0,
+      },
+      driverThresholdChecks: [],
+      sections: [
+        { title: "Executive Summary", bullets: ["No valid business outcome metric was detected for dataset-wide intelligence."] },
+        { title: "Momentum", bullets: ["Momentum is unavailable because the intelligence layer could not identify a valid outcome metric to track over time."] },
+        { title: "Key Metrics", bullets: ["Identifier-like, efficiency-only, and low-signal fields were excluded from metric selection to keep the report decision-safe."] },
+        { title: "Winners Spotlight", bullets: ["No winner is reported because there is no valid outcome metric to rank across segments."] },
+        { title: "Scale Opportunities", bullets: ["Scale recommendations are withheld until a valid business metric is available."] },
+        { title: "Watch List", bullets: ["Review metric mapping and field quality before using this dataset for automated decision guidance."] },
+        { title: "Forecast Outlook", bullets: ["Forecast is withheld because there is no valid outcome metric to project."] },
+        { title: "Next Steps", bullets: ["Select or map a business metric with real outcome meaning, then rerun Weekly Performance Intelligence."] },
+      ],
+      sampleSize: output?.diagnostics?.sampleSize || rows.length,
+      diagnostics: { anomalies: [], concentrationRisk: [] },
+      contributionAnalysis: null,
+      lowSignalThresholdWhy: "Low-signal entities are flagged when unmapped, unknown, or weakly supported groups would materially distort guidance. The warning threshold is 40% of observed value.",
+    };
+  }
+
+  const metricValues = (rows || []).map((row) => parseNumber(row?.[metric])).filter((value) => value !== null);
+  const metricType = inferMetricType(metric, metricValues);
+  const comparison = dimension
+    ? aggregateByCategory(rows, dimension, metric, null, metricType)
+    : { labels: [], values: [], counts: [] };
+  const ranked = (comparison.labels || []).map((label, index) => ({
+    segment: label,
+    rawValue: Number(comparison.values?.[index] || 0),
+    count: Number(comparison.counts?.[index] || 0),
+  }));
+  const totalValue = ranked.reduce((sum, item) => sum + Math.max(0, item.rawValue), 0);
+  const top = ranked[0] || null;
+  const runnerUp = ranked[1] || null;
+  const laggard = ranked.length ? ranked[ranked.length - 1] : null;
+  const deltaRaw = top && runnerUp ? top.rawValue - runnerUp.rawValue : 0;
+  const winnerShare = top && totalValue > 0 ? top.rawValue / totalValue : 0;
+  const periodSplit = splitRowsIntoCurrentPrior(rows);
+  const currentValue = periodSplit.hasDateField
+    ? aggregateMetricForRows(periodSplit.currentRows, metric, metricType).value
+    : aggregateMetricForRows(rows, metric, metricType).value;
+  const priorValue = periodSplit.hasDateField
+    ? aggregateMetricForRows(periodSplit.priorRows, metric, metricType).value
+    : 0;
+  const momentumRate = periodSplit.hasDateField && Math.abs(priorValue) > 0 ? (currentValue - priorValue) / Math.abs(priorValue) : null;
+  const driverInfo = top && dimension
+    ? computeUserTopDriver({ rows, metric, metricType, primaryDimension: dimension, topSegment: top.segment, periodSplit })
+    : null;
+  const engineContributionDrivers = output?.patterns?.contributionDrivers || null;
+  const alignedEngineContributionDrivers = normalizeEngineContributionDrivers(
+    engineContributionDrivers,
+    metric,
+    metricType,
+    dimension,
+    output?.diagnostics?.rolesDetected || null
+  );
+  const localContributionAnalysis = buildContributionAnalysis(rows, metric, metricType, dimension);
+  const contributionAnalysis = alignedEngineContributionDrivers || localContributionAnalysis;
+  const diagnostics = buildInsightDiagnostics({
+    rows,
+    metric,
+    metricType,
+    comparisonTable: ranked.map((item) => ({ segment: item.segment, rawValue: item.rawValue })),
+    driverInfo,
+    deltaPercent: runnerUp && Math.abs(runnerUp.rawValue) > 0 ? ((deltaRaw / runnerUp.rawValue) * 100) : 0,
+    dimension,
+  });
+
+  const localRoles = buildFallbackInsightRoles(metric, dimension);
+  const roles = output?.diagnostics?.rolesDetected || localRoles;
+  const lowSignalExcludedShare = Number(output?.patterns?.contribution?.lowSignalShareExcluded || 0);
+  const lowSignalFiltered = Boolean(output?.patterns?.contribution?.filteredLowSignal);
+  const thresholds = { ...buildFallbackThresholds(), ...(output?.diagnostics?.thresholds || {}) };
+  const grainDiag = output?.diagnostics?.grainDiagnostics || {
+    chosenGrain: periodSplit.hasDateField ? "time_x_dimension" : "dimension_only",
+    chosenDimension: dimension || "n/a",
+    capsApplied: { top_n: "all" },
+    why: periodSplit.hasDateField
+      ? "Time field and breakdown dimension were both available, so momentum and cross-dimension effects were analyzed together."
+      : "No reliable time field was available, so the report uses a cross-sectional dimension comparison.",
+  };
+  const driverDiagnostics = {
+    granularity: (alignedEngineContributionDrivers ? engineContributionDrivers?.kind : null) || contributionAnalysis?.kind || (contributionAnalysis?.dimensions?.length >= 3
+      ? "triple"
+      : contributionAnalysis?.dimensions?.length === 2
+        ? "pair"
+        : "single"),
+    dimensions: (alignedEngineContributionDrivers ? engineContributionDrivers?.dimensions : null) || contributionAnalysis?.dimensions || [],
+    topShare: Number((alignedEngineContributionDrivers ? engineContributionDrivers?.topShare : null) ?? contributionAnalysis?.topShare ?? 0),
+    shareGap: Number((alignedEngineContributionDrivers ? engineContributionDrivers?.shareGap : null) ?? 0),
+    weakSignal: Boolean((alignedEngineContributionDrivers ? engineContributionDrivers?.weakSignal : null)),
+    weakSignalReason: (alignedEngineContributionDrivers ? engineContributionDrivers?.weakSignalReason : null) || null,
+    explanatoryPower: Number((alignedEngineContributionDrivers ? engineContributionDrivers?.explanatoryPower : null) ?? contributionAnalysis?.explanatoryPower ?? 0),
+  };
+  const driverThresholdChecks = [
+    {
+      label: "Top driver minimum share",
+      threshold: thresholds.contributionDriverMinShare ?? "n/a",
+      actual: driverDiagnostics.topShare,
+      passed: typeof thresholds.contributionDriverMinShare === "number"
+        ? driverDiagnostics.topShare >= thresholds.contributionDriverMinShare
+        : null,
+    },
+    {
+      label: "Top driver minimum gap",
+      threshold: thresholds.contributionDriverMinGap ?? "n/a",
+      actual: driverDiagnostics.shareGap,
+      passed: typeof thresholds.contributionDriverMinGap === "number"
+        ? driverDiagnostics.shareGap >= thresholds.contributionDriverMinGap
+        : null,
+    },
+  ];
+  const rulesTriggered = Array.from(new Set([
+    ...((output?.diagnostics?.rulesTriggered || []).filter(Boolean)),
+    ...buildFallbackRuleTriggers({
+      hasDateField: periodSplit.hasDateField,
+      currentValue,
+      priorValue,
+      driverInfo,
+      diagnostics,
+      lowSignalExcludedShare,
+    }),
+  ]));
+
+  const executiveSummary = top && runnerUp
+    ? `${top.segment} is leading ${formatMetricLabel(metric)} and is ahead of ${runnerUp.segment} by ${formatInsightDelta(deltaRaw, metricType)}.`
+    : `This cut is centered on ${formatMetricLabel(metric)}${dimension ? ` by ${formatMetricLabel(dimension)}` : ""}.`;
+  const momentumSummary = periodSplit.hasDateField
+    ? `${formatMetricLabel(metric)} is ${momentumRate === null ? "tracking flat" : `${momentumRate >= 0 ? "up" : "down"} ${percentFormatter.format(Math.abs(momentumRate))}`} versus the prior comparable window.`
+    : "No reliable historical grain was detected, so momentum is directional rather than trend-validated.";
+  const forecastValue = periodSplit.hasDateField ? currentValue : null;
+  const forecastSummary = periodSplit.hasDateField
+    ? `If the current run-rate holds, the next comparable window would land near ${formatMetricValue(forecastValue, metricType)}${top ? ` with ${top.segment} likely remaining the lead segment` : ""}.`
+    : "Forecast is withheld because the dataset does not provide enough clean time structure.";
+  const driverLead = contributionAnalysis?.driverLabel || driverInfo?.driverCombinationText || "the current cross-dimension mix";
+  const driverNarrative = contributionAnalysis?.narrative || driverInfo?.narrative || "No single cross-dimension combination explains enough of the spread to isolate one dominant driver.";
+  const actionGuardrail = periodSplit.hasDateField
+    ? "Validate that the same pattern holds in the next reporting window before scaling aggressively."
+    : "Treat this as a directional read until the same pattern is confirmed with a reliable time series or stronger outcome metric.";
+  const materialityNote = runnerUp && Math.abs(deltaRaw) > 0
+    ? `The gap versus ${runnerUp.segment} is ${formatInsightDelta(deltaRaw, metricType)}.`
+    : "The current lead does not yet have a strong benchmark gap.";
+  const hasCrossDimensionDriver = Boolean(contributionAnalysis?.dimensions?.length >= 2);
+  const visibleBucketLabel = top?.segment || "the visible top bucket";
+
+  const sections = [
+    {
+      title: "Executive Summary",
+      bullets: [
+        contributionAnalysis?.rows?.[0]
+          ? `${driverLead} is the clearest driver of ${formatMetricLabel(metric)} in this view, with ${visibleBucketLabel} acting as the strongest visible outcome bucket.`
+          : executiveSummary,
+        runnerUp
+          ? `${materialityNote} The result appears to be driven by ${contributionAnalysis?.driverDimsLabel || "dimension mix"}${hasCrossDimensionDriver ? ", not the visible chart bucket on its own" : " rather than broad-based strength across the full category ranking"}.`
+          : driverNarrative,
+      ],
+    },
+    {
+      title: "Momentum",
+      bullets: [
+        periodSplit.hasDateField
+          ? `${formatMetricLabel(metric)} moved ${momentumRate === null ? "sideways" : `${momentumRate >= 0 ? "up" : "down"} ${percentFormatter.format(Math.abs(momentumRate))}`} versus the prior period, which suggests the current ranking is ${momentumRate !== null && momentumRate >= 0 ? "strengthening" : "not yet clearly strengthening"}.`
+          : "This cut is based on a snapshot rather than a validated trend, so momentum should be treated as directional only.",
+        periodSplit.hasDateField
+          ? `Current window delivered ${formatMetricValue(currentValue, metricType)} versus ${formatMetricValue(priorValue, metricType)} previously, pointing to ${driverLead} as the main pattern to re-check in the next period.`
+          : `The current snapshot totals ${formatMetricValue(currentValue, metricType)} across ${numberFormatter.format(rows.length)} rows, but there is not enough historical structure to confirm whether this pattern is durable.`,
+      ],
+    },
+    {
+      title: "Key Metrics",
+      bullets: [
+        `This view is anchored on ${formatMetricLabel(metric)} and ranked across ${dimension ? formatMetricLabel(dimension) : "the best available dimension"}.`,
+        dimension
+          ? `There are ${numberFormatter.format(ranked.length)} comparable groups in this cut, but the strongest explanatory pattern comes from ${contributionAnalysis?.driverDimsLabel || formatMetricLabel(dimension)}${hasCrossDimensionDriver ? " rather than the chart dimension alone" : " because no stronger cross-dimension combination cleared the evidence threshold"}.`
+          : "No stable breakdown dimension was available, which limits how confidently this performance can be attributed.",
+        top
+          ? `${driverLead} accounts for ${percentFormatter.format(contributionAnalysis?.topShare || winnerShare)} of observed ${formatMetricLabel(metric)}, which is the most decision-relevant concentration in the data.`
+          : "No top segment could be ranked for this view.",
+      ],
+    },
+    {
+      title: "Winners Spotlight",
+      bullets: [
+        contributionAnalysis?.rows?.[0]
+          ? `${contributionAnalysis.rows[0].label} is the strongest contributing combination at ${formatMetricValue(contributionAnalysis.rows[0].value, metricType)}${contributionAnalysis.rows[0].rowCount ? ` (n=${numberFormatter.format(contributionAnalysis.rows[0].rowCount)})` : ""}.`
+          : "No winner could be isolated.",
+        contributionAnalysis?.rows?.[1]
+          ? `${contributionAnalysis.rows[1].label} is the nearest combination benchmark, so the practical question is what in the mix makes the leading combination outperform it.`
+          : (runnerUp ? `${runnerUp.segment} is the nearest benchmark at ${formatMetricValue(runnerUp.rawValue, metricType)}.` : "No runner-up benchmark was available."),
+        driverNarrative,
+      ],
+    },
+    {
+      title: "Scale Opportunities",
+      bullets: [
+        top
+          ? `The best scaling candidate is the combination ${driverLead}, because it explains the largest share of observed ${formatMetricLabel(metric)}.`
+          : "No clean scale opportunity is supported yet.",
+        contributionAnalysis?.sampleSize >= 8
+          ? `Start by replicating the conditions behind ${driverLead} in adjacent segments that share the same dimension mix.`
+          : `Do not scale broadly yet; validate ${driverLead} on a small pilot first because the supporting combination sample is still limited.`,
+      ],
+    },
+    {
+      title: "Watch List",
+      bullets: [
+        ...(diagnostics?.anomalies || []).slice(0, 2),
+        ...(diagnostics?.concentrationRisk || []).slice(0, 1),
+        ...collectWarnings().slice(0, 2),
+        lowSignalFiltered
+          ? `Low-signal entities were excluded from ${percentFormatter.format(lowSignalExcludedShare)} of observed value, which means the recommendation is intentionally biased toward cleaner and more decision-ready segments.`
+          : "",
+      ].filter(Boolean),
+    },
+    {
+      title: "Forecast Outlook",
+      bullets: [
+        periodSplit.hasDateField
+          ? `${forecastSummary} At this stage, the most likely continuation is that ${driverLead} remains the main influence on relative performance.`
+          : "A reliable forward view is not available yet because the dataset does not provide clean time structure; use the current ranking as a hypothesis, not a projection.",
+        top
+          ? `${driverLead} should remain the primary pattern to monitor because it currently carries the clearest concentration of performance.`
+          : "No single segment currently carries enough weight for a segment-specific outlook.",
+      ],
+    },
+    {
+      title: "Next Steps",
+      bullets: [
+        top
+          ? `Break down ${driverLead} against the next-best combination to confirm which dimension in the mix is actually creating the lift.`
+          : "Confirm a stable dimension and metric pair before taking action.",
+        contributionAnalysis?.rows?.length
+          ? `Use the evidence table to test whether the leading contribution pattern repeats in another audience, geography, or placement slice before reallocating budget.`
+          : actionGuardrail,
+      ],
+    },
+  ];
+
+  return {
+    domain: output?.domain?.domain || state.domain || state.inferredDomain || "general",
+    domainConfidence: Number(output?.domain?.confidence || 0),
+    metric,
+    dimension,
+    metricType,
+    roles,
+    rulesTriggered,
+    thresholds,
+    grainDiag,
+    lowSignalExcludedShare,
+    lowSignalFiltered,
+    driverDiagnostics,
+    driverThresholdChecks,
+    sections,
+    sampleSize: output?.diagnostics?.sampleSize || rows.length,
+    diagnostics,
+    contributionAnalysis,
+    lowSignalThresholdWhy: "Low-signal entities are flagged when unmapped, unknown, or weakly supported groups would materially distort guidance. The warning threshold is 40% of observed value.",
+  };
+}
+
+function renderInsights(rows) {
+  if (!insightsList) return;
+  insightsList.innerHTML = "";
+  if (!Array.isArray(rows) || !rows.length) return;
+  const engine = window.PerformanceInsightsEngine;
+  const output = engine && typeof engine.generatePerformanceIntelligence === "function"
+    ? engine.generatePerformanceIntelligence(rows, {})
+    : null;
+  const report = buildPerformanceIntelReport(rows, output);
+  if (!report) return;
+  if (performanceIntelSubtitle) {
+    const metricLabel = report.metric ? formatMetricLabel(report.metric) : "no valid outcome metric";
+    performanceIntelSubtitle.textContent = `Dataset-wide intelligence • primary outcome ${metricLabel} • ${numberFormatter.format(report.sampleSize)} rows • domain ${report.domain} (${report.domainConfidence.toFixed(2)}) • build ${BUILD_ID}`;
+  }
+
+  const listItem = document.createElement("li");
+  listItem.className = "insight-card user-insight-card performance-intel-card";
+  const sectionsMarkup = buildInsightSectionsMarkup(report.sections);
+  const highLowSignalRisk = report.lowSignalFiltered && report.lowSignalExcludedShare >= 0.4;
+  const insightRiskBanner = highLowSignalRisk
+    ? `
+      <div class="insight-risk-banner" role="alert">
+        Insight quality warning: ${percentFormatter.format(report.lowSignalExcludedShare)} of observed value sits in low-signal entities
+        (for example unassigned/unknown). Treat recommendations as directional until mapping quality improves.
+      </div>
+    `
+    : "";
   listItem.innerHTML = `
+    ${insightRiskBanner}
     ${sectionsMarkup || "<p class=\"helper-text\">Insufficient supported patterns to compose narrative.</p>"}
     <details class="insight-diagnostics intel-evidence-toggle">
       <summary>Evidence</summary>
       <div class="diagnostics-grid">
-        <div><strong>Sample size</strong><div>${escapeHtml(numberFormatter.format(output?.diagnostics?.sampleSize || rows.length))}</div></div>
+        <div><strong>Sample size</strong><div>${escapeHtml(numberFormatter.format(report.sampleSize))}</div></div>
         <div><strong>Roles detected</strong><ul>
-          <li>Time: ${escapeHtml(String(roles.timeField || "none"))}</li>
-          <li>Outcome: ${escapeHtml(String(roles.primaryOutcomeMetric || "none"))}</li>
-          <li>Input: ${escapeHtml(String(roles.costInputMetric || "none"))}</li>
-          <li>Rates: ${escapeHtml((roles.rateMetrics || []).join(", ") || "none")}</li>
-          <li>Entities: ${escapeHtml((roles.entityDimensions || []).join(", ") || "none")}</li>
+          <li>Time: ${escapeHtml(String(report.roles.timeField || "none"))}</li>
+          <li>Outcome: ${escapeHtml(String(report.roles.primaryOutcomeMetric || "none"))}</li>
+          <li>Input: ${escapeHtml(String(report.roles.costInputMetric || "none"))}</li>
+          <li>Rates: ${escapeHtml((report.roles.rateMetrics || []).join(", ") || "none")}</li>
+          <li>Entities: ${escapeHtml((report.roles.entityDimensions || []).join(", ") || "none")}</li>
         </ul></div>
-        <div><strong>Rules triggered</strong><div>${escapeHtml(rulesTriggered.join(", ") || "none")}</div></div>
+        <div><strong>Rules triggered</strong><div>${escapeHtml(report.rulesTriggered.join(", ") || "none")}</div></div>
+        <div><strong>Chosen grain</strong><div>${escapeHtml(String(report.grainDiag.chosenGrain || "single"))} (${escapeHtml(String(report.grainDiag.chosenDimension || "n/a"))})</div></div>
+        <div><strong>Why this grain</strong><div>${escapeHtml(String(report.grainDiag.why || "n/a"))}</div></div>
+        <div><strong>Driver granularity</strong><div>${escapeHtml(String(report.driverDiagnostics?.granularity || "n/a"))} (${escapeHtml((report.driverDiagnostics?.dimensions || []).map(formatMetricLabel).join(", ") || "none")})</div></div>
+        <div><strong>Driver thresholds</strong><ul>
+          ${(report.driverThresholdChecks || []).map((item) => {
+            const actual = typeof item.actual === "number" ? percentFormatter.format(item.actual) : String(item.actual);
+            const threshold = typeof item.threshold === "number" ? percentFormatter.format(item.threshold) : String(item.threshold);
+            const status = item.passed === null ? "n/a" : item.passed ? "pass" : "fail";
+            return `<li>${escapeHtml(item.label)}: actual ${escapeHtml(actual)} vs threshold ${escapeHtml(threshold)} (${escapeHtml(status)})</li>`;
+          }).join("") || "<li>none</li>"}
+        </ul></div>
+        <div><strong>Weak-signal fallback</strong><div>${escapeHtml(report.driverDiagnostics?.weakSignalReason || "none")}</div></div>
+        <div><strong>Low-signal excluded</strong><div>${escapeHtml(percentFormatter.format(report.lowSignalExcludedShare))}</div></div>
+        <div><strong>Why low-signal threshold exists</strong><div>${escapeHtml(report.lowSignalThresholdWhy)}</div></div>
         <div><strong>Thresholds</strong><ul>
-          ${Object.entries(thresholds).map(([key, value]) => `<li>${escapeHtml(String(key))}: ${escapeHtml(String(value))}</li>`).join("") || "<li>none</li>"}
+          ${Object.entries(report.thresholds).map(([key, value]) => `<li>${escapeHtml(String(key))}: ${escapeHtml(String(value))}</li>`).join("") || "<li>none</li>"}
         </ul></div>
       </div>
     </details>
@@ -6360,12 +7664,26 @@ function renderInsights(rows) {
   if (insightsDiagnosticsRoot) {
     insightsDiagnosticsRoot.innerHTML = `
       <div class="diagnostics-grid">
-        <div><strong>Domain</strong><div>${escapeHtml(domain)} (${domainConfidence.toFixed(2)})</div></div>
-        <div><strong>Rules fired</strong><div>${escapeHtml(rulesTriggered.join(", ") || "none")}</div></div>
-        <div><strong>Outcome metric</strong><div>${escapeHtml(String(roles.primaryOutcomeMetric || "none"))}</div></div>
-        <div><strong>Input metric</strong><div>${escapeHtml(String(roles.costInputMetric || "none"))}</div></div>
-        <div><strong>Time field</strong><div>${escapeHtml(String(roles.timeField || "none"))}</div></div>
-        <div><strong>Entity dimensions</strong><div>${escapeHtml((roles.entityDimensions || []).join(", ") || "none")}</div></div>
+        <div><strong>Domain</strong><div>${escapeHtml(report.domain)} (${report.domainConfidence.toFixed(2)})</div></div>
+        <div><strong>Rules fired</strong><div>${escapeHtml(report.rulesTriggered.join(", ") || "none")}</div></div>
+        <div><strong>Outcome metric</strong><div>${escapeHtml(String(report.roles.primaryOutcomeMetric || "none"))}</div></div>
+        <div><strong>Input metric</strong><div>${escapeHtml(String(report.roles.costInputMetric || "none"))}</div></div>
+        <div><strong>Time field</strong><div>${escapeHtml(String(report.roles.timeField || "none"))}</div></div>
+        <div><strong>Entity dimensions</strong><div>${escapeHtml((report.roles.entityDimensions || []).join(", ") || "none")}</div></div>
+        <div><strong>Chosen grain</strong><div>${escapeHtml(String(report.grainDiag.chosenGrain || "single"))} (${escapeHtml(String(report.grainDiag.chosenDimension || "n/a"))})</div></div>
+        <div><strong>Why this grain</strong><div>${escapeHtml(String(report.grainDiag.why || "n/a"))}</div></div>
+        <div><strong>Driver granularity</strong><div>${escapeHtml(String(report.driverDiagnostics?.granularity || "n/a"))} (${escapeHtml((report.driverDiagnostics?.dimensions || []).map(formatMetricLabel).join(", ") || "none")})</div></div>
+        <div><strong>Driver thresholds</strong><ul>
+          ${(report.driverThresholdChecks || []).map((item) => {
+            const actual = typeof item.actual === "number" ? percentFormatter.format(item.actual) : String(item.actual);
+            const threshold = typeof item.threshold === "number" ? percentFormatter.format(item.threshold) : String(item.threshold);
+            const status = item.passed === null ? "n/a" : item.passed ? "pass" : "fail";
+            return `<li>${escapeHtml(item.label)}: actual ${escapeHtml(actual)} vs threshold ${escapeHtml(threshold)} (${escapeHtml(status)})</li>`;
+          }).join("") || "<li>none</li>"}
+        </ul></div>
+        <div><strong>Weak-signal fallback</strong><div>${escapeHtml(report.driverDiagnostics?.weakSignalReason || "none")}</div></div>
+        <div><strong>Low-signal excluded</strong><div>${escapeHtml(percentFormatter.format(report.lowSignalExcludedShare))}</div></div>
+        <div><strong>Threshold basis</strong><div>${escapeHtml(report.lowSignalThresholdWhy)}</div></div>
       </div>
     `;
   }
@@ -6613,6 +7931,7 @@ function buildEvidenceDrawerContent(insight) {
 function selectSecondaryDimensions(rows, primaryDimension, metric, metricType, limit = 2) {
   const candidates = (state.schema.categoricals || [])
     .filter((dim) => dim && dim !== primaryDimension)
+    .filter((dim) => isInsightDimensionCandidate(dim))
     .filter((dim) => {
       const uniqueCount = state.schema.profiles?.[dim]?.uniqueCount || 0;
       return uniqueCount >= 2 && uniqueCount <= 12;
@@ -6692,6 +8011,7 @@ function buildCrossDimensionContributors({ rows, primaryDimension, winnerSegment
 
 function buildUnifiedInsights(rows) {
   const metric = state.selections.primaryMetric;
+  const activeTopN = getActiveTopNSetting();
   if (!metric) return buildDecisionInsights(rows);
   if (metric === "__row_count__" || classifyNumericMetricColumn(metric, state.schema.profiles[metric], rows.length).isIdentifierLike) {
     return [buildSafeDescriptiveInsight(rows, metric)];
@@ -6702,7 +8022,7 @@ function buildUnifiedInsights(rows) {
   if (!dimension) {
     return buildDecisionInsights(rows);
   }
-  const comparison = aggregateByCategory(rows, dimension, metric, Math.max(state.topN || 8, 8), metricType);
+  const comparison = aggregateByCategory(rows, dimension, metric, activeTopN === null ? null : activeTopN, metricType);
   if ((comparison.labels || []).length < 2) {
     return buildDecisionInsights(rows);
   }
@@ -7366,9 +8686,44 @@ function buildDecisionInsights(rows) {
   return insights;
 }
 
+function classifyMetricForRelationship(metric) {
+  const profile = state.schema?.profiles?.[metric] || {};
+  if (window.PerformanceInsightsEngine?.classifyNumericMetric) {
+    return window.PerformanceInsightsEngine.classifyNumericMetric(metric, profile);
+  }
+  const key = String(metric || "").toLowerCase();
+  const min = Number(profile?.min ?? 0);
+  const max = Number(profile?.max ?? 0);
+  const boundedRate = Number.isFinite(min) && Number.isFinite(max) && min >= 0 && max <= 1.2;
+  const isRate = /(^|_)(ctr|cvr|rate|ratio|percent|pct)($|_)|\bctr\b|\bcvr\b/.test(key) || boundedRate;
+  const isEfficiency = /cpa|cpc|cpm|ecpa|ecpc|ecpm|roas|roi|per_/.test(key);
+  const isInput = /spend|cost|expense|budget|input/.test(key);
+  const additive = !isRate && !isEfficiency;
+  return {
+    role: isInput ? "input" : isRate ? "rate" : isEfficiency ? "efficiency" : "volume",
+    additive,
+    isInput,
+    isRate,
+    isEfficiency,
+  };
+}
+
+function isAllowedRelationshipPair(xMetric, yMetric) {
+  if (!xMetric || !yMetric || xMetric === yMetric) return false;
+  const x = classifyMetricForRelationship(xMetric);
+  const y = classifyMetricForRelationship(yMetric);
+  if (!x.additive || !y.additive) return false;
+  const allowed = new Set(["volume:volume", "volume:input", "input:volume", "input:input"]);
+  return allowed.has(`${x.role}:${y.role}`);
+}
+
 function renderDiagnosticsCorrelation(rows) {
   if (!diagCorrXSelect || !diagCorrYSelect || !diagCorrSummary || !diagCorrChartCanvas) return;
-  const numericMetrics = Array.isArray(state.schema.numeric) ? state.schema.numeric : [];
+  const numericMetrics = (Array.isArray(state.schema.numeric) ? state.schema.numeric : [])
+    .filter((metric) => {
+      const role = classifyMetricForRelationship(metric);
+      return role.additive && (role.role === "volume" || role.role === "input");
+    });
   if (diagCorrCaution) diagCorrCaution.textContent = "";
   if (diagCorrExplain) diagCorrExplain.textContent = "";
   if (diagCorrTakeaway) diagCorrTakeaway.textContent = "";
@@ -7379,7 +8734,7 @@ function renderDiagnosticsCorrelation(rows) {
     diagnosticsCorrelationChartInstance = null;
   }
   if (numericMetrics.length < 2) {
-    diagCorrSummary.textContent = "Correlation unavailable. At least 2 numeric metrics are required.";
+    diagCorrSummary.textContent = "Select an additive volume metric and an additive input metric to analyze relationship.";
     return;
   }
 
@@ -7429,6 +8784,10 @@ function renderDiagnosticsCorrelation(rows) {
 
   const xMetric = diagCorrXSelect.value;
   const yMetricSelected = diagCorrYSelect.value;
+  if (!isAllowedRelationshipPair(xMetric, yMetricSelected)) {
+    diagCorrSummary.textContent = "Select an additive volume metric and an additive input metric to analyze relationship.";
+    return;
+  }
   const points = rows
     .map((row) => {
       const xVal = parseNumber(row?.[xMetric]);
@@ -7452,22 +8811,6 @@ function renderDiagnosticsCorrelation(rows) {
   const absR = Math.abs(correlation);
   const direction = correlation >= 0 ? "positive" : "negative";
   const strengthLabel = absR >= 0.7 ? "Strong" : absR >= 0.3 ? "Moderate" : "Weak";
-  const xLower = String(xMetric || "").toLowerCase();
-  const yLower = String(yMetricSelected || "").toLowerCase();
-  const xIsSpend = /spend|cost|budget/.test(xLower);
-  const yIsSpend = /spend|cost|budget/.test(yLower);
-  const xIsImpressions = /impression/.test(xLower);
-  const yIsImpressions = /impression/.test(yLower);
-  const xIsOutcome = /conversion|revenue|sales|gmv|arr|mrr/.test(xLower);
-  const yIsOutcome = /conversion|revenue|sales|gmv|arr|mrr/.test(yLower);
-  let actionLine = "Use this as directional evidence, then validate with segment-level tests before making budget changes.";
-  if (correlation >= 0.7 && ((xIsSpend && yIsImpressions) || (yIsSpend && xIsImpressions))) {
-    actionLine = "This suggests delivery scales with investment. Validate efficiency by checking eCPM trends and conversion outcomes.";
-  } else if (correlation >= 0.7 && ((xIsSpend && yIsOutcome) || (yIsSpend && xIsOutcome))) {
-    actionLine = "This suggests spend aligns with outcomes. Validate marginal returns by segmenting by audience and comparing CPA or ROAS.";
-  } else if (absR < 0.3) {
-    actionLine = "Spend changes do not explain this outcome. Investigate targeting, creative, or inventory mix as primary drivers.";
-  }
   if (diagCorrTitle) diagCorrTitle.textContent = `Correlation: ${formatMetricLabel(xMetric)} vs ${formatMetricLabel(yMetricSelected)}`;
   if (diagCorrSubtitle) diagCorrSubtitle.textContent = `r=${correlation.toFixed(3)} • n=${points.length}`;
   if (diagCorrExplain) {
@@ -7477,7 +8820,7 @@ function renderDiagnosticsCorrelation(rows) {
     `;
   }
   if (diagCorrTakeaway) {
-    diagCorrTakeaway.textContent = `Action: ${actionLine}`;
+    diagCorrTakeaway.textContent = "Correlation indicates association, not causation.";
   }
   if (diagCorrCaution && points.length < 30) {
     diagCorrCaution.textContent = "Low sample size. Interpret with caution.";
@@ -7672,14 +9015,33 @@ function exportCsvData() {
 
 function downloadInsights() {
   const rows = getAnalysisRows();
-  const insights = buildDecisionInsights(rows);
-  const content = [
-    "Insights",
-    `Generated: ${new Date().toLocaleString()}`,
-    `Metric: ${state.selections.primaryMetric}`,
-    `Dimension: ${state.selectedDimension || "—"}`,
+  const engine = window.PerformanceInsightsEngine;
+  const output = engine && typeof engine.generatePerformanceIntelligence === "function"
+    ? engine.generatePerformanceIntelligence(rows, {})
+    : null;
+  const report = buildPerformanceIntelReport(rows, output);
+  const sectionLines = (report?.sections || []).flatMap((section) => [
+    section.title,
+    ...((section.bullets || []).map((bullet) => `- ${bullet}`)),
     "",
-    ...insights.map((insight, index) => `${index + 1}. ${insight.title} - ${insight.summary}`),
+  ]);
+  const content = [
+    "Performance Intelligence",
+    `Generated: ${new Date().toLocaleString()}`,
+    `Build: ${BUILD_ID}`,
+    `Primary outcome metric: ${report?.metric || "—"}`,
+    `Chosen grain: ${report?.grainDiag?.chosenDimension || "—"}`,
+    `Domain: ${report?.domain || "general"}`,
+    "",
+    ...sectionLines,
+    "Evidence",
+    `- Sample size: ${numberFormatter.format(report?.sampleSize || rows.length)}`,
+    `- Roles detected: time=${report?.roles?.timeField || "none"}, outcome=${report?.roles?.primaryOutcomeMetric || "none"}, input=${report?.roles?.costInputMetric || "none"}`,
+    `- Rules triggered: ${(report?.rulesTriggered || []).join(", ") || "none"}`,
+    `- Chosen grain: ${report?.grainDiag?.chosenGrain || "n/a"} (${report?.grainDiag?.chosenDimension || "n/a"})`,
+    `- Why this grain: ${report?.grainDiag?.why || "n/a"}`,
+    `- Low-signal excluded: ${percentFormatter.format(report?.lowSignalExcludedShare || 0)}`,
+    `- Threshold basis: ${report?.lowSignalThresholdWhy || "n/a"}`,
   ].join("\n");
 
   const blob = new Blob([content], { type: "text/plain;charset=utf-8;" });
