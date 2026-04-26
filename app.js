@@ -3117,9 +3117,17 @@ async function fetchSheetText(url) {
   if (!validateRemoteInput(url, "sheets")) {
     throw new Error(LOCAL_PATH_ERROR_MESSAGE);
   }
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
-  return response.text();
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+    return await response.text();
+  } catch (error) {
+    console.warn("Direct fetch failed, attempting proxy fallback", error);
+    const proxiedUrl = "https://corsproxy.io/?" + encodeURIComponent(url);
+    const proxyResponse = await fetch(proxiedUrl);
+    if (!proxyResponse.ok) throw new Error(`Proxy fetch failed: ${proxyResponse.status}`);
+    return await proxyResponse.text();
+  }
 }
 
 async function loadSheetData() {
@@ -3721,21 +3729,25 @@ function reconstructPdfPageRows(items) {
 
 function clusterPdfTokensByY(items, yTolerance) {
   const rows = [];
-  const sorted = [...(items || [])].sort((a, b) => {
-    const yDiff = b.y - a.y;
-    if (Math.abs(yDiff) > yTolerance) return yDiff;
-    return a.x - b.x;
-  });
+  const sorted = [...(items || [])].sort((a, b) => a.y - b.y);
 
   sorted.forEach((item) => {
-    let target = rows.find((row) => Math.abs(row.y - item.y) <= yTolerance);
+    const itemH = item.height || 10;
+    const itemBottom = item.y + itemH;
+    let target = rows.find((row) => {
+      const rowTop = row.y;
+      const rowH = row.items.reduce((sum, it) => sum + (it.height || 10), 0) / Math.max(row.items.length, 1);
+      const rowBottom = rowTop + rowH;
+      const overlap = Math.min(itemBottom, rowBottom) - Math.max(item.y, rowTop);
+      return overlap >= (itemH * 0.5);
+    });
+
     if (!target) {
       target = { y: item.y, items: [] };
       rows.push(target);
     }
     target.items.push(item);
-    const itemCount = target.items.length;
-    target.y = ((target.y * (itemCount - 1)) + item.y) / itemCount;
+    target.y = target.items.reduce((sum, it) => sum + it.y, 0) / target.items.length;
   });
 
   rows.forEach((row) => row.items.sort((a, b) => a.x - b.x));
@@ -3744,40 +3756,32 @@ function clusterPdfTokensByY(items, yTolerance) {
 }
 
 function buildPdfColumnAnchors(rows) {
-  const xs = [];
+  const intervals = [];
   (rows || []).forEach((row) => {
     (row.items || []).forEach((item) => {
-      const centerX = item.x + ((item.width || 0) / 2);
-      if (Number.isFinite(centerX)) xs.push(centerX);
+      if (Number.isFinite(item.x) && Number.isFinite(item.width)) {
+        intervals.push({ start: item.x, end: item.x + item.width });
+      }
     });
   });
-  if (!xs.length) return [];
-  xs.sort((a, b) => a - b);
+  if (!intervals.length) return [];
+  intervals.sort((a, b) => a.start - b.start);
 
-  const stepDiffs = [];
-  for (let i = 1; i < xs.length; i += 1) {
-    const diff = xs[i] - xs[i - 1];
-    if (diff > 0) stepDiffs.push(diff);
-  }
-  stepDiffs.sort((a, b) => a - b);
-  const medianDiff = stepDiffs.length ? stepDiffs[Math.floor(stepDiffs.length / 2)] : 12;
-  const tolerance = Math.max(8, Math.min(24, medianDiff * 0.9));
-
-  const clusters = [];
-  xs.forEach((x) => {
-    const last = clusters[clusters.length - 1];
-    if (!last || Math.abs(last.mean - x) > tolerance) {
-      clusters.push({ mean: x, values: [x] });
+  const merged = [];
+  intervals.forEach((interval) => {
+    const last = merged[merged.length - 1];
+    if (!last) {
+      merged.push({ start: interval.start, end: interval.end });
       return;
     }
-    last.values.push(x);
-    last.mean = last.values.reduce((sum, value) => sum + value, 0) / last.values.length;
+    if (interval.start <= last.end + 2) {
+      last.end = Math.max(last.end, interval.end);
+    } else {
+      merged.push({ start: interval.start, end: interval.end });
+    }
   });
 
-  return clusters
-    .map((cluster) => cluster.mean)
-    .sort((a, b) => a - b)
-    .slice(0, 24);
+  return merged.map(m => (m.start + m.end) / 2).slice(0, 24);
 }
 
 function nearestAnchorIndex(x, anchors) {
