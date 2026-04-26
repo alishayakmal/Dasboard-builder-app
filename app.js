@@ -3178,9 +3178,17 @@ async function loadSheetData() {
       }
       if (!response.ok) {
         const body = await response.text();
-        appStore.setState({ dataset: null, source: { type: "sheets", name: input || "Google Sheet" }, parseStatus: "error", error: body || "Google Sheets read failed." });
+        let errorMsg = "Google Sheets read failed.";
+        let errorDetail = `Details: ${body}`;
+        
+        if (body.includes("FAILED_PRECONDITION") && body.includes("not supported")) {
+          errorMsg = "Unsupported document format.";
+          errorDetail = "This document appears to be an Excel file (.xlsx) or unsupported format. Please open it in Google Sheets, go to File > 'Save as Google Sheets', and try again with the new link.";
+        }
+        
+        appStore.setState({ dataset: null, source: { type: "sheets", name: input || "Google Sheet" }, parseStatus: "error", error: errorMsg });
         console.log("STORE setState parseStatus", appStore.getState().parseStatus);
-        showError("Google Sheets read failed.", `Details: ${body}`);
+        showError(errorMsg, errorDetail);
         return;
       }
       const payload = await response.json();
@@ -3750,7 +3758,20 @@ function clusterPdfTokensByY(items, yTolerance) {
     target.y = target.items.reduce((sum, it) => sum + it.y, 0) / target.items.length;
   });
 
-  rows.forEach((row) => row.items.sort((a, b) => a.x - b.x));
+  rows.forEach((row) => {
+    row.items.sort((a, b) => a.x - b.x);
+    const merged = [];
+    row.items.forEach((item) => {
+      const last = merged[merged.length - 1];
+      if (last && item.x <= last.x + last.width + 12) {
+        last.width = Math.max(last.x + last.width, item.x + item.width) - last.x;
+        last.text = `${last.text} ${item.text}`.trim();
+      } else {
+        merged.push({ ...item });
+      }
+    });
+    row.items = merged;
+  });
   rows.sort((a, b) => b.y - a.y);
   return rows.filter((row) => (row.items || []).length >= 2);
 }
@@ -3760,7 +3781,7 @@ function buildPdfColumnAnchors(rows) {
   (rows || []).forEach((row) => {
     (row.items || []).forEach((item) => {
       if (Number.isFinite(item.x) && Number.isFinite(item.width)) {
-        intervals.push({ start: item.x, end: item.x + item.width });
+        intervals.push({ start: item.x - 10, end: item.x + item.width + 10 });
       }
     });
   });
@@ -3774,7 +3795,7 @@ function buildPdfColumnAnchors(rows) {
       merged.push({ start: interval.start, end: interval.end });
       return;
     }
-    if (interval.start <= last.end + 2) {
+    if (interval.start <= last.end + 8) {
       last.end = Math.max(last.end, interval.end);
     } else {
       merged.push({ start: interval.start, end: interval.end });
@@ -7226,8 +7247,14 @@ function buildContributionAnalysis(rows, metric, metricType, primaryDimension) {
     };
   }
 
+  const formatParts = (parts, dims) => parts.map((part, index) => {
+    const dim = dims[index];
+    const dimLabel = formatMetricLabel(dim);
+    return /^column_\d+$/i.test(dim) ? part : `${part} (${dimLabel})`;
+  }).join(" • ");
+
   const topRows = (best.ranked || []).slice(0, 5).map((item) => ({
-    label: item.parts.map((part, index) => `${formatMetricLabel(best.dims[index])}=${part}`).join(" • "),
+    label: formatParts(item.parts, best.dims),
     share: item.share || 0,
     contribution: item.contribution,
     value: item.value,
@@ -7236,10 +7263,10 @@ function buildContributionAnalysis(rows, metric, metricType, primaryDimension) {
 
   const top = best.top;
   const second = best.second;
-  const driverLabel = top.parts.map((part, index) => `${formatMetricLabel(best.dims[index])}=${part}`).join(" • ");
+  const driverLabel = formatParts(top.parts, best.dims);
   const driverDimsLabel = best.dims.map((dim) => formatMetricLabel(dim)).join(" + ");
   const narrative = second
-    ? `${driverLabel} explains ${percentFormatter.format(top.share || 0)} of observed ${formatMetricLabel(metric)}, ahead of ${second.parts.map((part, index) => `${formatMetricLabel(best.dims[index])}=${part}`).join(" • ")}.`
+    ? `${driverLabel} explains ${percentFormatter.format(top.share || 0)} of observed ${formatMetricLabel(metric)}, ahead of ${formatParts(second.parts, best.dims)}.`
     : `${driverLabel} explains ${percentFormatter.format(top.share || 0)} of observed ${formatMetricLabel(metric)} and is the clearest concentration of performance in this cut.`;
 
   return {
@@ -7263,7 +7290,10 @@ function formatContributionDriverLabel(dimensions, key) {
   if (!dims.length) return value;
   const parts = value.split(" | ");
   if (parts.length !== dims.length) return value;
-  return dims.map((dim, index) => `${formatMetricLabel(dim)}=${parts[index]}`).join(" • ");
+  return dims.map((dim, index) => {
+    const dimLabel = formatMetricLabel(dim);
+    return /^column_\d+$/i.test(dim) ? parts[index] : `${parts[index]} (${dimLabel})`;
+  }).join(" • ");
 }
 
 function normalizeEngineContributionDrivers(engineContributionDrivers, metric, metricType, fallbackDimension, roles = null) {
