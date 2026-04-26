@@ -1,4 +1,4 @@
-﻿const fileInput = document.getElementById("fileInput");
+const fileInput = document.getElementById("fileInput");
 const fileInputInline = document.getElementById("fileInputInline");
 const loadSample = document.getElementById("loadSample");
 const loadSampleInline = document.getElementById("loadSampleInline");
@@ -1816,6 +1816,11 @@ function handleSignInClick() {
     routeTo("app");
     return;
   }
+  const users = loadUsers();
+  if (Object.keys(users).length === 0) {
+    alert("You don't have an account. Please sign up instead.");
+    return;
+  }
   signupMode = "signin";
   openModal();
 }
@@ -1873,6 +1878,7 @@ function handleSignupSubmit(event) {
     const profile = findStoredProfile(validation.cleaned.email);
     if (!profile) {
       if (formError) formError.textContent = "No account found. Create an account.";
+      alert("No account found. Create an account.");
       signupSubmitting = false;
       updateSignupButtonState();
       return;
